@@ -1,80 +1,94 @@
-
 import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { API_BASE_URL } from '../../config/apiConfig';
 
-// Each key (category name) maps to an array of strings (items in that category)
-type CategoryData = {
-  [key: string]: string[];
-};
+//Table setup for fetch error catching
+//These types define the expected structure of the data fetched from the backend
+type Category = { id: number; name: string };
+type FoodType = { id: number; name: string; category: number };
+
 
 export default function App() {
-  // Hard-coded data for initial testing and layout setup
-  // Each category contains a list of example items
-  const data: CategoryData = {
-    Fruit: ['Apples', 'Bananas', 'Strawberries'],
-    Vegetables: ['Carrots', 'Broccoli', 'Spinach'],
-    Meat: ['Steak', 'Chicken', 'Pork'],
-    Dairy: ['Milk', 'Cheese', 'Yoghurt'],
-    Drinks: ['Water', 'Juice', 'Soda'],
-    'Dips/Sauces': ['Ketchup', 'Mayo'],
-    Snacks: ['Crisps', 'Popcorn'],
-    Other: ['Eggs'],
+  //State initialisation. 
+  //const [state, functionToUpdateState] = useState<type>(initialValue)
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+
+  //Bootup GET request which retrieves category data and converts it to JSON
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/categories`)
+      .then(res => res.json())
+      .then(data => setCategories(data))
+      .catch(err => console.error(err));
+  }, []);
+
+  //Store the selected category and fetch its related food_types
+  //async allows use of await, avoiding chained .then() calls
+  const handleCategoryPress = async (category: Category) => {
+    setLoading(true);
+    setSelectedCategory(category);
+    try {
+      const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food`);
+      const data = await res.json();
+      setFoodTypes(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // State to track which category is currently selected
-  // Null means the user is viewing the main category menu
-  // const [var, funcToChangeVar] = useState<possibleState1 | possibleState1>(initialstate)
-  // selected category can be either a string or null. Null is the initial state
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
-  // Handle when a category button is pressed
-  // function takes in a name argument and calls to setSelectedCategory with that argument
-  const handleCategoryPress = (name: string): void => {
-    setSelectedCategory(name);
-  };
-
-  // Handle the "Back" button press
-  // Resets the selected category to null, showing the category list again
-  const handleBackPress = (): void => {
+  //Unset selected category and clear any displayed food type data
+  const handleBackPress = () => {
     setSelectedCategory(null);
+    setFoodTypes([]);
   };
 
-  // Helper function to render a grid of buttons (either categories or items)
-  // Takes an array of strings (items) and a function (onPress) that defines what happens when each button is pressed
-  // The onPress prop uses an arrow function () => onPress(name) so the handler only runs when the user actually taps the button
-  // Each button calls the provided onPress function with its own name
-  const renderButtons = (
-    items: string[],
-    onPress: (name: string) => void
-  ) => (
+  //////////////////////////////////////////////////////////////////////////////
+
+  //Dynamically creates the buttons for categories or food types
+  //items: array of strings (category or food type names)
+  //map() loops through each name in items and for each one creates a pressable button (TouchableOpacity)
+  //onPress defines the function that executes when a button is tapped
+  const renderButtons = (items: string[], onPress: (name: string) => void) => (
     <View style={styles.grid}>
       {items.map((name, index) => (
-        <TouchableOpacity
-          key={index}
-          style={styles.button}
-          onPress={() => onPress(name)}
-        >
+        <TouchableOpacity key={index} style={styles.button} onPress={() => onPress(name)}>
           <Text style={styles.buttonText}>{name}</Text>
         </TouchableOpacity>
       ))}
     </View>
   );
 
+  //////////////////////////////////////////////////////////////////////////////
+
+  //Renders the App
+  //Dynamically updates the title depending on whether a category has been selected or not
+  //Shows a loading spinner while data is being fetched
+  //If there's a selected category, render the related food types
+  //Else (at startup or after back press), render the category buttons
   return (
     <View style={styles.container}>
-      {/* Display title text — changes based on whether a category is selected */}
       <Text style={styles.title}>
-        {selectedCategory ? `${selectedCategory} Types` : 'Select a Category'}
+        {selectedCategory ? `${selectedCategory.name} Types` : 'Select a Category'}
       </Text>
 
-      {/* If a category is selected, render with data (categoryItems)values which are not pressable
-          Otherwise, render with data(categoryItems)keys and allow them to be pressed*/}
-      {selectedCategory
-        ? renderButtons(data[selectedCategory], () => {})
-        : renderButtons(Object.keys(data), handleCategoryPress)}
+      {loading && <ActivityIndicator size="large" color="#fff" />}
 
-      {/* Back button only appears when inside a category */}
+      {!loading &&
+        (selectedCategory
+          ? renderButtons(foodTypes.map(ft => ft.name), () => {})
+          : renderButtons(categories.map(cat => cat.name), (name) => {
+              //Find the category object whose name matches the tapped button
+              const cat = categories.find(c => c.name === name);
+              //If found, fetch and display its food types
+              if (cat) handleCategoryPress(cat);
+            }))}
+
+      {/* Show back button only when a category is selected */}
       {selectedCategory && (
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -86,7 +100,7 @@ export default function App() {
   );
 }
 
-// App styling for layout, colors, and button design
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
