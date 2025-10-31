@@ -15,6 +15,11 @@ Log 3/3
 
 Next, I will look to add products under the food_types section
 
+31/10/2025
+14:43: Below is the ERD I next wish to implement into the project. Categories, Food-Types, and Products can remain standardised data for now, but once I implement user specific log ins, I want a user to only see their registered products, which will be stored in user products
+<img width="884" height="677" alt="image" src="https://github.com/user-attachments/assets/3d7bbfc7-fdd6-4269-8a1f-f29591bed6eb" />
+
+I will first go abobut creating a sign-in page for the user. I'll leave out account creation for now and simply insert some premade accounts to Postgres
 
 
 
