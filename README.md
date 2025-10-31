@@ -10,6 +10,11 @@ I'm looking at https://www.youtube.com/watch?v=sm5Y7Vtuihg&t=476s for initial se
 Log 2/2
 16:24: Initial commit made with hard coded data working. Next, I want to change this to call from an sql database made in postgres. I will add the initial SQL script to the repo. I need to use node.js to accomplish this communication
 
+Log 3/3
+18:05: Backend added, including server running on port 3000. There is no polling or sockets yet
+
+Next, I will look to add products under the food_types section
+
 
 
 
