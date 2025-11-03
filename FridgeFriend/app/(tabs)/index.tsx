@@ -2,19 +2,31 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { API_BASE_URL } from '../../config/apiConfig';
+import { useLocalSearchParams } from 'expo-router';
 
 //Table setup for fetch error catching
 //These types define the expected structure of the data fetched from the backend
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number };
-
+type UserProduct = {
+  product_id: number;
+  product_name: string;
+  store_name: string;
+  quantity: number;
+  nearest_expiry: string;
+};
 
 export default function App() {
+  //Get user ID passed from login
+  const { user_id } = useLocalSearchParams<{ user_id: string }>();
+
   //State initialisation. 
   //const [state, functionToUpdateState] = useState<type>(initialValue)
   const [categories, setCategories] = useState<Category[]>([]);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
+  const [userProducts, setUserProducts] = useState<UserProduct[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
   //Bootup GET request which retrieves category data and converts it to JSON
@@ -41,10 +53,31 @@ export default function App() {
     }
   };
 
-  //Unset selected category and clear any displayed food type data
+  //Fetch only the logged-in user's products belonging to the selected food type
+  const handleFoodTypePress = async (foodType: FoodType) => {
+    if (!user_id) return;
+    setLoading(true);
+    setSelectedFoodType(foodType);
+    try {
+      const res = await fetch(`${API_BASE_URL}/user/${user_id}/foodtype/${foodType.id}`);
+      const data = await res.json();
+      setUserProducts(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  //Unset selected food type or category and clear displayed data
   const handleBackPress = () => {
-    setSelectedCategory(null);
-    setFoodTypes([]);
+    if (selectedFoodType) {
+      setSelectedFoodType(null);
+      setUserProducts([]);
+    } else if (selectedCategory) {
+      setSelectedCategory(null);
+      setFoodTypes([]);
+    }
   };
 
   //////////////////////////////////////////////////////////////////////////////
@@ -63,24 +96,48 @@ export default function App() {
     </View>
   );
 
+  //Render the user's grouped products for a selected food type
+  const renderUserProducts = () => (
+    <View style={styles.grid}>
+      {userProducts.map((prod, index) => (
+        <View key={index} style={styles.productCard}>
+          <Text style={styles.productName}>{prod.product_name}</Text>
+          <Text style={styles.productDetails}>Store: {prod.store_name}</Text>
+          <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
+          <Text style={styles.productDetails}>Expires: {prod.nearest_expiry}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
   //////////////////////////////////////////////////////////////////////////////
 
   //Renders the App
-  //Dynamically updates the title depending on whether a category has been selected or not
+  //Dynamically updates the title depending on whether a category or food type has been selected
   //Shows a loading spinner while data is being fetched
   //If there's a selected category, render the related food types
+  //If a food type is selected, show the user's grouped products
   //Else (at startup or after back press), render the category buttons
   return (
     <View style={styles.container}>
       <Text style={styles.title}>
-        {selectedCategory ? `${selectedCategory.name} Types` : 'Select a Category'}
+        {selectedFoodType
+          ? `${selectedFoodType.name} (Your Items)`
+          : selectedCategory
+          ? `${selectedCategory.name} Types`
+          : 'Select a Category'}
       </Text>
 
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
       {!loading &&
-        (selectedCategory
-          ? renderButtons(foodTypes.map(ft => ft.name), () => {})
+        (selectedFoodType
+          ? renderUserProducts()
+          : selectedCategory
+          ? renderButtons(foodTypes.map(ft => ft.name), (name) => {
+              const ft = foodTypes.find(f => f.name === name);
+              if (ft) handleFoodTypePress(ft);
+            })
           : renderButtons(categories.map(cat => cat.name), (name) => {
               //Find the category object whose name matches the tapped button
               const cat = categories.find(c => c.name === name);
@@ -88,8 +145,8 @@ export default function App() {
               if (cat) handleCategoryPress(cat);
             }))}
 
-      {/* Show back button only when a category is selected */}
-      {selectedCategory && (
+      {/* Show back button only when a category or food type is selected */}
+      {(selectedCategory || selectedFoodType) && (
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
@@ -100,6 +157,7 @@ export default function App() {
   );
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////
 
 const styles = StyleSheet.create({
   container: {
@@ -133,6 +191,23 @@ const styles = StyleSheet.create({
     color: '#333',
     fontSize: 18,
     fontWeight: '600',
+  },
+  productCard: {
+    backgroundColor: '#fff',
+    width: 150,
+    borderRadius: 10,
+    padding: 10,
+    margin: 5,
+    alignItems: 'center',
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  productDetails: {
+    fontSize: 14,
+    color: '#555',
   },
   backButton: {
     marginTop: 20,
