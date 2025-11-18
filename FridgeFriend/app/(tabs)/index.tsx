@@ -1,8 +1,8 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { API_BASE_URL } from '../../config/apiConfig';
-import { useLocalSearchParams } from 'expo-router';
 
 //Table setup for fetch error catching
 //These types define the expected structure of the data fetched from the backend
@@ -19,6 +19,7 @@ type UserProduct = {
 export default function App() {
   //Get user ID passed from login
   const { user_id } = useLocalSearchParams<{ user_id: string }>();
+  const router = useRouter();  // <-- needed for navigation
 
   //State initialisation. 
   //const [state, functionToUpdateState] = useState<type>(initialValue)
@@ -80,6 +81,14 @@ export default function App() {
     }
   };
 
+  const handleScanPress = () => {
+    if (!user_id) return;
+    router.push({
+      pathname: "/BarcodeScanner",
+      params: { user_id: user_id },
+    });
+  };
+
   //////////////////////////////////////////////////////////////////////////////
 
   //Dynamically creates the buttons for categories or food types
@@ -128,6 +137,11 @@ export default function App() {
           : 'Select a Category'}
       </Text>
 
+      {/* Scan button always available */}
+      <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
+        <Text style={styles.scanButtonText}>📷 Scan Item</Text>
+      </TouchableOpacity>
+
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
       {!loading &&
@@ -172,6 +186,21 @@ const styles = StyleSheet.create({
     fontSize: 22,
     marginBottom: 20,
   },
+
+  // Scan button
+  scanButton: {
+    backgroundColor: '#ffffff',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  scanButtonText: {
+    color: '#663399',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
