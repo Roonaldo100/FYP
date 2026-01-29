@@ -1,7 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
-// Required by newer SDK typings
 Notifications.setNotificationHandler({
   handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
     shouldShowAlert: true,
@@ -40,11 +39,13 @@ export async function registerForLocalNotificationsAsync(): Promise<boolean> {
   }
 }
 
-export async function sendImmediateExpiryTestNotification(productName: string) {
+export async function sendExpiryNotification(productName: string, daysLeft: number) {
+  const daysText = daysLeft === 1 ? "1 day" : `${daysLeft} days`;
+
   return Notifications.scheduleNotificationAsync({
     content: {
       title: "FridgeFriend",
-      body: `${productName} is going to expire in 0 days.`,
+      body: `${productName} is going to expire in ${daysText}.`,
       sound: true,
     },
     trigger: null,

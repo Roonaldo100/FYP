@@ -92,10 +92,7 @@ app.get("/stores", async (req, res) => {
  */
 app.post("/scan", async (req, res) => {
   const { barcode } = req.body;
-
-  if (!barcode) {
-    return res.status(400).json({ found: false, message: "Missing barcode" });
-  }
+  if (!barcode) return res.status(400).json({ found: false, message: "Missing barcode" });
 
   try {
     // 1) Local DB lookup
@@ -124,52 +121,49 @@ app.post("/scan", async (req, res) => {
       );
 
       if (storeJoin.rows.length > 0) {
-        store_id = storeJoin.rows[0].store_id;
-        store_name = storeJoin.rows[0].store_name;
-      } else {
-        store_id = await getTescoStoreId();
-        store_name = "Tesco";
+        return res.json({
+          found: true,
+          product_id: product.id,
+          product_name: product.name,
+          store_id: storeJoin.rows[0].store_id,
+          store_name: storeJoin.rows[0].store_name,
+        });
       }
 
+      const tescoId = await getTescoStoreId();
       return res.json({
         found: true,
         product_id: product.id,
         product_name: product.name,
-        store_id,
-        store_name,
+        store_id: tescoId,
+        store_name: "Tesco",
       });
     }
 
-    // 2) OpenFoodFacts lookup
     const offRes = await fetch(
       `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`
     );
     const offData = await offRes.json();
 
-    if (!offData || offData.status === 0) {
-      return res.json({ found: false });
-    }
+    if (!offData || offData.status === 0) return res.json({ found: false });
 
-    const product_name =
+    const name =
       offData.product?.product_name ||
       offData.product?.generic_name ||
       "Unnamed Product";
 
-    // 3) Create product locally (IMPORTANT: ensure FK-safe food_type id)
-    const foodTypeId = await getDefaultFoodTypeId();
+    // IMPORTANT: choose a valid default food_type id in your DB
+    const defaultFoodTypeId = 1;
 
     const insertProduct = await pool.query(
-      `
-      INSERT INTO products (name, barcode, food_type)
-      VALUES ($1, $2, $3)
-      RETURNING id
-      `,
-      [product_name, barcode, foodTypeId]
+      `INSERT INTO products (name, barcode, food_type)
+       VALUES ($1, $2, $3)
+       RETURNING id`,
+      [name, barcode, defaultFoodTypeId]
     );
 
-    const product_id = insertProduct.rows[0].id;
+    const newProductId = insertProduct.rows[0].id;
 
-    // 4) Link to Tesco in product_store (if table exists / constraint matches)
     const tescoId = await getTescoStoreId();
     try {
       await pool.query(
@@ -178,31 +172,27 @@ app.post("/scan", async (req, res) => {
         VALUES ($1, $2, $3)
         ON CONFLICT (product_id, store_id) DO NOTHING
         `,
-        [product_id, tescoId, 0.0]
+        [newProductId, tescoId, 0.0]
       );
-    } catch (e) {
-      // Don’t break scanning if you don’t have product_store or conflict key differs
-      console.warn("product_store insert skipped:", e?.message ?? e);
-    }
+    } catch {}
 
-    // ✅ Return OLD SHAPE (what your scanner UI expects)
     return res.json({
       found: true,
-      product_id,
-      product_name,
+      product_id: newProductId,
+      product_name: name,
       store_id: tescoId,
       store_name: "Tesco",
     });
   } catch (err) {
     console.error("Scan error:", err);
-    return res
-      .status(500)
-      .json({ found: false, message: "Server error while scanning" });
+    res.status(500).json({ found: false, message: "Server error while scanning" });
   }
 });
 
 /**
- * POST: Add product to user inventory (notifications columns included)
+ * POST: Add product to user inventory
+ * - default expiry_period_days=0, notified=false
+ * - returns user_product_id AND days_left AND expiry_period_days
  */
 app.post("/user/addProduct", async (req, res) => {
   const { userId, productId, storeId, expiryDate } = req.body;
@@ -216,14 +206,18 @@ app.post("/user/addProduct", async (req, res) => {
       `
       INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
       VALUES ($1, $2, $3, $4, 0, false)
-      RETURNING id
+      RETURNING id, expiry_period_days,
+                (expiry_date::date - CURRENT_DATE) AS days_left
       `,
       [userId, productId, storeId, expiryDate]
     );
 
+    const row = inserted.rows[0];
     res.json({
       message: "Product added successfully",
-      user_product_id: inserted.rows[0].id,
+      user_product_id: row.id,
+      expiry_period_days: row.expiry_period_days,
+      days_left: Number(row.days_left),
     });
   } catch (err) {
     console.error("Add product error:", err);
@@ -260,7 +254,14 @@ app.post("/user_products/:id/markNotified", async (req, res) => {
 });
 
 /**
- * GET: Pending notifications (covers manual SQL inserts)
+ * ✅ GET: Pending notifications (DB decides!)
+ * Only returns rows where:
+ * - notified = false
+ * - days_left <= expiry_period_days
+ *
+ * This means:
+ * - expiry_period_days = 0 -> only notify when days_left <= 0
+ * - expiry_period_days = 1 -> notify when days_left <= 1 (NOT immediately unless within 1 day)
  */
 app.get("/user/:userId/pendingNotifications", async (req, res) => {
   const { userId } = req.params;
@@ -270,28 +271,35 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
       `
       SELECT
         up.id AS user_product_id,
-        p.name AS product_name
+        p.name AS product_name,
+        up.expiry_period_days,
+        (up.expiry_date::date - CURRENT_DATE) AS days_left
       FROM user_products up
       JOIN products p ON p.id = up.product_id
       WHERE up.user_id = $1
         AND up.notified = false
+        AND (up.expiry_date::date - CURRENT_DATE) <= up.expiry_period_days
       ORDER BY up.id ASC
       LIMIT 50
       `,
       [userId]
     );
 
-    res.json(r.rows);
+    // Ensure days_left is a number in JSON
+    const rows = r.rows.map(row => ({
+      ...row,
+      days_left: Number(row.days_left),
+    }));
+
+    res.json(rows);
   } catch (err) {
     console.error("Pending notifications error:", err);
-    res
-      .status(500)
-      .json({ message: "Server error loading pending notifications" });
+    res.status(500).json({ message: "Server error loading pending notifications" });
   }
 });
 
 /**
- * GET: User products by food type (used by Home)
+ * GET: User products by food type
  */
 app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
   const { userId, foodTypeId } = req.params;

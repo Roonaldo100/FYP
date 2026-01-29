@@ -11,9 +11,9 @@ import {
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import {
-  registerForLocalNotificationsAsync,
-  sendImmediateExpiryTestNotification,
+import { 
+  registerForLocalNotificationsAsync, 
+  sendExpiryNotification
 } from "../lib/notifications";
 
 export default function BarcodeScanner() {
@@ -101,16 +101,22 @@ export default function BarcodeScanner() {
               const inserted = await addResp.json();
               const userProductId = inserted.user_product_id;
 
-              // TEST notification: "expires in 0 days"
-              const ok = await registerForLocalNotificationsAsync();
-              if (ok) {
-                await sendImmediateExpiryTestNotification(data.product_name);
+              // DB-driven decision + message
+              const daysLeft: number = Number(inserted.days_left);
+              const expiryPeriodDays: number = Number(inserted.expiry_period_days);
 
-                if (userProductId) {
-                  await fetch(
-                    `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
-                    { method: "POST", headers: { "Content-Type": "application/json" } }
-                  );
+              // Only notify if DB says it is due (days_left <= expiry_period_days)
+              if (daysLeft <= expiryPeriodDays) {
+                const ok = await registerForLocalNotificationsAsync();
+                if (ok) {
+                  await sendExpiryNotification(data.product_name, daysLeft);
+
+                  if (userProductId) {
+                    await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                    });
+                  }
                 }
               }
 
@@ -168,16 +174,8 @@ export default function BarcodeScanner() {
 }
 
 const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  scanAgainContainer: {
-    position: "absolute",
-    bottom: 40,
-    alignSelf: "center",
-  },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  scanAgainContainer: { position: "absolute", bottom: 40, alignSelf: "center" },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#0008",

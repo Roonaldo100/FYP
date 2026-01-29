@@ -1,0 +1,767 @@
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { API_BASE_URL } from "../../config/apiConfig";
+import { registerForLocalNotificationsAsync, sendExpiryNotification } from "../../lib/notifications";
+
+type Category = { id: number; name: string };
+type FoodType = { id: number; name: string; category: number };
+type UserProduct = {
+  product_id: number;
+  product_name: string;
+  store_name: string;
+  quantity: number;
+  nearest_expiry: string;
+};
+
+export default function Home() {
+  const { user_id } = useLocalSearchParams<{ user_id?: string }>();
+  const router = useRouter();
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
+  const [userProducts, setUserProducts] = useState<UserProduct[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/categories`)
+      .then((res) => res.json())
+      .then(setCategories)
+      .catch(console.error);
+  }, []);
+
+  const pollPendingNotifications = useCallback(async () => {
+    if (!user_id) return;
+
+    const ok = await registerForLocalNotificationsAsync();
+    if (!ok) return;
+
+    try {
+      const resp = await fetch(`${API_BASE_URL}/user/${user_id}/pendingNotifications`);
+      if (!resp.ok) return;
+
+      const rows: { user_product_id: number; product_name: string; days_left: number }[] =
+        await resp.json();
+
+      for (const row of rows) {
+        await sendExpiryNotification(row.product_name, Number(row.days_left));
+
+        await fetch(`${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    } catch (e) {
+      console.error("Pending notification poll error:", e);
+    }
+  }, [user_id]);
+
+  // runs when you come back to Home
+  useFocusEffect(
+    useCallback(() => {
+      pollPendingNotifications();
+    }, [pollPendingNotifications])
+  );
+
+  const handleCategoryPress = async (category: Category) => {
+    setLoading(true);
+    setSelectedCategory(category);
+    try {
+      const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food`);
+      setFoodTypes(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFoodTypePress = async (foodType: FoodType) => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    setLoading(true);
+    setSelectedFoodType(foodType);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/user/${user_id}/foodtype/${foodType.id}`);
+      setUserProducts(await res.json());
+
+      // ✅ IMPORTANT: poll here too (covers your “back then re-enter strawberries” case)
+      await pollPendingNotifications();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBackPress = async () => {
+    if (selectedFoodType) {
+      setSelectedFoodType(null);
+      setUserProducts([]);
+    } else if (selectedCategory) {
+      setSelectedCategory(null);
+      setFoodTypes([]);
+    }
+
+    // optional: also poll on back
+    await pollPendingNotifications();
+  };
+
+  const handleScanPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    router.push({ pathname: "/BarcodeScanner", params: { user_id: String(user_id) } });
+  };
+
+  // ...keep your render code the same...
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>
+        {selectedFoodType
+          ? `${selectedFoodType.name} (Your Items)`
+          : selectedCategory
+          ? `${selectedCategory.name} Types`
+          : "Select a Category"}
+      </Text>
+
+      <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
+        <Text style={styles.scanButtonText}>📷 Scan Item</Text>
+      </TouchableOpacity>
+
+      {loading && <ActivityIndicator size="large" color="#fff" />}
+
+      {/* your existing button rendering remains unchanged */}
+
+      {(selectedCategory || selectedFoodType) && (
+        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+          <Text style={styles.backButtonText}>← Back</Text>
+        </TouchableOpacity>
+      )}
+
+      <StatusBar style="auto" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#663399", alignItems: "center", justifyContent: "center", padding: 20 },
+  title: { color: "white", fontSize: 22, marginBottom: 20 },
+  scanButton: { backgroundColor: "#fff", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, marginBottom: 15 },
+  scanButtonText: { color: "#663399", fontWeight: "bold", fontSize: 16 },
+  backButton: { marginTop: 20, padding: 10, backgroundColor: "#fff", borderRadius: 8 },
+  backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
+});
+
+import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Button,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { API_BASE_URL } from "../config/apiConfig";
+
+import { 
+  registerForLocalNotificationsAsync, 
+  sendExpiryNotification
+} from "../lib/notifications";
+
+export default function BarcodeScanner() {
+  const { user_id } = useLocalSearchParams<{ user_id?: string }>();
+  const router = useRouter();
+
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Request camera permission on load
+  useEffect(() => {
+    if (!permission) return;
+    if (!permission.granted) requestPermission();
+  }, [permission]);
+
+  // Pre-register local notifications (so the first notify works cleanly)
+  useEffect(() => {
+    registerForLocalNotificationsAsync().catch(() => {});
+  }, []);
+
+  const handleScanned = async (result: BarcodeScanningResult) => {
+    if (scanned) return;
+
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    setScanned(true);
+
+    const barcode = result.data;
+    console.log("Scanned barcode:", barcode);
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barcode }),
+      });
+
+      const data = await response.json();
+      console.log("Scan response:", data);
+
+      if (!data.found) {
+        Alert.alert("Not Found", "This barcode is not recognized.");
+        setScanned(false);
+        return;
+      }
+
+      // Confirm add
+      Alert.alert(
+        "Product Found",
+        `Product: ${data.product_name}\nStore: ${data.store_name}`,
+        [
+          { text: "Cancel", onPress: () => setScanned(false), style: "cancel" },
+          {
+            text: "Add Item",
+            onPress: async () => {
+              const defaultExpiry = new Date();
+              defaultExpiry.setDate(defaultExpiry.getDate() + 5);
+              const expiryDate = defaultExpiry.toISOString().split("T")[0];
+
+              // Insert into user_products
+              const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId: user_id,
+                  productId: data.product_id,
+                  storeId: data.store_id,
+                  expiryDate,
+                }),
+              });
+
+              if (!addResp.ok) {
+                Alert.alert("Error", "Failed to add product.");
+                setScanned(false);
+                return;
+              }
+
+              const inserted = await addResp.json();
+              const userProductId = inserted.user_product_id;
+
+              // DB-driven decision + message
+              const daysLeft: number = Number(inserted.days_left);
+              const expiryPeriodDays: number = Number(inserted.expiry_period_days);
+
+              // Only notify if DB says it is due (days_left <= expiry_period_days)
+              if (daysLeft <= expiryPeriodDays) {
+                const ok = await registerForLocalNotificationsAsync();
+                if (ok) {
+                  await sendExpiryNotification(data.product_name, daysLeft);
+
+                  if (userProductId) {
+                    await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                    });
+                  }
+                }
+              }
+
+              Alert.alert("Added!", "Item added to your fridge.");
+              router.back();
+            },
+          },
+        ]
+      );
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Unable to process barcode.");
+      setScanned(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Permission states
+  if (!permission) return <Text>Requesting camera permission…</Text>;
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.center}>
+        <Text>No access to camera.</Text>
+        <Button title="Grant Permission" onPress={requestPermission} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      )}
+
+      <CameraView
+        style={StyleSheet.absoluteFill}
+        facing="back"
+        barcodeScannerSettings={{
+          barcodeTypes: ["ean13", "ean8", "qr", "upc_a", "upc_e"],
+        }}
+        onBarcodeScanned={scanned ? undefined : handleScanned}
+      />
+
+      {scanned && (
+        <View style={styles.scanAgainContainer}>
+          <Button title="Scan Again" onPress={() => setScanned(false)} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  scanAgainContainer: { position: "absolute", bottom: 40, alignSelf: "center" },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#0008",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+});
+
+import cors from "cors";
+import express from "express";
+import fetch from "node-fetch";
+import pool from "./db.js";
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+/**
+ * Helpers
+ */
+async function getTescoStoreId() {
+  try {
+    const r = await pool.query(
+      `SELECT id FROM stores WHERE LOWER(name) = 'tesco' LIMIT 1`
+    );
+    if (r.rows.length > 0) return r.rows[0].id;
+  } catch (e) {
+    console.warn("getTescoStoreId error:", e?.message ?? e);
+  }
+  return 1; // fallback
+}
+
+async function getDefaultFoodTypeId() {
+  // IMPORTANT: avoids FK errors if food_type 1 doesn't exist
+  try {
+    const r = await pool.query(`SELECT id FROM food_types ORDER BY id LIMIT 1`);
+    if (r.rows.length > 0) return r.rows[0].id;
+  } catch (e) {
+    console.warn("getDefaultFoodTypeId error:", e?.message ?? e);
+  }
+  return 1; // last resort fallback (but ideally the query works)
+}
+
+/**
+ * GET: Categories
+ */
+app.get("/categories", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM categories ORDER BY id");
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Categories error:", err);
+    res.status(500).json({ message: "Server error loading categories" });
+  }
+});
+
+/**
+ * GET: Food types by category
+ */
+app.get("/categories/:id/food", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      "SELECT * FROM food_types WHERE category = $1 ORDER BY id",
+      [id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Food types error:", err);
+    res.status(500).json({ message: "Server error loading food types" });
+  }
+});
+
+/**
+ * GET: Stores
+ */
+app.get("/stores", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM stores ORDER BY id");
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Store fetch error:", err);
+    res.status(500).json({ message: "Server error loading stores" });
+  }
+});
+
+/**
+ * POST: Scan barcode
+ *
+ * ALWAYS returns the same shape used by the old working scanner:
+ * {
+ *   found: true,
+ *   product_id,
+ *   product_name,
+ *   store_id,
+ *   store_name
+ * }
+ *
+ * If OFF finds it but it's not in DB, we create it locally and return ids.
+ */
+app.post("/scan", async (req, res) => {
+  const { barcode } = req.body;
+  if (!barcode) return res.status(400).json({ found: false, message: "Missing barcode" });
+
+  try {
+    // 1) Local DB lookup
+    const localProduct = await pool.query(
+      `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
+      [barcode]
+    );
+
+    if (localProduct.rows.length > 0) {
+      const product = localProduct.rows[0];
+
+      // Try to find a store via product_store, else Tesco fallback.
+      let store_id;
+      let store_name;
+
+      const storeJoin = await pool.query(
+        `
+        SELECT s.id AS store_id, s.name AS store_name
+        FROM product_store ps
+        JOIN stores s ON s.id = ps.store_id
+        WHERE ps.product_id = $1
+        ORDER BY s.id
+        LIMIT 1
+        `,
+        [product.id]
+      );
+
+      if (storeJoin.rows.length > 0) {
+        return res.json({
+          found: true,
+          product_id: product.id,
+          product_name: product.name,
+          store_id: storeJoin.rows[0].store_id,
+          store_name: storeJoin.rows[0].store_name,
+        });
+      }
+
+      const tescoId = await getTescoStoreId();
+      return res.json({
+        found: true,
+        product_id: product.id,
+        product_name: product.name,
+        store_id: tescoId,
+        store_name: "Tesco",
+      });
+    }
+
+    const offRes = await fetch(
+      `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`
+    );
+    const offData = await offRes.json();
+
+    if (!offData || offData.status === 0) return res.json({ found: false });
+
+    const name =
+      offData.product?.product_name ||
+      offData.product?.generic_name ||
+      "Unnamed Product";
+
+    // IMPORTANT: choose a valid default food_type id in your DB
+    const defaultFoodTypeId = 1;
+
+    const insertProduct = await pool.query(
+      `INSERT INTO products (name, barcode, food_type)
+       VALUES ($1, $2, $3)
+       RETURNING id`,
+      [name, barcode, defaultFoodTypeId]
+    );
+
+    const newProductId = insertProduct.rows[0].id;
+
+    const tescoId = await getTescoStoreId();
+    try {
+      await pool.query(
+        `
+        INSERT INTO product_store (product_id, store_id, price)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (product_id, store_id) DO NOTHING
+        `,
+        [newProductId, tescoId, 0.0]
+      );
+    } catch {}
+
+    return res.json({
+      found: true,
+      product_id: newProductId,
+      product_name: name,
+      store_id: tescoId,
+      store_name: "Tesco",
+    });
+  } catch (err) {
+    console.error("Scan error:", err);
+    res.status(500).json({ found: false, message: "Server error while scanning" });
+  }
+});
+
+/**
+ * POST: Add product to user inventory
+ * - default expiry_period_days=0, notified=false
+ * - returns user_product_id AND days_left AND expiry_period_days
+ */
+app.post("/user/addProduct", async (req, res) => {
+  const { userId, productId, storeId, expiryDate } = req.body;
+
+  if (!userId || !productId || !storeId || !expiryDate) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    const inserted = await pool.query(
+      `
+      INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
+      VALUES ($1, $2, $3, $4, 0, false)
+      RETURNING id, expiry_period_days,
+                (expiry_date::date - CURRENT_DATE) AS days_left
+      `,
+      [userId, productId, storeId, expiryDate]
+    );
+
+    const row = inserted.rows[0];
+    res.json({
+      message: "Product added successfully",
+      user_product_id: row.id,
+      expiry_period_days: row.expiry_period_days,
+      days_left: Number(row.days_left),
+    });
+  } catch (err) {
+    console.error("Add product error:", err);
+    res.status(500).json({ message: "Server error adding product" });
+  }
+});
+
+/**
+ * POST: Mark a user_products row as notified=true
+ */
+app.post("/user_products/:id/markNotified", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const updated = await pool.query(
+      `
+      UPDATE user_products
+      SET notified = true
+      WHERE id = $1
+      RETURNING id, notified
+      `,
+      [id]
+    );
+
+    if (updated.rows.length === 0) {
+      return res.status(404).json({ message: "user_products row not found" });
+    }
+
+    res.json({ message: "Marked as notified", row: updated.rows[0] });
+  } catch (err) {
+    console.error("Mark notified error:", err);
+    res.status(500).json({ message: "Server error marking notified" });
+  }
+});
+
+/**
+ * ✅ GET: Pending notifications (DB decides!)
+ * Only returns rows where:
+ * - notified = false
+ * - days_left <= expiry_period_days
+ *
+ * This means:
+ * - expiry_period_days = 0 -> only notify when days_left <= 0
+ * - expiry_period_days = 1 -> notify when days_left <= 1 (NOT immediately unless within 1 day)
+ */
+app.get("/user/:userId/pendingNotifications", async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT
+        up.id AS user_product_id,
+        p.name AS product_name,
+        up.expiry_period_days,
+        (up.expiry_date::date - CURRENT_DATE) AS days_left
+      FROM user_products up
+      JOIN products p ON p.id = up.product_id
+      WHERE up.user_id = $1
+        AND up.notified = false
+        AND (up.expiry_date::date - CURRENT_DATE) <= up.expiry_period_days
+      ORDER BY up.id ASC
+      LIMIT 50
+      `,
+      [userId]
+    );
+
+    // Ensure days_left is a number in JSON
+    const rows = r.rows.map(row => ({
+      ...row,
+      days_left: Number(row.days_left),
+    }));
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Pending notifications error:", err);
+    res.status(500).json({ message: "Server error loading pending notifications" });
+  }
+});
+
+/**
+ * GET: User products by food type
+ */
+app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
+  const { userId, foodTypeId } = req.params;
+
+  try {
+    const q = `
+      SELECT
+        p.id AS product_id,
+        p.name AS product_name,
+        s.name AS store_name,
+        COUNT(up.id) AS quantity,
+        MIN(up.expiry_date) AS nearest_expiry
+      FROM user_products up
+      JOIN products p ON p.id = up.product_id
+      JOIN stores s ON s.id = up.store_id
+      WHERE up.user_id = $1 AND p.food_type = $2
+      GROUP BY p.id, p.name, s.name
+      ORDER BY p.name;
+    `;
+
+    const result = await pool.query(q, [userId, foodTypeId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("User product fetch error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * LOGIN
+ */
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+
+  try {
+    const r = await pool.query(
+      "SELECT * FROM users WHERE username = $1 AND password = $2",
+      [username, password]
+    );
+
+    if (r.rows.length === 0) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    res.json({
+      user_id: r.rows[0].id,
+      username: r.rows[0].username,
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.listen(3000, () => console.log("Server running on port 3000"));
+
+import * as Notifications from "expo-notifications";
+import { Platform } from "react-native";
+
+Notifications.setNotificationHandler({
+  handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+let channelReady = false;
+
+export async function registerForLocalNotificationsAsync(): Promise<boolean> {
+  try {
+    if (Platform.OS === "android" && !channelReady) {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "default",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+      });
+      channelReady = true;
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    return finalStatus === "granted";
+  } catch (e) {
+    console.error("Notification setup error:", e);
+    return false;
+  }
+}
+
+export async function sendExpiryNotification(productName: string, daysLeft: number) {
+  const daysText = daysLeft === 1 ? "1 day" : `${daysLeft} days`;
+
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: "FridgeFriend",
+      body: `${productName} is going to expire in ${daysText}.`,
+      sound: true,
+    },
+    trigger: null,
+  });
+}
+
+import { Redirect } from "expo-router";
+
+export default function Index() {
+  return <Redirect href="/LoginScreen" />;
+}
+
