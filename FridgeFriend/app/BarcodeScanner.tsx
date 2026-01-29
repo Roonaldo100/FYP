@@ -1,11 +1,23 @@
-import { CameraView, useCameraPermissions, BarcodeScanningResult } from "expo-camera";
+import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { View, Text, Button, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Button,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import {
+  registerForLocalNotificationsAsync,
+  sendImmediateExpiryTestNotification,
+} from "../lib/notifications";
+
 export default function BarcodeScanner() {
-  const { user_id } = useLocalSearchParams<{ user_id: string }>();
+  const { user_id } = useLocalSearchParams<{ user_id?: string }>();
   const router = useRouter();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -18,9 +30,20 @@ export default function BarcodeScanner() {
     if (!permission.granted) requestPermission();
   }, [permission]);
 
-  // Handle the barcode result
+  // Pre-register local notifications (so the first notify works cleanly)
+  useEffect(() => {
+    registerForLocalNotificationsAsync().catch(() => {});
+  }, []);
+
   const handleScanned = async (result: BarcodeScanningResult) => {
     if (scanned) return;
+
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
     setScanned(true);
 
     const barcode = result.data;
@@ -44,7 +67,7 @@ export default function BarcodeScanner() {
         return;
       }
 
-      // Ask user if they want to add this item
+      // Confirm add
       Alert.alert(
         "Product Found",
         `Product: ${data.product_name}\nStore: ${data.store_name}`,
@@ -53,13 +76,12 @@ export default function BarcodeScanner() {
           {
             text: "Add Item",
             onPress: async () => {
-              // TEMP expiry date (user will enter later)
               const defaultExpiry = new Date();
               defaultExpiry.setDate(defaultExpiry.getDate() + 5);
-
               const expiryDate = defaultExpiry.toISOString().split("T")[0];
 
-              await fetch(`${API_BASE_URL}/user/addProduct`, {
+              // Insert into user_products
+              const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -70,25 +92,45 @@ export default function BarcodeScanner() {
                 }),
               });
 
+              if (!addResp.ok) {
+                Alert.alert("Error", "Failed to add product.");
+                setScanned(false);
+                return;
+              }
+
+              const inserted = await addResp.json();
+              const userProductId = inserted.user_product_id;
+
+              // TEST notification: "expires in 0 days"
+              const ok = await registerForLocalNotificationsAsync();
+              if (ok) {
+                await sendImmediateExpiryTestNotification(data.product_name);
+
+                if (userProductId) {
+                  await fetch(
+                    `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
+                    { method: "POST", headers: { "Content-Type": "application/json" } }
+                  );
+                }
+              }
+
               Alert.alert("Added!", "Item added to your fridge.");
-              router.back(); // return to the Fridge screen
+              router.back();
             },
           },
         ]
       );
-
     } catch (err) {
       console.error(err);
       Alert.alert("Error", "Unable to process barcode.");
+      setScanned(false);
     } finally {
       setLoading(false);
     }
   };
 
   // Permission states
-  if (!permission) {
-    return <Text>Requesting camera permission…</Text>;
-  }
+  if (!permission) return <Text>Requesting camera permission…</Text>;
 
   if (!permission.granted) {
     return (
@@ -124,8 +166,6 @@ export default function BarcodeScanner() {
     </View>
   );
 }
-
-//////////////////////////////////////////////////////////////////////////////////////
 
 const styles = StyleSheet.create({
   center: {
