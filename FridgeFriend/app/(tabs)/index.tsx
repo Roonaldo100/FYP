@@ -78,6 +78,7 @@ export default function Home() {
         user_product_id: number;
         product_name: string;
         days_left: number;
+        effective_period_days: number;
       }[] = await resp.json();
 
       for (const row of rows) {
@@ -186,7 +187,10 @@ export default function Home() {
     return "Select a Category";
   }, [selectedCategory, selectedFoodType]);
 
-  const renderButtons = (items: { key: string; label: string }[], onPress: (key: string) => void) => (
+  const renderButtons = (
+    items: { key: string; label: string }[],
+    onPress: (key: string) => void
+  ) => (
     <View style={styles.grid}>
       {items.map((item) => (
         <TouchableOpacity
@@ -308,6 +312,11 @@ const styles = StyleSheet.create({
   },
   productName: { fontSize: 16, fontWeight: "bold", color: "#333" },
   productDetails: { fontSize: 14, color: "#555" },
-  backButton: { marginTop: 20, padding: 10, backgroundColor: "#fff", borderRadius: 8 },
+  backButton: {
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+  },
   backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
 });

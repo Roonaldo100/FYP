@@ -67,7 +67,6 @@ export default function BarcodeScanner() {
         return;
       }
 
-      // Confirm add
       Alert.alert(
         "Product Found",
         `Product: ${data.product_name}\nStore: ${data.store_name}`,
@@ -93,6 +92,8 @@ export default function BarcodeScanner() {
               });
 
               if (!addResp.ok) {
+                const txt = await addResp.text().catch(() => "");
+                console.error("Add product failed:", addResp.status, txt);
                 Alert.alert("Error", "Failed to add product.");
                 setScanned(false);
                 return;
@@ -101,21 +102,20 @@ export default function BarcodeScanner() {
               const inserted = await addResp.json();
               const userProductId = inserted.user_product_id;
 
-              // DB-driven decision + message
               const daysLeft: number = Number(inserted.days_left);
-              const expiryPeriodDays: number = Number(inserted.expiry_period_days);
+              const effectivePeriodDays: number = Number(inserted.effective_period_days);
 
-              // Only notify if DB says it is due (days_left <= expiry_period_days)
-              if (daysLeft <= expiryPeriodDays) {
+              // Only notify if DB says it is due
+              if (daysLeft <= effectivePeriodDays) {
                 const ok = await registerForLocalNotificationsAsync();
                 if (ok) {
                   await sendExpiryNotification(data.product_name, daysLeft);
 
                   if (userProductId) {
-                    await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                    });
+                    await fetch(
+                      `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
+                      { method: "POST", headers: { "Content-Type": "application/json" } }
+                    );
                   }
                 }
               }

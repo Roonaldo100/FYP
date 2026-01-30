@@ -22,17 +22,6 @@ async function getTescoStoreId() {
   return 1; // fallback
 }
 
-async function getDefaultFoodTypeId() {
-  // IMPORTANT: avoids FK errors if food_type 1 doesn't exist
-  try {
-    const r = await pool.query(`SELECT id FROM food_types ORDER BY id LIMIT 1`);
-    if (r.rows.length > 0) return r.rows[0].id;
-  } catch (e) {
-    console.warn("getDefaultFoodTypeId error:", e?.message ?? e);
-  }
-  return 1; // last resort fallback (but ideally the query works)
-}
-
 /**
  * GET: Categories
  */
@@ -105,9 +94,6 @@ app.post("/scan", async (req, res) => {
       const product = localProduct.rows[0];
 
       // Try to find a store via product_store, else Tesco fallback.
-      let store_id;
-      let store_name;
-
       const storeJoin = await pool.query(
         `
         SELECT s.id AS store_id, s.name AS store_name
@@ -192,7 +178,7 @@ app.post("/scan", async (req, res) => {
 /**
  * POST: Add product to user inventory
  * - default expiry_period_days=0, notified=false
- * - returns user_product_id AND days_left AND expiry_period_days
+ * - returns user_product_id AND days_left AND effective_period_days
  */
 app.post("/user/addProduct", async (req, res) => {
   const { userId, productId, storeId, expiryDate } = req.body;
@@ -202,22 +188,49 @@ app.post("/user/addProduct", async (req, res) => {
   }
 
   try {
+    // Insert row (expiry_period_days defaults to 0 meaning "use user default")
     const inserted = await pool.query(
       `
       INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
       VALUES ($1, $2, $3, $4, 0, false)
-      RETURNING id, expiry_period_days,
-                (expiry_date::date - CURRENT_DATE) AS days_left
+      RETURNING id, expiry_period_days, expiry_date
       `,
       [userId, productId, storeId, expiryDate]
     );
 
-    const row = inserted.rows[0];
+    const upRow = inserted.rows[0];
+
+    // Get user's notification preference
+    const userPrefRes = await pool.query(
+      `SELECT notification_period_preference FROM users WHERE id = $1 LIMIT 1`,
+      [userId]
+    );
+
+    const userPref = userPrefRes.rows.length
+      ? Number(userPrefRes.rows[0].notification_period_preference ?? 0)
+      : 0;
+
+    const daysLeftRes = await pool.query(
+      `SELECT ($1::date - CURRENT_DATE) AS days_left`,
+      [upRow.expiry_date]
+    );
+
+    const days_left = Number(daysLeftRes.rows[0].days_left);
+
+    const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
+
+    // Override rule:
+    // - if expiry_period_days > 0 -> use it
+    // - else -> use user default
+    const effective_period_days =
+      expiry_period_days > 0 ? expiry_period_days : userPref;
+
     res.json({
       message: "Product added successfully",
-      user_product_id: row.id,
-      expiry_period_days: row.expiry_period_days,
-      days_left: Number(row.days_left),
+      user_product_id: upRow.id,
+      expiry_period_days,
+      effective_period_days,
+      days_left,
     });
   } catch (err) {
     console.error("Add product error:", err);
@@ -254,14 +267,15 @@ app.post("/user_products/:id/markNotified", async (req, res) => {
 });
 
 /**
- * ✅ GET: Pending notifications (DB decides!)
- * Only returns rows where:
- * - notified = false
- * - days_left <= expiry_period_days
+ * GET: Pending notifications (DB decides using user preference + per-item override)
  *
- * This means:
- * - expiry_period_days = 0 -> only notify when days_left <= 0
- * - expiry_period_days = 1 -> notify when days_left <= 1 (NOT immediately unless within 1 day)
+ * Effective period:
+ * - if up.expiry_period_days > 0 -> use up.expiry_period_days
+ * - else -> use u.notification_period_preference
+ *
+ * Only returns rows where:
+ * - up.notified = false
+ * - days_left <= effective_period_days
  */
 app.get("/user/:userId/pendingNotifications", async (req, res) => {
   const { userId } = req.params;
@@ -272,29 +286,33 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
       SELECT
         up.id AS user_product_id,
         p.name AS product_name,
-        up.expiry_period_days,
-        (up.expiry_date::date - CURRENT_DATE) AS days_left
-      FROM user_products up
-      JOIN products p ON p.id = up.product_id
-      WHERE up.user_id = $1
-        AND up.notified = false
-        AND (up.expiry_date::date - CURRENT_DATE) <= up.expiry_period_days
-      ORDER BY up.id ASC
-      LIMIT 50
+        (up.expiry_date::date - CURRENT_DATE) AS days_left,
+        COALESCE(up.expiry_period_days, u.notification_period_preference, 0) AS effective_period_days
+    FROM user_products up
+    JOIN products p ON p.id = up.product_id
+    JOIN users u ON u.id = up.user_id
+    WHERE up.user_id = $1
+      AND up.notified = false
+      AND (up.expiry_date::date - CURRENT_DATE)
+          <= COALESCE(up.expiry_period_days, u.notification_period_preference, 0)
+    ORDER BY up.id ASC
+    LIMIT 50;
       `,
       [userId]
     );
 
-    // Ensure days_left is a number in JSON
-    const rows = r.rows.map(row => ({
+    const rows = r.rows.map((row) => ({
       ...row,
       days_left: Number(row.days_left),
+      effective_period_days: Number(row.effective_period_days),
     }));
 
     res.json(rows);
   } catch (err) {
     console.error("Pending notifications error:", err);
-    res.status(500).json({ message: "Server error loading pending notifications" });
+    res
+      .status(500)
+      .json({ message: "Server error loading pending notifications" });
   }
 });
 
