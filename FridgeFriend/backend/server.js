@@ -77,11 +77,15 @@ app.get("/stores", async (req, res) => {
  *   store_name
  * }
  *
- * If OFF finds it but it's not in DB, we create it locally and return ids.
+ * If OFF finds it but it's not in DB, we DO NOT create it locally anymore.
+ * Instead, we return needs_classification=true so the app can ask the user
+ * to choose Category + Food Type before creating the product.
  */
 app.post("/scan", async (req, res) => {
   const { barcode } = req.body;
-  if (!barcode) return res.status(400).json({ found: false, message: "Missing barcode" });
+  if (!barcode) {
+    return res.status(400).json({ found: false, message: "Missing barcode" });
+  }
 
   try {
     // 1) Local DB lookup
@@ -126,6 +130,7 @@ app.post("/scan", async (req, res) => {
       });
     }
 
+    // 2) Not in local DB, try Open Food Facts
     const offRes = await fetch(
       `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`
     );
@@ -138,19 +143,74 @@ app.post("/scan", async (req, res) => {
       offData.product?.generic_name ||
       "Unnamed Product";
 
-    // IMPORTANT: choose a valid default food_type id in your DB
-    const defaultFoodTypeId = 1;
+    const tescoId = await getTescoStoreId();
+
+    // New behaviour: let the client classify the product before creating it in DB
+    return res.json({
+      found: true,
+      product_id: null,
+      product_name: name,
+      store_id: tescoId,
+      store_name: "Tesco",
+      needs_classification: true,
+      barcode,
+    });
+  } catch (err) {
+    console.error("Scan error:", err);
+    res.status(500).json({ found: false, message: "Server error while scanning" });
+  }
+});
+
+/**
+ * POST: Create a product after user classification (Category + Food Type chosen)
+ * Body: { name, barcode, foodTypeId, storeId }
+ *
+ * Returns: { product_id, product_name, store_id, store_name }
+ */
+app.post("/products/create", async (req, res) => {
+  const { name, barcode, foodTypeId, storeId } = req.body;
+
+  if (!name || !barcode || !foodTypeId || !storeId) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    // Ensure the food type exists
+    const ft = await pool.query(`SELECT id FROM food_types WHERE id = $1 LIMIT 1`, [
+      foodTypeId,
+    ]);
+    if (ft.rows.length === 0) {
+      return res.status(400).json({ message: "Invalid food type" });
+    }
+
+    // Prevent duplicates if two users classify the same barcode at the same time
+    const existing = await pool.query(
+      `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
+      [barcode]
+    );
+    if (existing.rows.length > 0) {
+      const storeNameRes = await pool.query(
+        `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
+        [storeId]
+      );
+      return res.json({
+        product_id: existing.rows[0].id,
+        product_name: existing.rows[0].name,
+        store_id: storeId,
+        store_name: storeNameRes.rows[0]?.name ?? "Unknown",
+      });
+    }
 
     const insertProduct = await pool.query(
       `INSERT INTO products (name, barcode, food_type)
        VALUES ($1, $2, $3)
        RETURNING id`,
-      [name, barcode, defaultFoodTypeId]
+      [name, barcode, foodTypeId]
     );
 
     const newProductId = insertProduct.rows[0].id;
 
-    const tescoId = await getTescoStoreId();
+    // Attach store relationship (keeps your existing design)
     try {
       await pool.query(
         `
@@ -158,20 +218,24 @@ app.post("/scan", async (req, res) => {
         VALUES ($1, $2, $3)
         ON CONFLICT (product_id, store_id) DO NOTHING
         `,
-        [newProductId, tescoId, 0.0]
+        [newProductId, storeId, 0.0]
       );
     } catch {}
 
+    const storeNameRes = await pool.query(
+      `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
+      [storeId]
+    );
+
     return res.json({
-      found: true,
       product_id: newProductId,
       product_name: name,
-      store_id: tescoId,
-      store_name: "Tesco",
+      store_id: storeId,
+      store_name: storeNameRes.rows[0]?.name ?? "Unknown",
     });
   } catch (err) {
-    console.error("Scan error:", err);
-    res.status(500).json({ found: false, message: "Server error while scanning" });
+    console.error("Create product error:", err);
+    res.status(500).json({ message: "Server error creating product" });
   }
 });
 

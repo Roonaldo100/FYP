@@ -67,6 +67,22 @@ export default function BarcodeScanner() {
         return;
       }
 
+      // If product exists in OFF but not in your DB, route to classification UI
+      if (data.needs_classification) {
+        setLoading(false);
+        router.push({
+          pathname: "/NewProductClassification",
+          params: {
+            user_id: String(user_id),
+            barcode: String(data.barcode ?? barcode),
+            product_name: String(data.product_name ?? "Unnamed Product"),
+            store_id: String(data.store_id),
+            store_name: String(data.store_name ?? "Unknown"),
+          },
+        });
+        return;
+      }
+
       Alert.alert(
         "Product Found",
         `Product: ${data.product_name}\nStore: ${data.store_name}`,
