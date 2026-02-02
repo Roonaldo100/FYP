@@ -396,6 +396,22 @@ export default function BarcodeScanner() {
         return;
       }
 
+      // If product exists in OFF but not in your DB, route to classification UI
+      if (data.needs_classification) {
+        setLoading(false);
+        router.push({
+          pathname: "/NewProductClassification",
+          params: {
+            user_id: String(user_id),
+            barcode: String(data.barcode ?? barcode),
+            product_name: String(data.product_name ?? "Unnamed Product"),
+            store_id: String(data.store_id),
+            store_name: String(data.store_name ?? "Unknown"),
+          },
+        });
+        return;
+      }
+
       Alert.alert(
         "Product Found",
         `Product: ${data.product_name}\nStore: ${data.store_name}`,
@@ -593,11 +609,15 @@ app.get("/stores", async (req, res) => {
  *   store_name
  * }
  *
- * If OFF finds it but it's not in DB, we create it locally and return ids.
+ * If OFF finds it but it's not in DB, we DO NOT create it locally anymore.
+ * Instead, we return needs_classification=true so the app can ask the user
+ * to choose Category + Food Type before creating the product.
  */
 app.post("/scan", async (req, res) => {
   const { barcode } = req.body;
-  if (!barcode) return res.status(400).json({ found: false, message: "Missing barcode" });
+  if (!barcode) {
+    return res.status(400).json({ found: false, message: "Missing barcode" });
+  }
 
   try {
     // 1) Local DB lookup
@@ -642,6 +662,7 @@ app.post("/scan", async (req, res) => {
       });
     }
 
+    // 2) Not in local DB, try Open Food Facts
     const offRes = await fetch(
       `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`
     );
@@ -654,19 +675,74 @@ app.post("/scan", async (req, res) => {
       offData.product?.generic_name ||
       "Unnamed Product";
 
-    // IMPORTANT: choose a valid default food_type id in your DB
-    const defaultFoodTypeId = 1;
+    const tescoId = await getTescoStoreId();
+
+    // New behaviour: let the client classify the product before creating it in DB
+    return res.json({
+      found: true,
+      product_id: null,
+      product_name: name,
+      store_id: tescoId,
+      store_name: "Tesco",
+      needs_classification: true,
+      barcode,
+    });
+  } catch (err) {
+    console.error("Scan error:", err);
+    res.status(500).json({ found: false, message: "Server error while scanning" });
+  }
+});
+
+/**
+ * POST: Create a product after user classification (Category + Food Type chosen)
+ * Body: { name, barcode, foodTypeId, storeId }
+ *
+ * Returns: { product_id, product_name, store_id, store_name }
+ */
+app.post("/products/create", async (req, res) => {
+  const { name, barcode, foodTypeId, storeId } = req.body;
+
+  if (!name || !barcode || !foodTypeId || !storeId) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    // Ensure the food type exists
+    const ft = await pool.query(`SELECT id FROM food_types WHERE id = $1 LIMIT 1`, [
+      foodTypeId,
+    ]);
+    if (ft.rows.length === 0) {
+      return res.status(400).json({ message: "Invalid food type" });
+    }
+
+    // Prevent duplicates if two users classify the same barcode at the same time
+    const existing = await pool.query(
+      `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
+      [barcode]
+    );
+    if (existing.rows.length > 0) {
+      const storeNameRes = await pool.query(
+        `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
+        [storeId]
+      );
+      return res.json({
+        product_id: existing.rows[0].id,
+        product_name: existing.rows[0].name,
+        store_id: storeId,
+        store_name: storeNameRes.rows[0]?.name ?? "Unknown",
+      });
+    }
 
     const insertProduct = await pool.query(
       `INSERT INTO products (name, barcode, food_type)
        VALUES ($1, $2, $3)
        RETURNING id`,
-      [name, barcode, defaultFoodTypeId]
+      [name, barcode, foodTypeId]
     );
 
     const newProductId = insertProduct.rows[0].id;
 
-    const tescoId = await getTescoStoreId();
+    // Attach store relationship (keeps your existing design)
     try {
       await pool.query(
         `
@@ -674,20 +750,24 @@ app.post("/scan", async (req, res) => {
         VALUES ($1, $2, $3)
         ON CONFLICT (product_id, store_id) DO NOTHING
         `,
-        [newProductId, tescoId, 0.0]
+        [newProductId, storeId, 0.0]
       );
     } catch {}
 
+    const storeNameRes = await pool.query(
+      `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
+      [storeId]
+    );
+
     return res.json({
-      found: true,
       product_id: newProductId,
       product_name: name,
-      store_id: tescoId,
-      store_name: "Tesco",
+      store_id: storeId,
+      store_name: storeNameRes.rows[0]?.name ?? "Unknown",
     });
   } catch (err) {
-    console.error("Scan error:", err);
-    res.status(500).json({ found: false, message: "Server error while scanning" });
+    console.error("Create product error:", err);
+    res.status(500).json({ message: "Server error creating product" });
   }
 });
 
@@ -943,4 +1023,317 @@ export async function sendExpiryNotification(productName: string, daysLeft: numb
     trigger: null,
   });
 }
+
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { API_BASE_URL } from "../config/apiConfig";
+
+import {
+  registerForLocalNotificationsAsync,
+  sendExpiryNotification,
+} from "../lib/notifications";
+
+type Category = { id: number; name: string };
+type FoodType = { id: number; name: string; category: number };
+
+export default function NewProductClassification() {
+  const router = useRouter();
+  const { user_id, barcode, product_name, store_id, store_name } =
+    useLocalSearchParams<{
+      user_id?: string;
+      barcode?: string;
+      product_name?: string;
+      store_id?: string;
+      store_name?: string;
+    }>();
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(null);
+
+  const [loading, setLoading] = useState(false);
+
+  // Load categories once
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/categories`);
+        const data = await res.json();
+        setCategories(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error("Categories fetch error:", e);
+        setCategories([]);
+      }
+    })();
+  }, []);
+
+  const title = useMemo(() => {
+    const pn = product_name ?? "Unnamed Product";
+    if (selectedFoodType) return `Confirm Type for: ${pn}`;
+    if (selectedCategory) return `Pick a Food Type for: ${pn}`;
+    return `Pick a Category for: ${pn}`;
+  }, [product_name, selectedCategory, selectedFoodType]);
+
+  const handleCategoryPress = async (cat: Category) => {
+    setLoading(true);
+    setSelectedCategory(cat);
+    setSelectedFoodType(null);
+    setFoodTypes([]);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/categories/${cat.id}/food`);
+      const data = await res.json();
+      setFoodTypes(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("FoodTypes fetch error:", e);
+      setFoodTypes([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!user_id || !barcode || !product_name || !store_id) {
+      Alert.alert("Error", "Missing required information to create product.");
+      return;
+    }
+    if (!selectedFoodType) {
+      Alert.alert("Select a Food Type", "Please choose a food type to continue.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // 1) Create product in DB with chosen food type
+      const createResp = await fetch(`${API_BASE_URL}/products/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: product_name,
+          barcode,
+          foodTypeId: selectedFoodType.id,
+          storeId: Number(store_id),
+        }),
+      });
+
+      if (!createResp.ok) {
+        const txt = await createResp.text().catch(() => "");
+        console.error("Create product failed:", createResp.status, txt);
+        Alert.alert("Error", "Failed to create product.");
+        return;
+      }
+
+      const created = await createResp.json();
+
+      // 2) Add to user inventory (same logic as scanner)
+      const defaultExpiry = new Date();
+      defaultExpiry.setDate(defaultExpiry.getDate() + 5);
+      const expiryDate = defaultExpiry.toISOString().split("T")[0];
+
+      const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user_id,
+          productId: created.product_id,
+          storeId: created.store_id,
+          expiryDate,
+        }),
+      });
+
+      if (!addResp.ok) {
+        const txt = await addResp.text().catch(() => "");
+        console.error("Add product failed:", addResp.status, txt);
+        Alert.alert("Error", "Product created but failed to add to your fridge.");
+        return;
+      }
+
+      const inserted = await addResp.json();
+      const userProductId = inserted.user_product_id;
+
+      const daysLeft: number = Number(inserted.days_left);
+      const effectivePeriodDays: number = Number(inserted.effective_period_days);
+
+      // Only notify if DB says it is due
+      if (daysLeft <= effectivePeriodDays) {
+        const ok = await registerForLocalNotificationsAsync();
+        if (ok) {
+          await sendExpiryNotification(created.product_name, daysLeft);
+
+          if (userProductId) {
+            await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        }
+      }
+
+      Alert.alert(
+        "Added!",
+        `Added: ${created.product_name}\nStore: ${created.store_name ?? store_name ?? "Unknown"}`
+      );
+
+      // Go back to scanner (user can hit Scan Again)
+      router.back();
+    } catch (e) {
+      console.error("Classification confirm error:", e);
+      Alert.alert("Error", "Unable to save product classification.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderButtons = (
+    items: { key: string; label: string }[],
+    onPress: (key: string) => void
+  ) => (
+    <View style={styles.grid}>
+      {items.map((item) => (
+        <TouchableOpacity
+          key={item.key}
+          style={styles.button}
+          onPress={() => onPress(item.key)}
+        >
+          <Text style={styles.buttonText}>{item.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const handleBackPress = () => {
+    if (selectedFoodType) {
+      setSelectedFoodType(null);
+      return;
+    }
+    if (selectedCategory) {
+      setSelectedCategory(null);
+      setFoodTypes([]);
+      return;
+    }
+    router.back();
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>{title}</Text>
+
+      <View style={styles.meta}>
+        <Text style={styles.metaText}>Barcode: {barcode ?? "Unknown"}</Text>
+        <Text style={styles.metaText}>Store: {store_name ?? "Unknown"}</Text>
+      </View>
+
+      {loading && <ActivityIndicator size="large" color="#fff" />}
+
+      {!loading && (
+        <>
+          {selectedCategory ? (
+            selectedFoodType ? (
+              <>
+                <View style={styles.confirmCard}>
+                  <Text style={styles.confirmText}>Category: {selectedCategory.name}</Text>
+                  <Text style={styles.confirmText}>Food Type: {selectedFoodType.name}</Text>
+                </View>
+
+                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
+                  <Text style={styles.confirmButtonText}>Confirm and Add</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              renderButtons(
+                foodTypes.map((ft) => ({ key: String(ft.id), label: ft.name })),
+                (idStr) => {
+                  const ft = foodTypes.find((f) => String(f.id) === idStr);
+                  if (ft) setSelectedFoodType(ft);
+                }
+              )
+            )
+          ) : (
+            renderButtons(
+              categories.map((cat) => ({ key: String(cat.id), label: cat.name })),
+              (idStr) => {
+                const cat = categories.find((c) => String(c.id) === idStr);
+                if (cat) handleCategoryPress(cat);
+              }
+            )
+          )}
+        </>
+      )}
+
+      <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+        <Text style={styles.backButtonText}>← Back</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#663399",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  title: { color: "white", fontSize: 18, marginBottom: 12, textAlign: "center" },
+  meta: { marginBottom: 12, alignItems: "center" },
+  metaText: { color: "white", fontSize: 14 },
+
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    width: 320,
+  },
+  button: {
+    backgroundColor: "#ffcc00",
+    width: 150,
+    height: 60,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    margin: 5,
+  },
+  buttonText: { color: "#333", fontSize: 16, fontWeight: "600", textAlign: "center" },
+
+  confirmCard: {
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 10,
+    width: 320,
+    marginBottom: 10,
+  },
+  confirmText: { color: "#333", fontSize: 16, fontWeight: "600" },
+
+  confirmButton: {
+    backgroundColor: "#ffffff",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  confirmButtonText: {
+    color: "#663399",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+
+  backButton: {
+    marginTop: 18,
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+  },
+  backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
+});
 

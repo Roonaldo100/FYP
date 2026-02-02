@@ -228,6 +228,19 @@ export default function Home() {
         <Text style={styles.scanButtonText}>📷 Scan Item</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.scanButton}
+        onPress={() =>
+          router.push({
+            pathname: "/ManualAddProduct",
+            params: { user_id: String(user_id) },
+          })
+        }
+      >
+        <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
+      </TouchableOpacity>
+
+
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
       {!loading && (
