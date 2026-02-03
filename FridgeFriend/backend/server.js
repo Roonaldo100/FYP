@@ -303,6 +303,47 @@ app.post("/user/addProduct", async (req, res) => {
 });
 
 /**
+ * POST: Remove N items from user_products for a grouped product/store row
+ * Body: { userId, productId, storeId, quantity }
+ *
+ * This affects only user_products (not products).
+ */
+app.post("/user_products/remove", async (req, res) => {
+  const { userId, productId, storeId, quantity } = req.body;
+
+  const qty = Number(quantity);
+
+  if (!userId || !productId || !storeId || !qty || qty <= 0) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    // Delete soonest-expiring rows first for that (user, product, store)
+    const del = await pool.query(
+      `
+      DELETE FROM user_products
+      WHERE id IN (
+        SELECT id
+        FROM user_products
+        WHERE user_id = $1
+          AND product_id = $2
+          AND store_id = $3
+        ORDER BY expiry_date ASC, id ASC
+        LIMIT $4
+      )
+      RETURNING id
+      `,
+      [userId, productId, storeId, qty]
+    );
+
+    res.json({ removed: del.rowCount });
+  } catch (err) {
+    console.error("Remove user_products error:", err);
+    res.status(500).json({ message: "Server error removing items" });
+  }
+});
+
+/**
  * POST: Mark a user_products row as notified=true
  */
 app.post("/user_products/:id/markNotified", async (req, res) => {
@@ -352,15 +393,15 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
         p.name AS product_name,
         (up.expiry_date::date - CURRENT_DATE) AS days_left,
         COALESCE(up.expiry_period_days, u.notification_period_preference, 0) AS effective_period_days
-    FROM user_products up
-    JOIN products p ON p.id = up.product_id
-    JOIN users u ON u.id = up.user_id
-    WHERE up.user_id = $1
-      AND up.notified = false
-      AND (up.expiry_date::date - CURRENT_DATE)
-          <= COALESCE(up.expiry_period_days, u.notification_period_preference, 0)
-    ORDER BY up.id ASC
-    LIMIT 50;
+      FROM user_products up
+      JOIN products p ON p.id = up.product_id
+      JOIN users u ON u.id = up.user_id
+      WHERE up.user_id = $1
+        AND up.notified = false
+        AND (up.expiry_date::date - CURRENT_DATE)
+            <= COALESCE(up.expiry_period_days, u.notification_period_preference, 0)
+      ORDER BY up.id ASC
+      LIMIT 50;
       `,
       [userId]
     );
@@ -391,6 +432,7 @@ app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
       SELECT
         p.id AS product_id,
         p.name AS product_name,
+        s.id AS store_id,
         s.name AS store_name,
         COUNT(up.id) AS quantity,
         MIN(up.expiry_date) AS nearest_expiry
@@ -398,7 +440,7 @@ app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
       JOIN products p ON p.id = up.product_id
       JOIN stores s ON s.id = up.store_id
       WHERE up.user_id = $1 AND p.food_type = $2
-      GROUP BY p.id, p.name, s.name
+      GROUP BY p.id, p.name, s.id, s.name
       ORDER BY p.name;
     `;
 

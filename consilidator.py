@@ -4,7 +4,8 @@ file_paths = [
     r'C:\Users\ruben\Desktop\FYPBarcode\FYP\FridgeFriend\app\BarcodeScanner.tsx',
     r'C:\Users\ruben\Desktop\FYPBarcode\FYP\FridgeFriend\backend\server.js',
     r'C:\Users\ruben\Desktop\FYPBarcode\FYP\FridgeFriend\lib\notifications.tsx',
-    r'C:\Users\ruben\Desktop\FYPBarcode\FYP\FridgeFriend\app\NewProductClassification.tsx'
+    r'C:\Users\ruben\Desktop\FYPBarcode\FYP\FridgeFriend\app\NewProductClassification.tsx',
+    r'C:\Users\ruben\Desktop\FYPBarcode\FYP\FridgeFriend\app\ManualAddProduct.tsx'
 ]
 
 output_file = r'C:\Users\ruben\Desktop\FYPBarcode\FYP\temp.txt'
