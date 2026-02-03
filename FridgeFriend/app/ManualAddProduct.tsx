@@ -67,51 +67,112 @@ export default function ManualAddProduct() {
   };
 
   const handleConfirm = async () => {
-    if (!user_id || !name || !selectedFoodType) {
-      Alert.alert("Missing information", "Please complete all required fields.");
+  if (!user_id || !name || !selectedFoodType) {
+    Alert.alert("Missing information", "Please complete all required fields.");
+    return;
+  }
+
+  setLoading(true);
+
+  const trimmedBarcode = barcode.trim() ? barcode.trim() : null;
+
+  try {
+    // First attempt: do NOT allow silent barcode reuse
+    const createResp = await fetch(`${API_BASE_URL}/products/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        barcode: trimmedBarcode,
+        foodTypeId: selectedFoodType.id,
+        storeId: null,
+        allowExisting: false,
+      }),
+    });
+
+    if (!createResp.ok) {
+      const txt = await createResp.text().catch(() => "");
+      console.error("Create product failed:", createResp.status, txt);
+      Alert.alert("Error", "Failed to create product.");
       return;
     }
 
-    setLoading(true);
+    const created = await createResp.json();
 
-    try {
-      // 1) Create product (store is optional so it is not set here)
-      const createResp = await fetch(`${API_BASE_URL}/products/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          barcode: barcode.trim() ? barcode.trim() : null,
-          foodTypeId: selectedFoodType.id,
-          storeId: null,
-        }),
-      });
+    // If the barcode is already in the DB, warn the user and let them choose
+    if (created.barcode_conflict) {
+      Alert.alert(
+        "Barcode recognised",
+        `This barcode is recognised as "${created.existing_product_name}" in the database.\n\nWould you like to add "${created.existing_product_name}" to your fridge?`,
+        [
+          { text: "Go back", style: "cancel" },
+          {
+            text: "Add recognised product",
+            onPress: async () => {
+              try {
+                setLoading(true);
 
-      if (!createResp.ok) {
-        const txt = await createResp.text().catch(() => "");
-        console.error("Create product failed:", createResp.status, txt);
-        Alert.alert("Error", "Failed to create product.");
-        return;
-      }
+                const confirmResp = await fetch(`${API_BASE_URL}/products/create`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    name,
+                    barcode: trimmedBarcode,
+                    foodTypeId: selectedFoodType.id,
+                    storeId: null,
+                    allowExisting: true,
+                  }),
+                });
 
-      const created = await createResp.json();
+                if (!confirmResp.ok) {
+                  const txt = await confirmResp.text().catch(() => "");
+                  console.error("Confirm existing failed:", confirmResp.status, txt);
+                  Alert.alert("Error", "Failed to use recognised product.");
+                  return;
+                }
 
-      // 2) Route to optional store/expiry screen
-      router.push({
-        pathname: "/AddItemToFridge",
-        params: {
-          user_id: String(user_id),
-          product_id: String(created.product_id),
-          product_name: String(created.product_name ?? name),
-        },
-      });
-    } catch (e) {
-      console.error("Manual add error:", e);
-      Alert.alert("Error", "Unable to add product.");
-    } finally {
-      setLoading(false);
+                const confirmed = await confirmResp.json();
+
+                router.push({
+                  pathname: "/AddItemToFridge",
+                  params: {
+                    user_id: String(user_id),
+                    product_id: String(confirmed.product_id),
+                    product_name: String(confirmed.product_name ?? name),
+                  },
+                });
+              } catch (e) {
+                console.error("Confirm existing error:", e);
+                Alert.alert("Error", "Unable to add recognised product.");
+              } finally {
+                setLoading(false);
+              }
+            },
+          },
+        ]
+      );
+
+      return;
     }
-  };
+
+    // Normal path: new product created
+    router.push({
+      pathname: "/AddItemToFridge",
+      params: {
+        user_id: String(user_id),
+        product_id: String(created.product_id),
+        product_name: String(created.product_name ?? name),
+      },
+    });
+  } catch (e) {
+    console.error("Manual add error:", e);
+    Alert.alert("Error", "Unable to add product.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
 
   const renderButtons = (
     items: { key: string; label: string }[],

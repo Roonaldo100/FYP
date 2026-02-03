@@ -36,7 +36,6 @@ export default function LoginScreen() {
       if (response.ok) {
         Alert.alert("Success", `Welcome, ${data.username}!`);
 
-        // ✅ replace + go to a real tab route
         router.replace({
           pathname: "/(tabs)",
           params: { user_id: String(data.user_id) },

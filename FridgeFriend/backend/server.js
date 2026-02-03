@@ -242,13 +242,25 @@ app.post("/products/create", async (req, res) => {
       return res.status(400).json({ message: "Invalid food type" });
     }
 
-    // Prevent duplicates (barcode may be null)
+    // Prevent accidental reuse: if barcode exists, require explicit confirmation
     if (barcode) {
       const existing = await pool.query(
         `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
         [barcode]
       );
+
       if (existing.rows.length > 0) {
+        const allowExisting = req.body.allowExisting === true;
+
+        if (!allowExisting) {
+          return res.json({
+            barcode_conflict: true,
+            existing_product_id: existing.rows[0].id,
+            existing_product_name: existing.rows[0].name,
+          });
+        }
+
+        // User explicitly confirmed they want to use the existing DB product
         return res.json({
           product_id: existing.rows[0].id,
           product_name: existing.rows[0].name,
@@ -257,6 +269,8 @@ app.post("/products/create", async (req, res) => {
         });
       }
     }
+
+
 
     const insertProduct = await pool.query(
       `INSERT INTO products (name, barcode, food_type)
