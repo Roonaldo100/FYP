@@ -12,8 +12,7 @@ import {
 import { API_BASE_URL } from "../config/apiConfig";
 
 import { 
-  registerForLocalNotificationsAsync, 
-  sendExpiryNotification
+  registerForLocalNotificationsAsync
 } from "../lib/notifications";
 
 export default function BarcodeScanner() {
@@ -76,8 +75,6 @@ export default function BarcodeScanner() {
             user_id: String(user_id),
             barcode: String(data.barcode ?? barcode),
             product_name: String(data.product_name ?? "Unnamed Product"),
-            store_id: String(data.store_id),
-            store_name: String(data.store_name ?? "Unknown"),
           },
         });
         return;
@@ -85,59 +82,20 @@ export default function BarcodeScanner() {
 
       Alert.alert(
         "Product Found",
-        `Product: ${data.product_name}\nStore: ${data.store_name}`,
+        `Product: ${data.product_name}`,
         [
           { text: "Cancel", onPress: () => setScanned(false), style: "cancel" },
           {
-            text: "Add Item",
-            onPress: async () => {
-              const defaultExpiry = new Date();
-              defaultExpiry.setDate(defaultExpiry.getDate() + 5);
-              const expiryDate = defaultExpiry.toISOString().split("T")[0];
-
-              // Insert into user_products
-              const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  userId: user_id,
-                  productId: data.product_id,
-                  storeId: data.store_id,
-                  expiryDate,
-                }),
+            text: "Continue",
+            onPress: () => {
+              router.push({
+                pathname: "/AddItemToFridge",
+                params: {
+                  user_id: String(user_id),
+                  product_id: String(data.product_id),
+                  product_name: String(data.product_name ?? "Unnamed Product"),
+                },
               });
-
-              if (!addResp.ok) {
-                const txt = await addResp.text().catch(() => "");
-                console.error("Add product failed:", addResp.status, txt);
-                Alert.alert("Error", "Failed to add product.");
-                setScanned(false);
-                return;
-              }
-
-              const inserted = await addResp.json();
-              const userProductId = inserted.user_product_id;
-
-              const daysLeft: number = Number(inserted.days_left);
-              const effectivePeriodDays: number = Number(inserted.effective_period_days);
-
-              // Only notify if DB says it is due
-              if (daysLeft <= effectivePeriodDays) {
-                const ok = await registerForLocalNotificationsAsync();
-                if (ok) {
-                  await sendExpiryNotification(data.product_name, daysLeft);
-
-                  if (userProductId) {
-                    await fetch(
-                      `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
-                      { method: "POST", headers: { "Content-Type": "application/json" } }
-                    );
-                  }
-                }
-              }
-
-              Alert.alert("Added!", "Item added to your fridge.");
-              router.back();
             },
           },
         ]

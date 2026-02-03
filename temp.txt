@@ -8,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  TextInput,
 } from "react-native";
 import { API_BASE_URL } from "../../config/apiConfig";
 
@@ -21,9 +22,10 @@ type FoodType = { id: number; name: string; category: number };
 type UserProduct = {
   product_id: number;
   product_name: string;
-  store_name: string;
+  store_id: number | null;
+  store_name: string | null;
   quantity: number;
-  nearest_expiry: string;
+  nearest_expiry: string | null;
 };
 
 export default function Home() {
@@ -42,6 +44,11 @@ export default function Home() {
   );
 
   const [loading, setLoading] = useState<boolean>(false);
+
+  // Remove flow state
+  const [removeTarget, setRemoveTarget] = useState<UserProduct | null>(null);
+  const [removeQtyText, setRemoveQtyText] = useState<string>("1");
+  const [removing, setRemoving] = useState<boolean>(false);
 
   // -------------------------------
   // Load categories (app boot)
@@ -161,7 +168,6 @@ export default function Home() {
       setFoodTypes([]);
     }
 
-    // optional: poll again
     await pollPendingNotifications();
   };
 
@@ -176,6 +182,84 @@ export default function Home() {
       pathname: "/BarcodeScanner",
       params: { user_id: String(user_id) },
     });
+  };
+
+  // -------------------------------
+  // Remove flow
+  // -------------------------------
+  const openRemove = (prod: UserProduct) => {
+    setRemoveTarget(prod);
+    setRemoveQtyText("1");
+  };
+
+  const closeRemove = () => {
+    setRemoveTarget(null);
+    setRemoveQtyText("1");
+    setRemoving(false);
+  };
+
+  const confirmRemove = async () => {
+    if (!removeTarget || !user_id) return;
+
+    const maxQty = Number(removeTarget.quantity);
+    const parsed = Number(removeQtyText);
+
+    if (!parsed || parsed <= 0) {
+      Alert.alert("Invalid quantity", "Enter a number greater than 0.");
+      return;
+    }
+    if (parsed > maxQty) {
+      Alert.alert("Invalid quantity", `You can remove up to ${maxQty}.`);
+      return;
+    }
+
+    Alert.alert(
+      "Confirm removal",
+      `Remove ${parsed} of ${removeTarget.product_name} from ${
+        removeTarget.store_name ?? "No store"
+      }?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setRemoving(true);
+
+              const resp = await fetch(`${API_BASE_URL}/user_products/remove`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId: user_id,
+                  productId: removeTarget.product_id,
+                  storeId: removeTarget.store_id,
+                  quantity: parsed,
+                }),
+              });
+
+              if (!resp.ok) {
+                const txt = await resp.text().catch(() => "");
+                console.error("Remove failed:", resp.status, txt);
+                Alert.alert("Error", "Failed to remove items.");
+                setRemoving(false);
+                return;
+              }
+
+              if (selectedFoodType) {
+                await handleFoodTypePress(selectedFoodType);
+              }
+
+              closeRemove();
+            } catch (e) {
+              console.error("Remove error:", e);
+              Alert.alert("Error", "Failed to remove items.");
+              setRemoving(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // -------------------------------
@@ -207,11 +291,25 @@ export default function Home() {
   const renderUserProducts = () => (
     <View style={styles.grid}>
       {userProducts.map((prod, idx) => (
-        <View key={`${prod.product_id}-${idx}`} style={styles.productCard}>
+        <View
+          key={`${prod.product_id}-${String(prod.store_id)}-${idx}`}
+          style={styles.productCard}
+        >
+          <TouchableOpacity
+            style={styles.removeX}
+            onPress={() => openRemove(prod)}
+          >
+            <Text style={styles.removeXText}>×</Text>
+          </TouchableOpacity>
+
           <Text style={styles.productName}>{prod.product_name}</Text>
-          <Text style={styles.productDetails}>Store: {prod.store_name}</Text>
+          <Text style={styles.productDetails}>
+            Store: {prod.store_name ?? "None"}
+          </Text>
           <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
-          <Text style={styles.productDetails}>Expires: {prod.nearest_expiry}</Text>
+          <Text style={styles.productDetails}>
+            Expires: {prod.nearest_expiry ?? "None"}
+          </Text>
         </View>
       ))}
     </View>
@@ -239,7 +337,6 @@ export default function Home() {
       >
         <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
       </TouchableOpacity>
-
 
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
@@ -271,6 +368,44 @@ export default function Home() {
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
+      )}
+
+      {removeTarget && (
+        <View style={styles.removeOverlay}>
+          <View style={styles.removePanel}>
+            <Text style={styles.removeTitle}>Remove items</Text>
+            <Text style={styles.removeSub}>
+              {removeTarget.product_name} ({removeTarget.store_name ?? "No store"})
+            </Text>
+            <Text style={styles.removeSub}>Max: {removeTarget.quantity}</Text>
+
+            <TextInput
+              style={styles.removeInput}
+              value={removeQtyText}
+              onChangeText={setRemoveQtyText}
+              keyboardType="number-pad"
+              placeholder="Quantity"
+            />
+
+            <TouchableOpacity
+              style={styles.removeConfirmButton}
+              onPress={confirmRemove}
+              disabled={removing}
+            >
+              <Text style={styles.removeConfirmText}>
+                {removing ? "Removing..." : "Continue"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.removeCancelButton}
+              onPress={closeRemove}
+              disabled={removing}
+            >
+              <Text style={styles.removeCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
       <StatusBar style="auto" />
@@ -322,6 +457,7 @@ const styles = StyleSheet.create({
     padding: 10,
     margin: 5,
     alignItems: "center",
+    position: "relative",
   },
   productName: { fontSize: 16, fontWeight: "bold", color: "#333" },
   productDetails: { fontSize: 14, color: "#555" },
@@ -332,6 +468,82 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
+
+  removeX: {
+    position: "absolute",
+    top: 6,
+    right: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 40,
+    backgroundColor: "#eee",
+  },
+  removeXText: {
+    fontSize: 18,
+    color: "#333",
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+
+  removeOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#0008",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  removePanel: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+  },
+  removeTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 6,
+  },
+  removeSub: {
+    fontSize: 14,
+    color: "#555",
+    marginBottom: 6,
+  },
+  removeInput: {
+    backgroundColor: "#eee",
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  removeConfirmButton: {
+    backgroundColor: "#663399",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  removeConfirmText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  removeCancelButton: {
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  removeCancelText: {
+    color: "#333",
+    fontWeight: "700",
+    fontSize: 16,
+  },
 });
 
 import { Redirect } from "expo-router";
@@ -354,8 +566,7 @@ import {
 import { API_BASE_URL } from "../config/apiConfig";
 
 import { 
-  registerForLocalNotificationsAsync, 
-  sendExpiryNotification
+  registerForLocalNotificationsAsync
 } from "../lib/notifications";
 
 export default function BarcodeScanner() {
@@ -418,8 +629,6 @@ export default function BarcodeScanner() {
             user_id: String(user_id),
             barcode: String(data.barcode ?? barcode),
             product_name: String(data.product_name ?? "Unnamed Product"),
-            store_id: String(data.store_id),
-            store_name: String(data.store_name ?? "Unknown"),
           },
         });
         return;
@@ -427,59 +636,20 @@ export default function BarcodeScanner() {
 
       Alert.alert(
         "Product Found",
-        `Product: ${data.product_name}\nStore: ${data.store_name}`,
+        `Product: ${data.product_name}`,
         [
           { text: "Cancel", onPress: () => setScanned(false), style: "cancel" },
           {
-            text: "Add Item",
-            onPress: async () => {
-              const defaultExpiry = new Date();
-              defaultExpiry.setDate(defaultExpiry.getDate() + 5);
-              const expiryDate = defaultExpiry.toISOString().split("T")[0];
-
-              // Insert into user_products
-              const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  userId: user_id,
-                  productId: data.product_id,
-                  storeId: data.store_id,
-                  expiryDate,
-                }),
+            text: "Continue",
+            onPress: () => {
+              router.push({
+                pathname: "/AddItemToFridge",
+                params: {
+                  user_id: String(user_id),
+                  product_id: String(data.product_id),
+                  product_name: String(data.product_name ?? "Unnamed Product"),
+                },
               });
-
-              if (!addResp.ok) {
-                const txt = await addResp.text().catch(() => "");
-                console.error("Add product failed:", addResp.status, txt);
-                Alert.alert("Error", "Failed to add product.");
-                setScanned(false);
-                return;
-              }
-
-              const inserted = await addResp.json();
-              const userProductId = inserted.user_product_id;
-
-              const daysLeft: number = Number(inserted.days_left);
-              const effectivePeriodDays: number = Number(inserted.effective_period_days);
-
-              // Only notify if DB says it is due
-              if (daysLeft <= effectivePeriodDays) {
-                const ok = await registerForLocalNotificationsAsync();
-                if (ok) {
-                  await sendExpiryNotification(data.product_name, daysLeft);
-
-                  if (userProductId) {
-                    await fetch(
-                      `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
-                      { method: "POST", headers: { "Content-Type": "application/json" } }
-                    );
-                  }
-                }
-              }
-
-              Alert.alert("Added!", "Item added to your fridge.");
-              router.back();
             },
           },
         ]
@@ -567,6 +737,29 @@ async function getTescoStoreId() {
   return 1; // fallback
 }
 
+async function getNoStoreId() {
+  const noStoreName = "No store";
+
+  try {
+    const r = await pool.query(
+      `SELECT id FROM stores WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      [noStoreName]
+    );
+    if (r.rows.length > 0) return r.rows[0].id;
+
+    const inserted = await pool.query(
+      `INSERT INTO stores (name) VALUES ($1) RETURNING id`,
+      [noStoreName]
+    );
+    return inserted.rows[0].id;
+  } catch (e) {
+    console.warn("getNoStoreId error:", e?.message ?? e);
+    // As a fallback, use Tesco if something is badly wrong
+    return await getTescoStoreId();
+  }
+}
+
+
 /**
  * GET: Categories
  */
@@ -602,7 +795,7 @@ app.get("/categories/:id/food", async (req, res) => {
  */
 app.get("/stores", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM stores ORDER BY id");
+    const result = await pool.query("SELECT * FROM stores ORDER BY name ASC");
     res.json(result.rows);
   } catch (err) {
     console.error("Store fetch error:", err);
@@ -611,16 +804,55 @@ app.get("/stores", async (req, res) => {
 });
 
 /**
+ * POST: Create a new store (for on-the-fly store creation)
+ * Body: { name }
+ */
+app.post("/stores", async (req, res) => {
+  const { name } = req.body;
+
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ message: "Missing store name" });
+  }
+
+  const cleaned = String(name).trim();
+
+  try {
+    // Try to reuse an existing store by case-insensitive match
+    const existing = await pool.query(
+      `SELECT id, name FROM stores WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      [cleaned]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.json({
+        store_id: existing.rows[0].id,
+        store_name: existing.rows[0].name,
+        reused: true,
+      });
+    }
+
+    const inserted = await pool.query(
+      `INSERT INTO stores (name) VALUES ($1) RETURNING id, name`,
+      [cleaned]
+    );
+
+    res.json({
+      store_id: inserted.rows[0].id,
+      store_name: inserted.rows[0].name,
+      reused: false,
+    });
+  } catch (err) {
+    console.error("Create store error:", err);
+    res.status(500).json({ message: "Server error creating store" });
+  }
+});
+
+/**
  * POST: Scan barcode
  *
- * ALWAYS returns the same shape used by the old working scanner:
- * {
- *   found: true,
- *   product_id,
- *   product_name,
- *   store_id,
- *   store_name
- * }
+ * If product exists locally, store is optional:
+ * - If a product_store relationship exists, return that store
+ * - Otherwise return store_id=null/store_name=null
  *
  * If OFF finds it but it's not in DB, we DO NOT create it locally anymore.
  * Instead, we return needs_classification=true so the app can ask the user
@@ -642,14 +874,14 @@ app.post("/scan", async (req, res) => {
     if (localProduct.rows.length > 0) {
       const product = localProduct.rows[0];
 
-      // Try to find a store via product_store, else Tesco fallback.
+      // Try to find a store via product_store, else return null store
       const storeJoin = await pool.query(
         `
         SELECT s.id AS store_id, s.name AS store_name
         FROM product_store ps
         JOIN stores s ON s.id = ps.store_id
         WHERE ps.product_id = $1
-        ORDER BY s.id
+        ORDER BY s.name ASC
         LIMIT 1
         `,
         [product.id]
@@ -665,13 +897,12 @@ app.post("/scan", async (req, res) => {
         });
       }
 
-      const tescoId = await getTescoStoreId();
       return res.json({
         found: true,
         product_id: product.id,
         product_name: product.name,
-        store_id: tescoId,
-        store_name: "Tesco",
+        store_id: null,
+        store_name: null,
       });
     }
 
@@ -688,15 +919,13 @@ app.post("/scan", async (req, res) => {
       offData.product?.generic_name ||
       "Unnamed Product";
 
-    const tescoId = await getTescoStoreId();
-
     // New behaviour: let the client classify the product before creating it in DB
     return res.json({
       found: true,
       product_id: null,
       product_name: name,
-      store_id: tescoId,
-      store_name: "Tesco",
+      store_id: null,
+      store_name: null,
       needs_classification: true,
       barcode,
     });
@@ -710,12 +939,12 @@ app.post("/scan", async (req, res) => {
  * POST: Create a product after user classification (Category + Food Type chosen)
  * Body: { name, barcode, foodTypeId, storeId }
  *
- * Returns: { product_id, product_name, store_id, store_name }
+ * storeId is optional. If omitted/null, no product_store row is created.
  */
 app.post("/products/create", async (req, res) => {
   const { name, barcode, foodTypeId, storeId } = req.body;
 
-  if (!name || !barcode || !foodTypeId || !storeId) {
+  if (!name || !foodTypeId) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
@@ -728,55 +957,59 @@ app.post("/products/create", async (req, res) => {
       return res.status(400).json({ message: "Invalid food type" });
     }
 
-    // Prevent duplicates if two users classify the same barcode at the same time
-    const existing = await pool.query(
-      `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
-      [barcode]
-    );
-    if (existing.rows.length > 0) {
-      const storeNameRes = await pool.query(
-        `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
-        [storeId]
+    // Prevent duplicates (barcode may be null)
+    if (barcode) {
+      const existing = await pool.query(
+        `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
+        [barcode]
       );
-      return res.json({
-        product_id: existing.rows[0].id,
-        product_name: existing.rows[0].name,
-        store_id: storeId,
-        store_name: storeNameRes.rows[0]?.name ?? "Unknown",
-      });
+      if (existing.rows.length > 0) {
+        return res.json({
+          product_id: existing.rows[0].id,
+          product_name: existing.rows[0].name,
+          store_id: storeId ?? null,
+          store_name: null,
+        });
+      }
     }
 
     const insertProduct = await pool.query(
       `INSERT INTO products (name, barcode, food_type)
        VALUES ($1, $2, $3)
        RETURNING id`,
-      [name, barcode, foodTypeId]
+      [name, barcode ?? null, foodTypeId]
     );
 
     const newProductId = insertProduct.rows[0].id;
 
-    // Attach store relationship (keeps your existing design)
-    try {
-      await pool.query(
-        `
-        INSERT INTO product_store (product_id, store_id, price)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (product_id, store_id) DO NOTHING
-        `,
-        [newProductId, storeId, 0.0]
-      );
-    } catch {}
+    // Attach store relationship only if a storeId was provided
+    if (storeId) {
+      try {
+        await pool.query(
+          `
+          INSERT INTO product_store (product_id, store_id, price)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (product_id, store_id) DO NOTHING
+          `,
+          [newProductId, storeId, 0.0]
+        );
+      } catch {}
+    }
 
-    const storeNameRes = await pool.query(
-      `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
-      [storeId]
-    );
+    let storeName = null;
+    if (storeId) {
+      const storeNameRes = await pool.query(
+        `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
+        [storeId]
+      );
+      storeName = storeNameRes.rows[0]?.name ?? null;
+    }
 
     return res.json({
       product_id: newProductId,
       product_name: name,
-      store_id: storeId,
-      store_name: storeNameRes.rows[0]?.name ?? "Unknown",
+      store_id: storeId ?? null,
+      store_name: storeName,
     });
   } catch (err) {
     console.error("Create product error:", err);
@@ -786,30 +1019,42 @@ app.post("/products/create", async (req, res) => {
 
 /**
  * POST: Add product to user inventory
- * - default expiry_period_days=0, notified=false
- * - returns user_product_id AND days_left AND effective_period_days
+ * storeId and expiryDate are optional. Missing fields will insert NULL.
+ *
+ * returns user_product_id AND days_left AND effective_period_days (days_left null if no expiry date)
  */
 app.post("/user/addProduct", async (req, res) => {
   const { userId, productId, storeId, expiryDate } = req.body;
 
-  if (!userId || !productId || !storeId || !expiryDate) {
+  if (!userId || !productId) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
   try {
-    // Insert row (expiry_period_days defaults to 0 meaning "use user default")
+    // Treat "no store" as a real store id
+    const effectiveStoreId = storeId ? Number(storeId) : await getNoStoreId();
+
+    // Ensure product_store row exists for this product/store pair to satisfy FK
+    await pool.query(
+      `
+      INSERT INTO product_store (product_id, store_id, price)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (product_id, store_id) DO NOTHING
+      `,
+      [productId, effectiveStoreId, 0.0]
+    );
+
     const inserted = await pool.query(
       `
       INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
       VALUES ($1, $2, $3, $4, 0, false)
       RETURNING id, expiry_period_days, expiry_date
       `,
-      [userId, productId, storeId, expiryDate]
+      [userId, productId, effectiveStoreId, expiryDate ?? null]
     );
 
     const upRow = inserted.rows[0];
 
-    // Get user's notification preference
     const userPrefRes = await pool.query(
       `SELECT notification_period_preference FROM users WHERE id = $1 LIMIT 1`,
       [userId]
@@ -819,18 +1064,16 @@ app.post("/user/addProduct", async (req, res) => {
       ? Number(userPrefRes.rows[0].notification_period_preference ?? 0)
       : 0;
 
-    const daysLeftRes = await pool.query(
-      `SELECT ($1::date - CURRENT_DATE) AS days_left`,
-      [upRow.expiry_date]
-    );
-
-    const days_left = Number(daysLeftRes.rows[0].days_left);
+    let days_left = null;
+    if (upRow.expiry_date) {
+      const daysLeftRes = await pool.query(
+        `SELECT ($1::date - CURRENT_DATE) AS days_left`,
+        [upRow.expiry_date]
+      );
+      days_left = Number(daysLeftRes.rows[0].days_left);
+    }
 
     const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
-
-    // Override rule:
-    // - if expiry_period_days > 0 -> use it
-    // - else -> use user default
     const effective_period_days =
       expiry_period_days > 0 ? expiry_period_days : userPref;
 
@@ -844,6 +1087,47 @@ app.post("/user/addProduct", async (req, res) => {
   } catch (err) {
     console.error("Add product error:", err);
     res.status(500).json({ message: "Server error adding product" });
+  }
+});
+
+
+/**
+ * POST: Remove N items from user_products for a grouped product/store row
+ * Body: { userId, productId, storeId, quantity }
+ *
+ * storeId can be null. We match using IS NOT DISTINCT FROM to support null.
+ */
+app.post("/user_products/remove", async (req, res) => {
+  const { userId, productId, storeId, quantity } = req.body;
+
+  const qty = Number(quantity);
+
+  if (!userId || !productId || !qty || qty <= 0) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    const del = await pool.query(
+      `
+      DELETE FROM user_products
+      WHERE id IN (
+        SELECT id
+        FROM user_products
+        WHERE user_id = $1
+          AND product_id = $2
+          AND store_id IS NOT DISTINCT FROM $3
+        ORDER BY expiry_date ASC NULLS LAST, id ASC
+        LIMIT $4
+      )
+      RETURNING id
+      `,
+      [userId, productId, storeId ?? null, qty]
+    );
+
+    res.json({ removed: del.rowCount });
+  } catch (err) {
+    console.error("Remove user_products error:", err);
+    res.status(500).json({ message: "Server error removing items" });
   }
 });
 
@@ -878,13 +1162,7 @@ app.post("/user_products/:id/markNotified", async (req, res) => {
 /**
  * GET: Pending notifications (DB decides using user preference + per-item override)
  *
- * Effective period:
- * - if up.expiry_period_days > 0 -> use up.expiry_period_days
- * - else -> use u.notification_period_preference
- *
- * Only returns rows where:
- * - up.notified = false
- * - days_left <= effective_period_days
+ * Expiry date is required to be considered pending. Rows with expiry_date NULL are ignored.
  */
 app.get("/user/:userId/pendingNotifications", async (req, res) => {
   const { userId } = req.params;
@@ -897,15 +1175,16 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
         p.name AS product_name,
         (up.expiry_date::date - CURRENT_DATE) AS days_left,
         COALESCE(up.expiry_period_days, u.notification_period_preference, 0) AS effective_period_days
-    FROM user_products up
-    JOIN products p ON p.id = up.product_id
-    JOIN users u ON u.id = up.user_id
-    WHERE up.user_id = $1
-      AND up.notified = false
-      AND (up.expiry_date::date - CURRENT_DATE)
-          <= COALESCE(up.expiry_period_days, u.notification_period_preference, 0)
-    ORDER BY up.id ASC
-    LIMIT 50;
+      FROM user_products up
+      JOIN products p ON p.id = up.product_id
+      JOIN users u ON u.id = up.user_id
+      WHERE up.user_id = $1
+        AND up.notified = false
+        AND up.expiry_date IS NOT NULL
+        AND (up.expiry_date::date - CURRENT_DATE)
+            <= COALESCE(up.expiry_period_days, u.notification_period_preference, 0)
+      ORDER BY up.id ASC
+      LIMIT 50;
       `,
       [userId]
     );
@@ -927,6 +1206,7 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
 
 /**
  * GET: User products by food type
+ * Store and expiry date are optional, so this uses LEFT JOIN and allows nearest_expiry to be null.
  */
 app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
   const { userId, foodTypeId } = req.params;
@@ -936,14 +1216,15 @@ app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
       SELECT
         p.id AS product_id,
         p.name AS product_name,
+        s.id AS store_id,
         s.name AS store_name,
         COUNT(up.id) AS quantity,
         MIN(up.expiry_date) AS nearest_expiry
       FROM user_products up
       JOIN products p ON p.id = up.product_id
-      JOIN stores s ON s.id = up.store_id
+      LEFT JOIN stores s ON s.id = up.store_id
       WHERE up.user_id = $1 AND p.food_type = $2
-      GROUP BY p.id, p.name, s.name
+      GROUP BY p.id, p.name, s.id, s.name
       ORDER BY p.name;
     `;
 
@@ -1049,23 +1330,16 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import {
-  registerForLocalNotificationsAsync,
-  sendExpiryNotification,
-} from "../lib/notifications";
-
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number };
 
 export default function NewProductClassification() {
   const router = useRouter();
-  const { user_id, barcode, product_name, store_id, store_name } =
+  const { user_id, barcode, product_name } =
     useLocalSearchParams<{
       user_id?: string;
       barcode?: string;
       product_name?: string;
-      store_id?: string;
-      store_name?: string;
     }>();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -1115,7 +1389,7 @@ export default function NewProductClassification() {
   };
 
   const handleConfirm = async () => {
-    if (!user_id || !barcode || !product_name || !store_id) {
+    if (!user_id || !barcode || !product_name) {
       Alert.alert("Error", "Missing required information to create product.");
       return;
     }
@@ -1135,7 +1409,7 @@ export default function NewProductClassification() {
           name: product_name,
           barcode,
           foodTypeId: selectedFoodType.id,
-          storeId: Number(store_id),
+          storeId: null,
         }),
       });
 
@@ -1148,57 +1422,15 @@ export default function NewProductClassification() {
 
       const created = await createResp.json();
 
-      // 2) Add to user inventory (same logic as scanner)
-      const defaultExpiry = new Date();
-      defaultExpiry.setDate(defaultExpiry.getDate() + 5);
-      const expiryDate = defaultExpiry.toISOString().split("T")[0];
-
-      const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user_id,
-          productId: created.product_id,
-          storeId: created.store_id,
-          expiryDate,
-        }),
+      // 2) Route to optional store/expiry screen
+      router.push({
+        pathname: "/AddItemToFridge",
+        params: {
+          user_id: String(user_id),
+          product_id: String(created.product_id),
+          product_name: String(created.product_name ?? product_name),
+        },
       });
-
-      if (!addResp.ok) {
-        const txt = await addResp.text().catch(() => "");
-        console.error("Add product failed:", addResp.status, txt);
-        Alert.alert("Error", "Product created but failed to add to your fridge.");
-        return;
-      }
-
-      const inserted = await addResp.json();
-      const userProductId = inserted.user_product_id;
-
-      const daysLeft: number = Number(inserted.days_left);
-      const effectivePeriodDays: number = Number(inserted.effective_period_days);
-
-      // Only notify if DB says it is due
-      if (daysLeft <= effectivePeriodDays) {
-        const ok = await registerForLocalNotificationsAsync();
-        if (ok) {
-          await sendExpiryNotification(created.product_name, daysLeft);
-
-          if (userProductId) {
-            await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-        }
-      }
-
-      Alert.alert(
-        "Added!",
-        `Added: ${created.product_name}\nStore: ${created.store_name ?? store_name ?? "Unknown"}`
-      );
-
-      // Go back to scanner (user can hit Scan Again)
-      router.back();
     } catch (e) {
       console.error("Classification confirm error:", e);
       Alert.alert("Error", "Unable to save product classification.");
@@ -1243,7 +1475,6 @@ export default function NewProductClassification() {
 
       <View style={styles.meta}>
         <Text style={styles.metaText}>Barcode: {barcode ?? "Unknown"}</Text>
-        <Text style={styles.metaText}>Store: {store_name ?? "Unknown"}</Text>
       </View>
 
       {loading && <ActivityIndicator size="large" color="#fff" />}
@@ -1259,7 +1490,7 @@ export default function NewProductClassification() {
                 </View>
 
                 <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-                  <Text style={styles.confirmButtonText}>Confirm and Add</Text>
+                  <Text style={styles.confirmButtonText}>Continue</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -1427,43 +1658,36 @@ export default function ManualAddProduct() {
     setLoading(true);
 
     try {
-      // 1) Create product
+      // 1) Create product (store is optional so it is not set here)
       const createResp = await fetch(`${API_BASE_URL}/products/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          barcode: barcode || null,
+          barcode: barcode.trim() ? barcode.trim() : null,
           foodTypeId: selectedFoodType.id,
-          storeId: 1,
+          storeId: null,
         }),
       });
 
       if (!createResp.ok) {
+        const txt = await createResp.text().catch(() => "");
+        console.error("Create product failed:", createResp.status, txt);
         Alert.alert("Error", "Failed to create product.");
         return;
       }
 
       const created = await createResp.json();
 
-      // 2) Add to user inventory
-      const defaultExpiry = new Date();
-      defaultExpiry.setDate(defaultExpiry.getDate() + 5);
-      const expiryDate = defaultExpiry.toISOString().split("T")[0];
-
-      await fetch(`${API_BASE_URL}/user/addProduct`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user_id,
-          productId: created.product_id,
-          storeId: created.store_id,
-          expiryDate,
-        }),
+      // 2) Route to optional store/expiry screen
+      router.push({
+        pathname: "/AddItemToFridge",
+        params: {
+          user_id: String(user_id),
+          product_id: String(created.product_id),
+          product_name: String(created.product_name ?? name),
+        },
       });
-
-      Alert.alert("Added", `${created.product_name} added to your items.`);
-      router.back();
     } catch (e) {
       console.error("Manual add error:", e);
       Alert.alert("Error", "Unable to add product.");
@@ -1495,35 +1719,34 @@ export default function ManualAddProduct() {
 
       {!selectedCategory && (
         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Product details</Text>
+          <Text style={styles.sectionTitle}>Product details</Text>
 
-            <Text style={styles.label}>Product name *</Text>
-            <TextInput
+          <Text style={styles.label}>Product name *</Text>
+          <TextInput
             style={styles.input}
             placeholder="e.g. Strawberries"
             value={name}
             onChangeText={setName}
-            />
+          />
 
-            <Text style={styles.helperText}>
+          <Text style={styles.helperText}>
             This is the name that will appear in your fridge
-            </Text>
+          </Text>
 
-            <Text style={[styles.label, { marginTop: 12 }]}>Barcode (optional)</Text>
-            <TextInput
+          <Text style={[styles.label, { marginTop: 12 }]}>Barcode (optional)</Text>
+          <TextInput
             style={styles.input}
             placeholder="Leave blank if unknown"
             value={barcode}
             onChangeText={setBarcode}
             keyboardType="number-pad"
-            />
+          />
 
-            <Text style={styles.helperText}>
+          <Text style={styles.helperText}>
             Only needed if you want to scan this product in the future
-            </Text>
+          </Text>
         </View>
-        )}
-
+      )}
 
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
@@ -1532,7 +1755,7 @@ export default function ManualAddProduct() {
           {selectedCategory ? (
             selectedFoodType ? (
               <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-                <Text style={styles.confirmButtonText}>Confirm and Add</Text>
+                <Text style={styles.confirmButtonText}>Continue</Text>
               </TouchableOpacity>
             ) : (
               renderButtons(
@@ -1602,31 +1825,341 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   section: {
-  width: "100%",
-  backgroundColor: "#ffffff",
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 20,
-},
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
 
-sectionTitle: {
-  fontSize: 16,
-  fontWeight: "700",
-  marginBottom: 12,
-  color: "#333",
-},
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 12,
+    color: "#333",
+  },
 
-label: {
-  fontSize: 14,
-  fontWeight: "600",
-  marginBottom: 4,
-  color: "#333",
-},
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 4,
+    color: "#333",
+  },
 
-helperText: {
-  fontSize: 12,
-  color: "#666",
-  marginTop: 4,
+  helperText: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+  },
+});
+
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { API_BASE_URL } from "../config/apiConfig";
+
+import {
+  registerForLocalNotificationsAsync,
+  sendExpiryNotification,
+} from "../lib/notifications";
+
+type Store = { id: number; name: string };
+
+export default function AddItemToFridge() {
+  const router = useRouter();
+  const { user_id, product_id, product_name } = useLocalSearchParams<{
+    user_id?: string;
+    product_id?: string;
+    product_name?: string;
+  }>();
+
+  const [stores, setStores] = useState<Store[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
+
+  const [newStoreName, setNewStoreName] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+
+  const [loading, setLoading] = useState(false);
+
+  const title = useMemo(() => {
+    return `Add Item: ${product_name ?? "Unnamed Product"}`;
+  }, [product_name]);
+
+  const loadStores = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/stores`);
+      const data = await res.json();
+      setStores(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Stores fetch error:", e);
+      setStores([]);
+    }
+  };
+
+  useEffect(() => {
+    loadStores();
+  }, []);
+
+  const createStore = async () => {
+    const trimmed = newStoreName.trim();
+    if (!trimmed) {
+      Alert.alert("Missing store name", "Enter a store name to create it.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const resp = await fetch(`${API_BASE_URL}/stores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("Create store failed:", resp.status, txt);
+        Alert.alert("Error", "Failed to create store.");
+        return;
+      }
+
+      const created = await resp.json();
+      await loadStores();
+      setSelectedStoreId(Number(created.store_id));
+      setNewStoreName("");
+    } catch (e) {
+      console.error("Create store error:", e);
+      Alert.alert("Error", "Unable to create store.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmAdd = async () => {
+    if (!user_id || !product_id) {
+      Alert.alert("Error", "Missing required information.");
+      return;
+    }
+
+    // expiryDate is optional; if provided, do a basic YYYY-MM-DD sanity check
+    const trimmedExpiry = expiryDate.trim();
+    const expiryToSend =
+      trimmedExpiry.length === 0 ? null : trimmedExpiry;
+
+    if (expiryToSend) {
+      const okFormat = /^\d{4}-\d{2}-\d{2}$/.test(expiryToSend);
+      if (!okFormat) {
+        Alert.alert("Invalid expiry date", "Use the format YYYY-MM-DD or leave it blank.");
+        return;
+      }
+    }
+
+    try {
+      setLoading(true);
+
+      const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user_id,
+          productId: Number(product_id),
+          storeId: selectedStoreId,
+          expiryDate: expiryToSend,
+        }),
+      });
+
+      if (!addResp.ok) {
+        const txt = await addResp.text().catch(() => "");
+        console.error("Add product failed:", addResp.status, txt);
+        Alert.alert("Error", "Failed to add item.");
+        return;
+      }
+
+      const inserted = await addResp.json();
+
+      const userProductId = inserted.user_product_id;
+      const daysLeft =
+        inserted.days_left === null || inserted.days_left === undefined
+          ? null
+          : Number(inserted.days_left);
+
+      const effectivePeriodDays =
+        inserted.effective_period_days === null || inserted.effective_period_days === undefined
+          ? null
+          : Number(inserted.effective_period_days);
+
+      // Only attempt notification if expiry date exists (daysLeft is not null)
+      if (
+        daysLeft !== null &&
+        effectivePeriodDays !== null &&
+        daysLeft <= effectivePeriodDays
+      ) {
+        const ok = await registerForLocalNotificationsAsync();
+        if (ok) {
+          await sendExpiryNotification(product_name ?? "Item", daysLeft);
+
+          if (userProductId) {
+            await fetch(
+              `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+          }
+        }
+      }
+
+      Alert.alert("Added!", "Item added to your fridge.");
+      router.back();
+    } catch (e) {
+      console.error("Confirm add error:", e);
+      Alert.alert("Error", "Unable to add item.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>{title}</Text>
+
+      {loading && <ActivityIndicator size="large" color="#fff" />}
+
+      {!loading && (
+        <>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Store (optional)</Text>
+
+            <TouchableOpacity
+              style={[
+                styles.storeButton,
+                selectedStoreId === null ? styles.storeButtonSelected : null,
+              ]}
+              onPress={() => setSelectedStoreId(null)}
+            >
+              <Text style={styles.storeButtonText}>No store</Text>
+            </TouchableOpacity>
+
+            <ScrollView style={styles.storeList} contentContainerStyle={styles.storeListContent}>
+              {stores.map((s) => (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[
+                    styles.storeButton,
+                    selectedStoreId === s.id ? styles.storeButtonSelected : null,
+                  ]}
+                  onPress={() => setSelectedStoreId(s.id)}
+                >
+                  <Text style={styles.storeButtonText}>{s.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={[styles.label, { marginTop: 10 }]}>Create new store</Text>
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="e.g. Aldi"
+                value={newStoreName}
+                onChangeText={setNewStoreName}
+              />
+              <TouchableOpacity style={styles.smallButton} onPress={createStore}>
+                <Text style={styles.smallButtonText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Expiry date (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD (leave blank for none)"
+              value={expiryDate}
+              onChangeText={setExpiryDate}
+            />
+          </View>
+
+          <TouchableOpacity style={styles.confirmButton} onPress={confirmAdd}>
+            <Text style={styles.confirmButtonText}>Confirm and Add</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#663399",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  title: { color: "white", fontSize: 18, marginBottom: 12, textAlign: "center" },
+
+  section: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 14,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#333", marginBottom: 10 },
+  label: { fontSize: 13, fontWeight: "600", color: "#333", marginBottom: 6 },
+
+  storeList: { maxHeight: 220 },
+  storeListContent: { paddingBottom: 4 },
+
+  storeButton: {
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  storeButtonSelected: {
+    backgroundColor: "#ffcc00",
+  },
+  storeButtonText: { color: "#333", fontWeight: "700" },
+
+  input: {
+    width: "100%",
+    backgroundColor: "#eee",
+    padding: 10,
+    borderRadius: 8,
+  },
+
+  row: { flexDirection: "row", alignItems: "center", gap: 8 },
+  smallButton: {
+    backgroundColor: "#663399",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  smallButtonText: { color: "#fff", fontWeight: "700" },
+
+  confirmButton: {
+    backgroundColor: "#ffffff",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 10,
+  },
+  confirmButtonText: {
+    color: "#663399",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
 });
 

@@ -22,10 +22,10 @@ type FoodType = { id: number; name: string; category: number };
 type UserProduct = {
   product_id: number;
   product_name: string;
-  store_id: number;
-  store_name: string;
+  store_id: number | null;
+  store_name: string | null;
   quantity: number;
-  nearest_expiry: string;
+  nearest_expiry: string | null;
 };
 
 export default function Home() {
@@ -215,7 +215,9 @@ export default function Home() {
 
     Alert.alert(
       "Confirm removal",
-      `Remove ${parsed} of ${removeTarget.product_name} from ${removeTarget.store_name}?`,
+      `Remove ${parsed} of ${removeTarget.product_name} from ${
+        removeTarget.store_name ?? "No store"
+      }?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -244,7 +246,6 @@ export default function Home() {
                 return;
               }
 
-              // Refresh the current list
               if (selectedFoodType) {
                 await handleFoodTypePress(selectedFoodType);
               }
@@ -290,7 +291,10 @@ export default function Home() {
   const renderUserProducts = () => (
     <View style={styles.grid}>
       {userProducts.map((prod, idx) => (
-        <View key={`${prod.product_id}-${prod.store_id}-${idx}`} style={styles.productCard}>
+        <View
+          key={`${prod.product_id}-${String(prod.store_id)}-${idx}`}
+          style={styles.productCard}
+        >
           <TouchableOpacity
             style={styles.removeX}
             onPress={() => openRemove(prod)}
@@ -299,9 +303,13 @@ export default function Home() {
           </TouchableOpacity>
 
           <Text style={styles.productName}>{prod.product_name}</Text>
-          <Text style={styles.productDetails}>Store: {prod.store_name}</Text>
+          <Text style={styles.productDetails}>
+            Store: {prod.store_name ?? "None"}
+          </Text>
           <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
-          <Text style={styles.productDetails}>Expires: {prod.nearest_expiry}</Text>
+          <Text style={styles.productDetails}>
+            Expires: {prod.nearest_expiry ?? "None"}
+          </Text>
         </View>
       ))}
     </View>
@@ -367,7 +375,7 @@ export default function Home() {
           <View style={styles.removePanel}>
             <Text style={styles.removeTitle}>Remove items</Text>
             <Text style={styles.removeSub}>
-              {removeTarget.product_name} ({removeTarget.store_name})
+              {removeTarget.product_name} ({removeTarget.store_name ?? "No store"})
             </Text>
             <Text style={styles.removeSub}>Max: {removeTarget.quantity}</Text>
 

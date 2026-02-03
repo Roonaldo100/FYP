@@ -75,43 +75,36 @@ export default function ManualAddProduct() {
     setLoading(true);
 
     try {
-      // 1) Create product
+      // 1) Create product (store is optional so it is not set here)
       const createResp = await fetch(`${API_BASE_URL}/products/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          barcode: barcode || null,
+          barcode: barcode.trim() ? barcode.trim() : null,
           foodTypeId: selectedFoodType.id,
-          storeId: 1,
+          storeId: null,
         }),
       });
 
       if (!createResp.ok) {
+        const txt = await createResp.text().catch(() => "");
+        console.error("Create product failed:", createResp.status, txt);
         Alert.alert("Error", "Failed to create product.");
         return;
       }
 
       const created = await createResp.json();
 
-      // 2) Add to user inventory
-      const defaultExpiry = new Date();
-      defaultExpiry.setDate(defaultExpiry.getDate() + 5);
-      const expiryDate = defaultExpiry.toISOString().split("T")[0];
-
-      await fetch(`${API_BASE_URL}/user/addProduct`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user_id,
-          productId: created.product_id,
-          storeId: created.store_id,
-          expiryDate,
-        }),
+      // 2) Route to optional store/expiry screen
+      router.push({
+        pathname: "/AddItemToFridge",
+        params: {
+          user_id: String(user_id),
+          product_id: String(created.product_id),
+          product_name: String(created.product_name ?? name),
+        },
       });
-
-      Alert.alert("Added", `${created.product_name} added to your items.`);
-      router.back();
     } catch (e) {
       console.error("Manual add error:", e);
       Alert.alert("Error", "Unable to add product.");
@@ -143,35 +136,34 @@ export default function ManualAddProduct() {
 
       {!selectedCategory && (
         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Product details</Text>
+          <Text style={styles.sectionTitle}>Product details</Text>
 
-            <Text style={styles.label}>Product name *</Text>
-            <TextInput
+          <Text style={styles.label}>Product name *</Text>
+          <TextInput
             style={styles.input}
             placeholder="e.g. Strawberries"
             value={name}
             onChangeText={setName}
-            />
+          />
 
-            <Text style={styles.helperText}>
+          <Text style={styles.helperText}>
             This is the name that will appear in your fridge
-            </Text>
+          </Text>
 
-            <Text style={[styles.label, { marginTop: 12 }]}>Barcode (optional)</Text>
-            <TextInput
+          <Text style={[styles.label, { marginTop: 12 }]}>Barcode (optional)</Text>
+          <TextInput
             style={styles.input}
             placeholder="Leave blank if unknown"
             value={barcode}
             onChangeText={setBarcode}
             keyboardType="number-pad"
-            />
+          />
 
-            <Text style={styles.helperText}>
+          <Text style={styles.helperText}>
             Only needed if you want to scan this product in the future
-            </Text>
+          </Text>
         </View>
-        )}
-
+      )}
 
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
@@ -180,7 +172,7 @@ export default function ManualAddProduct() {
           {selectedCategory ? (
             selectedFoodType ? (
               <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-                <Text style={styles.confirmButtonText}>Confirm and Add</Text>
+                <Text style={styles.confirmButtonText}>Continue</Text>
               </TouchableOpacity>
             ) : (
               renderButtons(
@@ -250,30 +242,30 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   section: {
-  width: "100%",
-  backgroundColor: "#ffffff",
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 20,
-},
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
 
-sectionTitle: {
-  fontSize: 16,
-  fontWeight: "700",
-  marginBottom: 12,
-  color: "#333",
-},
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 12,
+    color: "#333",
+  },
 
-label: {
-  fontSize: 14,
-  fontWeight: "600",
-  marginBottom: 4,
-  color: "#333",
-},
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 4,
+    color: "#333",
+  },
 
-helperText: {
-  fontSize: 12,
-  color: "#666",
-  marginTop: 4,
-}
+  helperText: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+  },
 });

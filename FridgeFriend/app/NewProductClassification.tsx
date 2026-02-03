@@ -10,23 +10,16 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import {
-  registerForLocalNotificationsAsync,
-  sendExpiryNotification,
-} from "../lib/notifications";
-
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number };
 
 export default function NewProductClassification() {
   const router = useRouter();
-  const { user_id, barcode, product_name, store_id, store_name } =
+  const { user_id, barcode, product_name } =
     useLocalSearchParams<{
       user_id?: string;
       barcode?: string;
       product_name?: string;
-      store_id?: string;
-      store_name?: string;
     }>();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -76,7 +69,7 @@ export default function NewProductClassification() {
   };
 
   const handleConfirm = async () => {
-    if (!user_id || !barcode || !product_name || !store_id) {
+    if (!user_id || !barcode || !product_name) {
       Alert.alert("Error", "Missing required information to create product.");
       return;
     }
@@ -96,7 +89,7 @@ export default function NewProductClassification() {
           name: product_name,
           barcode,
           foodTypeId: selectedFoodType.id,
-          storeId: Number(store_id),
+          storeId: null,
         }),
       });
 
@@ -109,57 +102,15 @@ export default function NewProductClassification() {
 
       const created = await createResp.json();
 
-      // 2) Add to user inventory (same logic as scanner)
-      const defaultExpiry = new Date();
-      defaultExpiry.setDate(defaultExpiry.getDate() + 5);
-      const expiryDate = defaultExpiry.toISOString().split("T")[0];
-
-      const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user_id,
-          productId: created.product_id,
-          storeId: created.store_id,
-          expiryDate,
-        }),
+      // 2) Route to optional store/expiry screen
+      router.push({
+        pathname: "/AddItemToFridge",
+        params: {
+          user_id: String(user_id),
+          product_id: String(created.product_id),
+          product_name: String(created.product_name ?? product_name),
+        },
       });
-
-      if (!addResp.ok) {
-        const txt = await addResp.text().catch(() => "");
-        console.error("Add product failed:", addResp.status, txt);
-        Alert.alert("Error", "Product created but failed to add to your fridge.");
-        return;
-      }
-
-      const inserted = await addResp.json();
-      const userProductId = inserted.user_product_id;
-
-      const daysLeft: number = Number(inserted.days_left);
-      const effectivePeriodDays: number = Number(inserted.effective_period_days);
-
-      // Only notify if DB says it is due
-      if (daysLeft <= effectivePeriodDays) {
-        const ok = await registerForLocalNotificationsAsync();
-        if (ok) {
-          await sendExpiryNotification(created.product_name, daysLeft);
-
-          if (userProductId) {
-            await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-        }
-      }
-
-      Alert.alert(
-        "Added!",
-        `Added: ${created.product_name}\nStore: ${created.store_name ?? store_name ?? "Unknown"}`
-      );
-
-      // Go back to scanner (user can hit Scan Again)
-      router.back();
     } catch (e) {
       console.error("Classification confirm error:", e);
       Alert.alert("Error", "Unable to save product classification.");
@@ -204,7 +155,6 @@ export default function NewProductClassification() {
 
       <View style={styles.meta}>
         <Text style={styles.metaText}>Barcode: {barcode ?? "Unknown"}</Text>
-        <Text style={styles.metaText}>Store: {store_name ?? "Unknown"}</Text>
       </View>
 
       {loading && <ActivityIndicator size="large" color="#fff" />}
@@ -220,7 +170,7 @@ export default function NewProductClassification() {
                 </View>
 
                 <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-                  <Text style={styles.confirmButtonText}>Confirm and Add</Text>
+                  <Text style={styles.confirmButtonText}>Continue</Text>
                 </TouchableOpacity>
               </>
             ) : (
