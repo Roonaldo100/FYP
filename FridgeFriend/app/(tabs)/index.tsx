@@ -36,12 +36,8 @@ export default function Home() {
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
   const [userProducts, setUserProducts] = useState<UserProduct[]>([]);
 
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
-    null
-  );
-  const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(
-    null
-  );
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(null);
 
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -104,12 +100,29 @@ export default function Home() {
     }
   }, [user_id]);
 
-  // Run when Home gains focus (covers “back and re-enter” behaviour)
+  // Run when Home gains focus
   useFocusEffect(
     useCallback(() => {
       pollPendingNotifications();
     }, [pollPendingNotifications])
   );
+
+  // -------------------------------
+  // Settings navigation
+  // -------------------------------
+  const handleSettingsPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    // Use absolute path for reliability with expo-router
+    router.push({
+      pathname: "../Settings",
+      params: { user_id: String(user_id) },
+    });
+  };
 
   // -------------------------------
   // Navigation + data loading
@@ -180,6 +193,19 @@ export default function Home() {
 
     router.push({
       pathname: "/BarcodeScanner",
+      params: { user_id: String(user_id) },
+    });
+  };
+
+  const handleManualAddPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    router.push({
+      pathname: "/ManualAddProduct",
       params: { user_id: String(user_id) },
     });
   };
@@ -263,7 +289,7 @@ export default function Home() {
   };
 
   // -------------------------------
-  // Render helpers (RESTORED)
+  // Render helpers
   // -------------------------------
   const title = useMemo(() => {
     if (selectedFoodType) return `${selectedFoodType.name} (Your Items)`;
@@ -295,17 +321,12 @@ export default function Home() {
           key={`${prod.product_id}-${String(prod.store_id)}-${idx}`}
           style={styles.productCard}
         >
-          <TouchableOpacity
-            style={styles.removeX}
-            onPress={() => openRemove(prod)}
-          >
+          <TouchableOpacity style={styles.removeX} onPress={() => openRemove(prod)}>
             <Text style={styles.removeXText}>×</Text>
           </TouchableOpacity>
 
           <Text style={styles.productName}>{prod.product_name}</Text>
-          <Text style={styles.productDetails}>
-            Store: {prod.store_name ?? "None"}
-          </Text>
+          <Text style={styles.productDetails}>Store: {prod.store_name ?? "None"}</Text>
           <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
           <Text style={styles.productDetails}>
             Expires: {prod.nearest_expiry ?? "None"}
@@ -316,25 +337,25 @@ export default function Home() {
   );
 
   // -------------------------------
-  // Main render (RESTORED)
+  // Main render
   // -------------------------------
   return (
     <View style={styles.container}>
+      <StatusBar style="light" />
+
+      <View style={styles.topRow}>
+        <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
+          <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.title}>{title}</Text>
 
       <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
         <Text style={styles.scanButtonText}>📷 Scan Item</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.scanButton}
-        onPress={() =>
-          router.push({
-            pathname: "/ManualAddProduct",
-            params: { user_id: String(user_id) },
-          })
-        }
-      >
+      <TouchableOpacity style={styles.scanButton} onPress={handleManualAddPress}>
         <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
       </TouchableOpacity>
 
@@ -407,8 +428,6 @@ export default function Home() {
           </View>
         </View>
       )}
-
-      <StatusBar style="auto" />
     </View>
   );
 }
@@ -421,7 +440,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
+
+  topRow: {
+    width: "100%",
+    alignItems: "flex-end",
+    marginBottom: 6,
+  },
+
+  settingsButton: {
+    backgroundColor: "#fff",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+
+  settingsButtonText: {
+    color: "#663399",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+
   title: { color: "white", fontSize: 22, marginBottom: 20 },
+
   scanButton: {
     backgroundColor: "#ffffff",
     paddingVertical: 10,
@@ -434,12 +474,14 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
     width: 320,
   },
+
   button: {
     backgroundColor: "#ffcc00",
     width: 150,
@@ -450,6 +492,7 @@ const styles = StyleSheet.create({
     margin: 5,
   },
   buttonText: { color: "#333", fontSize: 18, fontWeight: "600" },
+
   productCard: {
     backgroundColor: "#fff",
     width: 150,
@@ -461,6 +504,7 @@ const styles = StyleSheet.create({
   },
   productName: { fontSize: 16, fontWeight: "bold", color: "#333" },
   productDetails: { fontSize: 14, color: "#555" },
+
   backButton: {
     marginTop: 20,
     padding: 10,

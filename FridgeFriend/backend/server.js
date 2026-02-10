@@ -373,8 +373,9 @@ app.post("/user/addProduct", async (req, res) => {
     }
 
     const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
-    const effective_period_days =
-      expiry_period_days > 0 ? expiry_period_days : userPref;
+
+    // IMPORTANT: 0 means "no custom override" in your schema
+    const effective_period_days = expiry_period_days > 0 ? expiry_period_days : userPref;
 
     res.json({
       message: "Product added successfully",
@@ -388,7 +389,6 @@ app.post("/user/addProduct", async (req, res) => {
     res.status(500).json({ message: "Server error adding product" });
   }
 });
-
 
 /**
  * POST: Remove N items from user_products for a grouped product/store row
@@ -459,9 +459,119 @@ app.post("/user_products/:id/markNotified", async (req, res) => {
 });
 
 /**
+ * GET: Settings (current notification preference)
+ */
+app.get("/user/:userId/settings", async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT notification_period_preference
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [userId]
+    );
+
+    if (r.rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      notification_period_preference: Number(
+        r.rows[0].notification_period_preference ?? 0
+      ),
+    });
+  } catch (err) {
+    console.error("Get settings error:", err);
+    res.status(500).json({ message: "Server error loading settings" });
+  }
+});
+
+/**
+ * POST: Update notification preference + one-time sweep
+ * Body: { notification_period_preference: number, overrideExisting: boolean }
+ *
+ * - overrideExisting=true: treat all items as if they use the new user pref for this sweep
+ * - overrideExisting=false: respect per-item expiry_period_days when >0; use user pref otherwise
+ *
+ * IMPORTANT: Does NOT change user_products.expiry_period_days.
+ */
+app.post("/user/:userId/settings/notificationPeriod", async (req, res) => {
+  const { userId } = req.params;
+  const { notification_period_preference, overrideExisting } = req.body;
+
+  const pref = Number(notification_period_preference);
+  if (!Number.isFinite(pref) || pref < 0) {
+    return res
+      .status(400)
+      .json({ message: "Invalid notification_period_preference" });
+  }
+
+  const override = Boolean(overrideExisting);
+
+  try {
+    await pool.query(
+      `
+      UPDATE users
+      SET notification_period_preference = $1
+      WHERE id = $2
+      `,
+      [pref, userId]
+    );
+
+    // One-time sweep list (client will notify + markNotified)
+    const r = await pool.query(
+      `
+      SELECT
+        up.id AS user_product_id,
+        p.name AS product_name,
+        (up.expiry_date::date - CURRENT_DATE) AS days_left,
+        CASE
+          WHEN $2::boolean = true THEN u.notification_period_preference
+          WHEN COALESCE(up.expiry_period_days, 0) > 0 THEN up.expiry_period_days
+          ELSE u.notification_period_preference
+        END AS effective_period_days
+      FROM user_products up
+      JOIN products p ON p.id = up.product_id
+      JOIN users u ON u.id = up.user_id
+      WHERE up.user_id = $1
+        AND up.notified = false
+        AND up.expiry_date IS NOT NULL
+        AND (up.expiry_date::date - CURRENT_DATE) <=
+          CASE
+            WHEN $2::boolean = true THEN u.notification_period_preference
+            WHEN COALESCE(up.expiry_period_days, 0) > 0 THEN up.expiry_period_days
+            ELSE u.notification_period_preference
+          END
+      ORDER BY up.id ASC
+      LIMIT 200;
+      `,
+      [userId, override]
+    );
+
+    res.json({
+      notification_period_preference: pref,
+      overrideExisting: override,
+      pending: r.rows.map((row) => ({
+        user_product_id: Number(row.user_product_id),
+        product_name: String(row.product_name),
+        days_left: Number(row.days_left),
+        effective_period_days: Number(row.effective_period_days),
+      })),
+    });
+  } catch (err) {
+    console.error("Update settings error:", err);
+    res.status(500).json({ message: "Server error updating settings" });
+  }
+});
+
+/**
  * GET: Pending notifications (DB decides using user preference + per-item override)
  *
- * Expiry date is required to be considered pending. Rows with expiry_date NULL are ignored.
+ * FIXED: 0 means "no override", so do NOT use COALESCE(up.expiry_period_days,...)
  */
 app.get("/user/:userId/pendingNotifications", async (req, res) => {
   const { userId } = req.params;
@@ -473,28 +583,34 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
         up.id AS user_product_id,
         p.name AS product_name,
         (up.expiry_date::date - CURRENT_DATE) AS days_left,
-        COALESCE(up.expiry_period_days, u.notification_period_preference, 0) AS effective_period_days
+        CASE
+          WHEN COALESCE(up.expiry_period_days, 0) > 0 THEN up.expiry_period_days
+          ELSE u.notification_period_preference
+        END AS effective_period_days
       FROM user_products up
       JOIN products p ON p.id = up.product_id
       JOIN users u ON u.id = up.user_id
       WHERE up.user_id = $1
         AND up.notified = false
         AND up.expiry_date IS NOT NULL
-        AND (up.expiry_date::date - CURRENT_DATE)
-            <= COALESCE(up.expiry_period_days, u.notification_period_preference, 0)
+        AND (up.expiry_date::date - CURRENT_DATE) <=
+          CASE
+            WHEN COALESCE(up.expiry_period_days, 0) > 0 THEN up.expiry_period_days
+            ELSE u.notification_period_preference
+          END
       ORDER BY up.id ASC
       LIMIT 50;
       `,
       [userId]
     );
 
-    const rows = r.rows.map((row) => ({
-      ...row,
-      days_left: Number(row.days_left),
-      effective_period_days: Number(row.effective_period_days),
-    }));
-
-    res.json(rows);
+    res.json(
+      r.rows.map((row) => ({
+        ...row,
+        days_left: Number(row.days_left),
+        effective_period_days: Number(row.effective_period_days),
+      }))
+    );
   } catch (err) {
     console.error("Pending notifications error:", err);
     res
@@ -502,6 +618,8 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
       .json({ message: "Server error loading pending notifications" });
   }
 });
+
+
 
 /**
  * GET: User products by food type

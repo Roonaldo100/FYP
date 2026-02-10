@@ -36,12 +36,8 @@ export default function Home() {
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
   const [userProducts, setUserProducts] = useState<UserProduct[]>([]);
 
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
-    null
-  );
-  const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(
-    null
-  );
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(null);
 
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -104,12 +100,29 @@ export default function Home() {
     }
   }, [user_id]);
 
-  // Run when Home gains focus (covers “back and re-enter” behaviour)
+  // Run when Home gains focus
   useFocusEffect(
     useCallback(() => {
       pollPendingNotifications();
     }, [pollPendingNotifications])
   );
+
+  // -------------------------------
+  // Settings navigation
+  // -------------------------------
+  const handleSettingsPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    // Use absolute path for reliability with expo-router
+    router.push({
+      pathname: "../Settings",
+      params: { user_id: String(user_id) },
+    });
+  };
 
   // -------------------------------
   // Navigation + data loading
@@ -180,6 +193,19 @@ export default function Home() {
 
     router.push({
       pathname: "/BarcodeScanner",
+      params: { user_id: String(user_id) },
+    });
+  };
+
+  const handleManualAddPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    router.push({
+      pathname: "/ManualAddProduct",
       params: { user_id: String(user_id) },
     });
   };
@@ -263,7 +289,7 @@ export default function Home() {
   };
 
   // -------------------------------
-  // Render helpers (RESTORED)
+  // Render helpers
   // -------------------------------
   const title = useMemo(() => {
     if (selectedFoodType) return `${selectedFoodType.name} (Your Items)`;
@@ -295,17 +321,12 @@ export default function Home() {
           key={`${prod.product_id}-${String(prod.store_id)}-${idx}`}
           style={styles.productCard}
         >
-          <TouchableOpacity
-            style={styles.removeX}
-            onPress={() => openRemove(prod)}
-          >
+          <TouchableOpacity style={styles.removeX} onPress={() => openRemove(prod)}>
             <Text style={styles.removeXText}>×</Text>
           </TouchableOpacity>
 
           <Text style={styles.productName}>{prod.product_name}</Text>
-          <Text style={styles.productDetails}>
-            Store: {prod.store_name ?? "None"}
-          </Text>
+          <Text style={styles.productDetails}>Store: {prod.store_name ?? "None"}</Text>
           <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
           <Text style={styles.productDetails}>
             Expires: {prod.nearest_expiry ?? "None"}
@@ -316,25 +337,25 @@ export default function Home() {
   );
 
   // -------------------------------
-  // Main render (RESTORED)
+  // Main render
   // -------------------------------
   return (
     <View style={styles.container}>
+      <StatusBar style="light" />
+
+      <View style={styles.topRow}>
+        <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
+          <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.title}>{title}</Text>
 
       <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
         <Text style={styles.scanButtonText}>📷 Scan Item</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.scanButton}
-        onPress={() =>
-          router.push({
-            pathname: "/ManualAddProduct",
-            params: { user_id: String(user_id) },
-          })
-        }
-      >
+      <TouchableOpacity style={styles.scanButton} onPress={handleManualAddPress}>
         <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
       </TouchableOpacity>
 
@@ -407,8 +428,6 @@ export default function Home() {
           </View>
         </View>
       )}
-
-      <StatusBar style="auto" />
     </View>
   );
 }
@@ -421,7 +440,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
+
+  topRow: {
+    width: "100%",
+    alignItems: "flex-end",
+    marginBottom: 6,
+  },
+
+  settingsButton: {
+    backgroundColor: "#fff",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+
+  settingsButtonText: {
+    color: "#663399",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+
   title: { color: "white", fontSize: 22, marginBottom: 20 },
+
   scanButton: {
     backgroundColor: "#ffffff",
     paddingVertical: 10,
@@ -434,12 +474,14 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
     width: 320,
   },
+
   button: {
     backgroundColor: "#ffcc00",
     width: 150,
@@ -450,6 +492,7 @@ const styles = StyleSheet.create({
     margin: 5,
   },
   buttonText: { color: "#333", fontSize: 18, fontWeight: "600" },
+
   productCard: {
     backgroundColor: "#fff",
     width: 150,
@@ -461,6 +504,7 @@ const styles = StyleSheet.create({
   },
   productName: { fontSize: 16, fontWeight: "bold", color: "#333" },
   productDetails: { fontSize: 14, color: "#555" },
+
   backButton: {
     marginTop: 20,
     padding: 10,
@@ -957,13 +1001,25 @@ app.post("/products/create", async (req, res) => {
       return res.status(400).json({ message: "Invalid food type" });
     }
 
-    // Prevent duplicates (barcode may be null)
+    // Prevent accidental reuse: if barcode exists, require explicit confirmation
     if (barcode) {
       const existing = await pool.query(
         `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
         [barcode]
       );
+
       if (existing.rows.length > 0) {
+        const allowExisting = req.body.allowExisting === true;
+
+        if (!allowExisting) {
+          return res.json({
+            barcode_conflict: true,
+            existing_product_id: existing.rows[0].id,
+            existing_product_name: existing.rows[0].name,
+          });
+        }
+
+        // User explicitly confirmed they want to use the existing DB product
         return res.json({
           product_id: existing.rows[0].id,
           product_name: existing.rows[0].name,
@@ -972,6 +1028,8 @@ app.post("/products/create", async (req, res) => {
         });
       }
     }
+
+
 
     const insertProduct = await pool.query(
       `INSERT INTO products (name, barcode, food_type)
@@ -1650,51 +1708,112 @@ export default function ManualAddProduct() {
   };
 
   const handleConfirm = async () => {
-    if (!user_id || !name || !selectedFoodType) {
-      Alert.alert("Missing information", "Please complete all required fields.");
+  if (!user_id || !name || !selectedFoodType) {
+    Alert.alert("Missing information", "Please complete all required fields.");
+    return;
+  }
+
+  setLoading(true);
+
+  const trimmedBarcode = barcode.trim() ? barcode.trim() : null;
+
+  try {
+    // First attempt: do NOT allow silent barcode reuse
+    const createResp = await fetch(`${API_BASE_URL}/products/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        barcode: trimmedBarcode,
+        foodTypeId: selectedFoodType.id,
+        storeId: null,
+        allowExisting: false,
+      }),
+    });
+
+    if (!createResp.ok) {
+      const txt = await createResp.text().catch(() => "");
+      console.error("Create product failed:", createResp.status, txt);
+      Alert.alert("Error", "Failed to create product.");
       return;
     }
 
-    setLoading(true);
+    const created = await createResp.json();
 
-    try {
-      // 1) Create product (store is optional so it is not set here)
-      const createResp = await fetch(`${API_BASE_URL}/products/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          barcode: barcode.trim() ? barcode.trim() : null,
-          foodTypeId: selectedFoodType.id,
-          storeId: null,
-        }),
-      });
+    // If the barcode is already in the DB, warn the user and let them choose
+    if (created.barcode_conflict) {
+      Alert.alert(
+        "Barcode recognised",
+        `This barcode is recognised as "${created.existing_product_name}" in the database.\n\nWould you like to add "${created.existing_product_name}" to your fridge?`,
+        [
+          { text: "Go back", style: "cancel" },
+          {
+            text: "Add recognised product",
+            onPress: async () => {
+              try {
+                setLoading(true);
 
-      if (!createResp.ok) {
-        const txt = await createResp.text().catch(() => "");
-        console.error("Create product failed:", createResp.status, txt);
-        Alert.alert("Error", "Failed to create product.");
-        return;
-      }
+                const confirmResp = await fetch(`${API_BASE_URL}/products/create`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    name,
+                    barcode: trimmedBarcode,
+                    foodTypeId: selectedFoodType.id,
+                    storeId: null,
+                    allowExisting: true,
+                  }),
+                });
 
-      const created = await createResp.json();
+                if (!confirmResp.ok) {
+                  const txt = await confirmResp.text().catch(() => "");
+                  console.error("Confirm existing failed:", confirmResp.status, txt);
+                  Alert.alert("Error", "Failed to use recognised product.");
+                  return;
+                }
 
-      // 2) Route to optional store/expiry screen
-      router.push({
-        pathname: "/AddItemToFridge",
-        params: {
-          user_id: String(user_id),
-          product_id: String(created.product_id),
-          product_name: String(created.product_name ?? name),
-        },
-      });
-    } catch (e) {
-      console.error("Manual add error:", e);
-      Alert.alert("Error", "Unable to add product.");
-    } finally {
-      setLoading(false);
+                const confirmed = await confirmResp.json();
+
+                router.push({
+                  pathname: "/AddItemToFridge",
+                  params: {
+                    user_id: String(user_id),
+                    product_id: String(confirmed.product_id),
+                    product_name: String(confirmed.product_name ?? name),
+                  },
+                });
+              } catch (e) {
+                console.error("Confirm existing error:", e);
+                Alert.alert("Error", "Unable to add recognised product.");
+              } finally {
+                setLoading(false);
+              }
+            },
+          },
+        ]
+      );
+
+      return;
     }
-  };
+
+    // Normal path: new product created
+    router.push({
+      pathname: "/AddItemToFridge",
+      params: {
+        user_id: String(user_id),
+        product_id: String(created.product_id),
+        product_name: String(created.product_name ?? name),
+      },
+    });
+  } catch (e) {
+    console.error("Manual add error:", e);
+    Alert.alert("Error", "Unable to add product.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
 
   const renderButtons = (
     items: { key: string; label: string }[],
@@ -2020,7 +2139,11 @@ export default function AddItemToFridge() {
       }
 
       Alert.alert("Added!", "Item added to your fridge.");
-      router.back();
+        router.replace({
+        pathname: "/(tabs)",
+        params: { user_id: String(user_id) },
+      });
+
     } catch (e) {
       console.error("Confirm add error:", e);
       Alert.alert("Error", "Unable to add item.");
@@ -2161,5 +2284,181 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
+});
+
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { API_BASE_URL } from "../config/apiConfig";
+
+import {
+  registerForLocalNotificationsAsync,
+  sendExpiryNotification,
+} from "../lib/notifications";
+
+export default function Settings() {
+  const router = useRouter();
+  const { user_id } = useLocalSearchParams<{ user_id?: string }>();
+
+  const [loading, setLoading] = useState(false);
+  const [periodText, setPeriodText] = useState("0");
+
+  const loadSettings = async () => {
+    if (!user_id) return;
+    try {
+      setLoading(true);
+      const r = await fetch(`${API_BASE_URL}/user/${user_id}/settings`);
+      if (!r.ok) throw new Error("Failed to load settings");
+      const data = await r.json();
+      setPeriodText(String(data.notification_period_preference ?? 0));
+    } catch (e) {
+      console.error("Load settings error:", e);
+      Alert.alert("Error", "Unable to load settings.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSettings();
+  }, [user_id]);
+
+  const save = async (overrideExisting: boolean) => {
+    if (!user_id) return;
+
+    const parsed = Number(periodText);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      Alert.alert("Invalid value", "Please enter a number ≥ 0.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const resp = await fetch(
+        `${API_BASE_URL}/user/${user_id}/settings/notificationPeriod`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            notification_period_preference: parsed,
+            overrideExisting,
+          }),
+        }
+      );
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("Save settings failed:", resp.status, txt);
+        Alert.alert("Error", "Failed to save settings.");
+        return;
+      }
+
+      const data: {
+        notification_period_preference: number;
+        overrideExisting: boolean;
+        pending: { user_product_id: number; product_name: string; days_left: number }[];
+      } = await resp.json();
+
+      // One-time sweep notifications
+      if (Array.isArray(data.pending) && data.pending.length > 0) {
+        const ok = await registerForLocalNotificationsAsync();
+        if (ok) {
+          for (const row of data.pending) {
+            await sendExpiryNotification(String(row.product_name), Number(row.days_left));
+
+            await fetch(
+              `${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+          }
+        }
+      }
+
+      Alert.alert("Saved", "Notification preference updated.");
+      router.back();
+    } catch (e) {
+      console.error("Save settings error:", e);
+      Alert.alert("Error", "Unable to save settings.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onPressSave = () => {
+    Alert.alert(
+      "Apply to existing items?",
+      "Some items may have custom expiry notification rules.\n\nOverride those rules for a one-time sweep?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "No (respect custom rules)", onPress: () => save(false) },
+        { text: "Yes (override for sweep)", onPress: () => save(true) },
+      ]
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Settings</Text>
+
+      {loading && <ActivityIndicator size="large" color="#fff" />}
+
+      {!loading && (
+        <View style={styles.card}>
+          <Text style={styles.label}>Notify me when an item expires within (days)</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="number-pad"
+            value={periodText}
+            onChangeText={setPeriodText}
+            placeholder="e.g. 5"
+          />
+
+          <TouchableOpacity style={styles.saveButton} onPress={onPressSave}>
+            <Text style={styles.saveText}>Save</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#663399",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  title: { color: "white", fontSize: 22, marginBottom: 16 },
+  card: { width: "100%", maxWidth: 360, backgroundColor: "#fff", borderRadius: 12, padding: 16 },
+  label: { fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 8 },
+  input: { backgroundColor: "#eee", borderRadius: 8, padding: 10, marginBottom: 12 },
+  saveButton: {
+    backgroundColor: "#663399",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  saveText: { color: "#fff", fontWeight: "800" },
+  backButton: { backgroundColor: "#eee", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  backText: { color: "#333", fontWeight: "800" },
 });
 
