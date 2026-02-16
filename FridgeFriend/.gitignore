@@ -43,5 +43,5 @@ app-example
 /android
 
 # Manual
-.env
+FYP/FridgeFriend/backend/.env
 FYP/FridgeFriend/config/apiConfig.ts
