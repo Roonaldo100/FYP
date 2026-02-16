@@ -1,11 +1,10 @@
 import dotenv from "dotenv";
-dotenv.config(); 
+dotenv.config();
 
 console.log("ENV loaded:", {
   hasDb: Boolean(process.env.DATABASE_URL),
   hasSpoon: Boolean(process.env.SPOONACULAR_API_KEY),
 });
-
 
 import cors from "cors";
 import express from "express";
@@ -69,6 +68,9 @@ async function getNoStoreId() {
 function normalizeText(s) {
   return String(s || "")
     .toLowerCase()
+    // remove bracketed/parenthetical descriptors generically
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -124,9 +126,7 @@ function extractRequestedDish(message) {
   ];
 
   const cleanup = (s) => {
-    let out = normalizeText(s)
-      .replace(/\b(please|tonight|today)\b/g, "")
-      .trim();
+    let out = normalizeText(s).replace(/\b(please|tonight|today)\b/g, "").trim();
     out = out.replace(/^(a|an|the)\s+/i, "").trim();
     return out || null;
   };
@@ -194,7 +194,6 @@ async function spoonFetchJson(path, paramsObj) {
   const url = `${SPOON_BASE}${path}?${params.toString()}`;
   const resp = await fetch(url);
 
-  // Spoonacular can return 402 if quota exceeded; pass through helpful info
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(`Spoonacular error ${resp.status}: ${text}`);
@@ -203,20 +202,204 @@ async function spoonFetchJson(path, paramsObj) {
   return await resp.json();
 }
 
-async function spoonSearchRecipeByDish(dish) {
-  // complexSearch is the simplest “search by name”
-  const data = await spoonFetchJson("/recipes/complexSearch", {
+async function spoonAutocompleteRecipe(dish) {
+  const data = await spoonFetchJson("/recipes/autocomplete", {
     query: dish,
-    number: 1,
-    addRecipeInformation: false,
+    number: 25,
   });
+  return Array.isArray(data) ? data : [];
+}
 
-  const first = data?.results?.[0];
-  return first ? { id: first.id, title: first.title } : null;
+/**
+ * -------------------------
+ * Canonical title selection (generic, no dish hardcoding)
+ * -------------------------
+ */
+
+function scoreTitleForDish(dish, title) {
+  const dishNorm = normalizeText(dish);
+  const titleNorm = normalizeText(title);
+
+  if (!dishNorm || !titleNorm) return -Infinity;
+
+  // exact title match is always best
+  if (titleNorm === dishNorm) return 1_000_000;
+
+  const dishTokens = dishNorm.split(" ").filter(Boolean);
+  const head = dishTokens[dishTokens.length - 1] || "";
+
+  let score = 0;
+
+  const idx = titleNorm.indexOf(dishNorm);
+  const hasPhrase = idx >= 0;
+
+  if (hasPhrase) score += 2000;
+
+  // Prefer canonical-looking phrasing:
+  // "... apple pie" tends to be more canonical than "apple pie bars"
+  if (hasPhrase && titleNorm.endsWith(dishNorm)) score += 1200;
+  if (hasPhrase && titleNorm.startsWith(dishNorm)) score += 150;
+
+  // Penalize tokens after dish phrase (generic)
+  if (hasPhrase) {
+    const afterStr = titleNorm.slice(idx + dishNorm.length).trim();
+    const afterTokens = afterStr ? afterStr.split(" ").filter(Boolean) : [];
+
+    // Generic modifiers that can reasonably appear after the dish phrase
+    // (NOT dessert-specific)
+    const MODIFIERS = new Set([
+      "recipe",
+      "easy",
+      "best",
+      "simple",
+      "quick",
+      "homemade",
+      "classic",
+      "traditional",
+      "authentic",
+      "ultimate",
+      "perfect",
+      "healthy",
+      "vegan",
+      "vegetarian",
+      "gluten",
+      "free",
+      "low",
+      "carb",
+      "keto",
+      "spicy",
+      "creamy",
+      "baked",
+      "roasted",
+      "grilled",
+      "one",
+      "pot",
+    ]);
+
+    const nonModifierCount = afterTokens.filter((t) => !MODIFIERS.has(t)).length;
+
+    // tokens after phrase are suspicious variants ("... bars", "... bites", "... cookies", etc.)
+    score -= afterTokens.length * 250;
+    score -= nonModifierCount * 450;
+  }
+
+  // Prefer titles ending with the head word of the dish ("... pie", "... soup", "... curry", etc.)
+  const titleTokens = titleNorm.split(" ").filter(Boolean);
+  if (head && titleTokens[titleTokens.length - 1] === head) score += 600;
+
+  // Prefer fewer extra words overall
+  const extraWords = Math.max(0, titleTokens.length - dishTokens.length);
+  score -= extraWords * 40;
+
+  // Slight preference for shorter titles
+  score -= titleNorm.length;
+
+  return score;
+}
+
+function pickBestRecipeHit(dish, hits) {
+  if (!Array.isArray(hits) || hits.length === 0) return null;
+
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const h of hits) {
+    const t = h?.title || "";
+    const s = scoreTitleForDish(dish, t);
+    if (s > bestScore) {
+      bestScore = s;
+      best = h;
+    }
+  }
+  return best;
+}
+
+function dedupeById(hits) {
+  const seen = new Set();
+  const out = [];
+  for (const h of hits || []) {
+    const id = h?.id;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(h);
+  }
+  return out;
+}
+
+async function spoonSearchRecipeByDish(dish) {
+  // 1) Autocomplete pass (fast)
+  const suggestions = await spoonAutocompleteRecipe(dish);
+  if (suggestions.length) {
+    const bestAuto = pickBestRecipeHit(dish, suggestions);
+    if (bestAuto) return { id: bestAuto.id, title: bestAuto.title };
+  }
+
+  // 2) complexSearch pass (titleMatch + paging)
+  const PAGE_SIZE = 50;
+  const MAX_PAGES = 6;
+
+  let collected = [];
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * PAGE_SIZE;
+
+    const data = await spoonFetchJson("/recipes/complexSearch", {
+      query: dish,
+      number: PAGE_SIZE,
+      offset,
+      instructionsRequired: true,
+      addRecipeInformation: false,
+
+      // Key change: focus on title matches to reduce "related but different" dishes
+      titleMatch: true,
+
+      // Keep popularity for discoverability, then we re-rank with our scorer
+      sort: "popularity",
+      sortDirection: "desc",
+    });
+
+    const results = Array.isArray(data?.results) ? data.results : [];
+    if (!results.length) break;
+
+    collected = dedupeById(collected.concat(results));
+
+    // If we ever get an exact title match, return immediately
+    const dishNorm = normalizeText(dish);
+    const exact = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
+    if (exact) return { id: exact.id, title: exact.title };
+  }
+
+  // Optional: second ranking strategy to surface canonical titles that popularity might bury.
+  // (Costs 1 extra call; keep page small.)
+  try {
+    const data2 = await spoonFetchJson("/recipes/complexSearch", {
+      query: dish,
+      number: 50,
+      offset: 0,
+      instructionsRequired: true,
+      addRecipeInformation: false,
+      titleMatch: true,
+      sort: "meta-score",
+      sortDirection: "desc",
+    });
+
+    const results2 = Array.isArray(data2?.results) ? data2.results : [];
+    if (results2.length) {
+      collected = dedupeById(collected.concat(results2));
+      const dishNorm = normalizeText(dish);
+      const exact2 = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
+      if (exact2) return { id: exact2.id, title: exact2.title };
+    }
+  } catch (e) {
+    // If meta-score sorting isn't supported or errors, just ignore and continue.
+    console.warn("complexSearch meta-score fallback error:", e?.message ?? e);
+  }
+
+  const best = pickBestRecipeHit(dish, collected);
+  return best ? { id: best.id, title: best.title } : null;
 }
 
 async function spoonGetRecipeInformation(recipeId) {
-  // includes extendedIngredients, sourceUrl, etc.
   const info = await spoonFetchJson(`/recipes/${recipeId}/information`, {
     includeNutrition: false,
   });
