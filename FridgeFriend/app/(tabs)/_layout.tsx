@@ -39,6 +39,17 @@ export default function TabLayout() {
         }}
         initialParams={{ user_id }}
       />
+
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: "Chat",
+          tabBarIcon: ({ color, size }) => (
+            <IconSymbol name="paperplane.fill" color={color} size={size} />
+          ),
+        }}
+        initialParams={{ user_id }}
+      />
     </Tabs>
   );
 }

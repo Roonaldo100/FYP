@@ -1,3 +1,12 @@
+import dotenv from "dotenv";
+dotenv.config(); 
+
+console.log("ENV loaded:", {
+  hasDb: Boolean(process.env.DATABASE_URL),
+  hasSpoon: Boolean(process.env.SPOONACULAR_API_KEY),
+});
+
+
 import cors from "cors";
 import express from "express";
 import fetch from "node-fetch";
@@ -6,6 +15,14 @@ import pool from "./db.js";
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+/**
+ * -------------------------
+ * CONFIG
+ * -------------------------
+ */
+const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
+const SPOON_BASE = "https://api.spoonacular.com";
 
 /**
  * Helpers
@@ -39,11 +56,274 @@ async function getNoStoreId() {
     return inserted.rows[0].id;
   } catch (e) {
     console.warn("getNoStoreId error:", e?.message ?? e);
-    // As a fallback, use Tesco if something is badly wrong
     return await getTescoStoreId();
   }
 }
 
+/**
+ * -------------------------------
+ * CHATBOT HELPERS (NO HARD-CODING)
+ * -------------------------------
+ */
+
+function normalizeText(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function toBaseWord(word) {
+  if (word.endsWith("ies") && word.length > 4) return word.slice(0, -3) + "y";
+  if (word.endsWith("es") && word.length > 4) return word.slice(0, -2);
+  if (word.endsWith("s") && word.length > 3) return word.slice(0, -1);
+  return word;
+}
+
+function tokenize(str) {
+  return normalizeText(str)
+    .split(" ")
+    .map(toBaseWord)
+    .filter((t) => t && t.length > 2);
+}
+
+function ingredientMatchesInventory(ingredient, inventoryItems) {
+  const ingTokens = tokenize(ingredient);
+  if (!ingTokens.length) return false;
+
+  for (const inv of inventoryItems) {
+    const invTokens = tokenize(inv);
+    if (!invTokens.length) continue;
+
+    // any overlap token counts as match
+    for (const t of ingTokens) {
+      if (invTokens.includes(t)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Dish extraction:
+ * - handles "I want to make an apple pie"
+ * - strips fluff + leading articles
+ */
+function extractRequestedDish(message) {
+  const raw = String(message || "").trim();
+  const lower = normalizeText(raw);
+
+  const patterns = [
+    /^i want to make (.+)$/i,
+    /^i want (.+)$/i,
+    /^make (.+)$/i,
+    /^cook (.+)$/i,
+    /^recipe for (.+)$/i,
+    /^how do i make (.+)$/i,
+    /^how to make (.+)$/i,
+  ];
+
+  const cleanup = (s) => {
+    let out = normalizeText(s)
+      .replace(/\b(please|tonight|today)\b/g, "")
+      .trim();
+    out = out.replace(/^(a|an|the)\s+/i, "").trim();
+    return out || null;
+  };
+
+  for (const p of patterns) {
+    const match = raw.match(p);
+    if (match && match[1]) return cleanup(match[1]);
+  }
+
+  if (lower.split(" ").length <= 6 && lower.length >= 3) {
+    return cleanup(lower);
+  }
+
+  return null;
+}
+
+/**
+ * Inventory summary for matching
+ */
+async function getUserInventorySummary(userId) {
+  const r = await pool.query(
+    `
+    SELECT
+      p.name,
+      COUNT(*)::int AS qty,
+      MIN(up.expiry_date) AS soonest_expiry
+    FROM user_products up
+    JOIN products p ON p.id = up.product_id
+    WHERE up.user_id = $1
+    GROUP BY p.name
+    ORDER BY MIN(up.expiry_date) NULLS LAST, COUNT(*) DESC, p.name ASC
+    LIMIT 60;
+    `,
+    [userId]
+  );
+
+  const expiringSoon = r.rows
+    .filter((row) => row.soonest_expiry)
+    .slice(0, 10)
+    .map((row) => String(row.name));
+
+  const pantry = r.rows.slice(0, 40).map((row) => String(row.name));
+
+  return { expiringSoon, pantry };
+}
+
+/**
+ * -------------------------
+ * SPOONACULAR HELPERS
+ * -------------------------
+ */
+
+async function spoonFetchJson(path, paramsObj) {
+  if (!SPOONACULAR_API_KEY) {
+    throw new Error("Missing SPOONACULAR_API_KEY on server.");
+  }
+
+  const params = new URLSearchParams({
+    apiKey: SPOONACULAR_API_KEY,
+    ...Object.fromEntries(
+      Object.entries(paramsObj || {}).map(([k, v]) => [k, String(v)])
+    ),
+  });
+
+  const url = `${SPOON_BASE}${path}?${params.toString()}`;
+  const resp = await fetch(url);
+
+  // Spoonacular can return 402 if quota exceeded; pass through helpful info
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Spoonacular error ${resp.status}: ${text}`);
+  }
+
+  return await resp.json();
+}
+
+async function spoonSearchRecipeByDish(dish) {
+  // complexSearch is the simplest “search by name”
+  const data = await spoonFetchJson("/recipes/complexSearch", {
+    query: dish,
+    number: 1,
+    addRecipeInformation: false,
+  });
+
+  const first = data?.results?.[0];
+  return first ? { id: first.id, title: first.title } : null;
+}
+
+async function spoonGetRecipeInformation(recipeId) {
+  // includes extendedIngredients, sourceUrl, etc.
+  const info = await spoonFetchJson(`/recipes/${recipeId}/information`, {
+    includeNutrition: false,
+  });
+
+  const ingredients =
+    Array.isArray(info?.extendedIngredients) ? info.extendedIngredients : [];
+
+  const ingredientNames = ingredients
+    .map((ing) => ing?.nameClean || ing?.originalName || ing?.name || "")
+    .map((s) => String(s).trim())
+    .filter(Boolean);
+
+  return {
+    id: info?.id,
+    title: info?.title || "Recipe",
+    url: info?.sourceUrl || info?.spoonacularSourceUrl || null,
+    ingredients: ingredientNames,
+  };
+}
+
+/**
+ * -------------------------
+ * CHATBOT ROUTE (Spoonacular)
+ * -------------------------
+ * POST /chat/recipe
+ * Body: { userId, message }
+ * Response: { reply, recipes: [{title,url,used[],missing[]}] }
+ */
+app.post("/chat/recipe", async (req, res) => {
+  try {
+    const { userId, message } = req.body || {};
+    if (!userId || !message || !String(message).trim()) {
+      return res
+        .status(400)
+        .json({ reply: "Missing userId or message.", recipes: [] });
+    }
+
+    const dish = extractRequestedDish(message);
+    if (!dish) {
+      return res.json({
+        reply:
+          "Tell me a specific dish you want to make (e.g. “apple pie”), and I’ll compare the ingredients to your inventory.",
+        recipes: [],
+      });
+    }
+
+    const { expiringSoon, pantry } = await getUserInventorySummary(userId);
+    const inventoryItems = [...expiringSoon, ...pantry];
+
+    if (inventoryItems.length === 0) {
+      return res.json({
+        reply:
+          "Your inventory looks empty. Add a few items first, then I can compare ingredients against what you have.",
+        recipes: [],
+      });
+    }
+
+    const hit = await spoonSearchRecipeByDish(dish);
+
+    if (!hit) {
+      return res.json({
+        reply: `I couldn't find a Spoonacular recipe for "${dish}". Try a slightly different wording (e.g. “apple tart”).`,
+        recipes: [],
+      });
+    }
+
+    const recipe = await spoonGetRecipeInformation(hit.id);
+
+    const used = recipe.ingredients.filter((i) =>
+      ingredientMatchesInventory(i, inventoryItems)
+    );
+    const missing = recipe.ingredients.filter(
+      (i) => !ingredientMatchesInventory(i, inventoryItems)
+    );
+
+    const reply =
+      `For "${recipe.title}", here’s what you have vs what you need:` +
+      ` ✅ You have: ${used.length ? used.slice(0, 10).join(", ") : "—"}.` +
+      ` 🛒 You need: ${missing.length ? missing.slice(0, 10).join(", ") : "—"}.`;
+
+    return res.json({
+      reply,
+      recipes: [
+        {
+          title: recipe.title,
+          url: recipe.url,
+          used: used.slice(0, 20),
+          missing: missing.slice(0, 20),
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("Chat recipe error:", err);
+    return res.status(500).json({
+      reply:
+        "Sorry — I couldn’t fetch recipe suggestions right now. Check your Spoonacular key/quota and server logs.",
+      recipes: [],
+    });
+  }
+});
+
+/**
+ * -------------------------
+ * The rest of your existing routes
+ * -------------------------
+ * (Left unchanged from your current version)
+ */
 
 /**
  * GET: Categories
@@ -89,8 +369,7 @@ app.get("/stores", async (req, res) => {
 });
 
 /**
- * POST: Create a new store (for on-the-fly store creation)
- * Body: { name }
+ * POST: Create a new store
  */
 app.post("/stores", async (req, res) => {
   const { name } = req.body;
@@ -102,7 +381,6 @@ app.post("/stores", async (req, res) => {
   const cleaned = String(name).trim();
 
   try {
-    // Try to reuse an existing store by case-insensitive match
     const existing = await pool.query(
       `SELECT id, name FROM stores WHERE LOWER(name) = LOWER($1) LIMIT 1`,
       [cleaned]
@@ -134,14 +412,6 @@ app.post("/stores", async (req, res) => {
 
 /**
  * POST: Scan barcode
- *
- * If product exists locally, store is optional:
- * - If a product_store relationship exists, return that store
- * - Otherwise return store_id=null/store_name=null
- *
- * If OFF finds it but it's not in DB, we DO NOT create it locally anymore.
- * Instead, we return needs_classification=true so the app can ask the user
- * to choose Category + Food Type before creating the product.
  */
 app.post("/scan", async (req, res) => {
   const { barcode } = req.body;
@@ -150,7 +420,6 @@ app.post("/scan", async (req, res) => {
   }
 
   try {
-    // 1) Local DB lookup
     const localProduct = await pool.query(
       `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
       [barcode]
@@ -159,7 +428,6 @@ app.post("/scan", async (req, res) => {
     if (localProduct.rows.length > 0) {
       const product = localProduct.rows[0];
 
-      // Try to find a store via product_store, else return null store
       const storeJoin = await pool.query(
         `
         SELECT s.id AS store_id, s.name AS store_name
@@ -191,7 +459,6 @@ app.post("/scan", async (req, res) => {
       });
     }
 
-    // 2) Not in local DB, try Open Food Facts
     const offRes = await fetch(
       `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`
     );
@@ -204,7 +471,6 @@ app.post("/scan", async (req, res) => {
       offData.product?.generic_name ||
       "Unnamed Product";
 
-    // New behaviour: let the client classify the product before creating it in DB
     return res.json({
       found: true,
       product_id: null,
@@ -221,10 +487,7 @@ app.post("/scan", async (req, res) => {
 });
 
 /**
- * POST: Create a product after user classification (Category + Food Type chosen)
- * Body: { name, barcode, foodTypeId, storeId }
- *
- * storeId is optional. If omitted/null, no product_store row is created.
+ * POST: Create product
  */
 app.post("/products/create", async (req, res) => {
   const { name, barcode, foodTypeId, storeId } = req.body;
@@ -234,7 +497,6 @@ app.post("/products/create", async (req, res) => {
   }
 
   try {
-    // Ensure the food type exists
     const ft = await pool.query(`SELECT id FROM food_types WHERE id = $1 LIMIT 1`, [
       foodTypeId,
     ]);
@@ -242,7 +504,6 @@ app.post("/products/create", async (req, res) => {
       return res.status(400).json({ message: "Invalid food type" });
     }
 
-    // Prevent accidental reuse: if barcode exists, require explicit confirmation
     if (barcode) {
       const existing = await pool.query(
         `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
@@ -260,7 +521,6 @@ app.post("/products/create", async (req, res) => {
           });
         }
 
-        // User explicitly confirmed they want to use the existing DB product
         return res.json({
           product_id: existing.rows[0].id,
           product_name: existing.rows[0].name,
@@ -269,8 +529,6 @@ app.post("/products/create", async (req, res) => {
         });
       }
     }
-
-
 
     const insertProduct = await pool.query(
       `INSERT INTO products (name, barcode, food_type)
@@ -281,7 +539,6 @@ app.post("/products/create", async (req, res) => {
 
     const newProductId = insertProduct.rows[0].id;
 
-    // Attach store relationship only if a storeId was provided
     if (storeId) {
       try {
         await pool.query(
@@ -318,9 +575,6 @@ app.post("/products/create", async (req, res) => {
 
 /**
  * POST: Add product to user inventory
- * storeId and expiryDate are optional. Missing fields will insert NULL.
- *
- * returns user_product_id AND days_left AND effective_period_days (days_left null if no expiry date)
  */
 app.post("/user/addProduct", async (req, res) => {
   const { userId, productId, storeId, expiryDate } = req.body;
@@ -330,10 +584,8 @@ app.post("/user/addProduct", async (req, res) => {
   }
 
   try {
-    // Treat "no store" as a real store id
     const effectiveStoreId = storeId ? Number(storeId) : await getNoStoreId();
 
-    // Ensure product_store row exists for this product/store pair to satisfy FK
     await pool.query(
       `
       INSERT INTO product_store (product_id, store_id, price)
@@ -373,8 +625,6 @@ app.post("/user/addProduct", async (req, res) => {
     }
 
     const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
-
-    // IMPORTANT: 0 means "no custom override" in your schema
     const effective_period_days = expiry_period_days > 0 ? expiry_period_days : userPref;
 
     res.json({
@@ -392,9 +642,6 @@ app.post("/user/addProduct", async (req, res) => {
 
 /**
  * POST: Remove N items from user_products for a grouped product/store row
- * Body: { userId, productId, storeId, quantity }
- *
- * storeId can be null. We match using IS NOT DISTINCT FROM to support null.
  */
 app.post("/user_products/remove", async (req, res) => {
   const { userId, productId, storeId, quantity } = req.body;
@@ -431,7 +678,7 @@ app.post("/user_products/remove", async (req, res) => {
 });
 
 /**
- * POST: Mark a user_products row as notified=true
+ * POST: Mark notified
  */
 app.post("/user_products/:id/markNotified", async (req, res) => {
   const { id } = req.params;
@@ -459,7 +706,7 @@ app.post("/user_products/:id/markNotified", async (req, res) => {
 });
 
 /**
- * GET: Settings (current notification preference)
+ * GET: Settings
  */
 app.get("/user/:userId/settings", async (req, res) => {
   const { userId } = req.params;
@@ -491,13 +738,7 @@ app.get("/user/:userId/settings", async (req, res) => {
 });
 
 /**
- * POST: Update notification preference + one-time sweep
- * Body: { notification_period_preference: number, overrideExisting: boolean }
- *
- * - overrideExisting=true: treat all items as if they use the new user pref for this sweep
- * - overrideExisting=false: respect per-item expiry_period_days when >0; use user pref otherwise
- *
- * IMPORTANT: Does NOT change user_products.expiry_period_days.
+ * POST: Update notification preference + sweep
  */
 app.post("/user/:userId/settings/notificationPeriod", async (req, res) => {
   const { userId } = req.params;
@@ -522,7 +763,6 @@ app.post("/user/:userId/settings/notificationPeriod", async (req, res) => {
       [pref, userId]
     );
 
-    // One-time sweep list (client will notify + markNotified)
     const r = await pool.query(
       `
       SELECT
@@ -569,9 +809,7 @@ app.post("/user/:userId/settings/notificationPeriod", async (req, res) => {
 });
 
 /**
- * GET: Pending notifications (DB decides using user preference + per-item override)
- *
- * FIXED: 0 means "no override", so do NOT use COALESCE(up.expiry_period_days,...)
+ * GET: Pending notifications
  */
 app.get("/user/:userId/pendingNotifications", async (req, res) => {
   const { userId } = req.params;
@@ -619,11 +857,8 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
   }
 });
 
-
-
 /**
  * GET: User products by food type
- * Store and expiry date are optional, so this uses LEFT JOIN and allows nearest_expiry to be null.
  */
 app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
   const { userId, foodTypeId } = req.params;
