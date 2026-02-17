@@ -8,18 +8,27 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Linking
+  Linking,
+  Alert,
 } from "react-native";
-import Constants from "expo-constants";
 import { useGlobalSearchParams } from "expo-router";
 import { API_BASE_URL } from "../../config/apiConfig";
 
-
 type ChatRole = "user" | "assistant";
+
+type RecipeIngredient = string | { name: string; productId?: number | null };
 
 type Recipe = {
   title: string;
   url?: string | null;
+
+  // NEW: needed for saving + de-duping spoonacular recipes
+  source?: "spoonacular" | "custom";
+  external_id?: string | null;
+
+  // NEW: needed to persist ingredients when saving from chat
+  ingredients?: string[];
+
   used: string[];
   missing: string[];
 };
@@ -37,7 +46,6 @@ function toValidUserId(v: unknown): number | null {
 }
 
 export default function ChatTab() {
-  // Use global search params so the user_id survives tab switching
   const params = useGlobalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidUserId(params.user_id), [params.user_id]);
 
@@ -52,11 +60,68 @@ export default function ChatTab() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // track "saving" per card so button can show Saving...
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const appendMessage = (msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg]);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+  };
+
+  const openUrl = async (url: string) => {
+    const u =
+      url.startsWith("http://") || url.startsWith("https://")
+        ? url
+        : `https://${url}`;
+    const can = await Linking.canOpenURL(u);
+    if (can) {
+      await Linking.openURL(u);
+    } else {
+      console.warn("Cannot open url:", u);
+    }
+  };
+
+  const saveRecipe = async (r: Recipe, key: string) => {
+    if (!userId) {
+      Alert.alert("Missing user id", "Please re-open Tabs with user_id.");
+      return;
+    }
+
+    setSavingKey(key);
+    try {
+      const res = await fetch(`${API_BASE_URL}/user/${userId}/recipes/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipe: {
+            title: r.title,
+            url: r.url ?? null,
+            source: r.source ?? "spoonacular",
+            external_id: r.external_id ?? null,
+            // store ingredient strings so the saved recipe can show missing later
+            ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+
+      appendMessage({
+        id: String(Date.now() + 999),
+        role: "assistant",
+        text: `Saved "${r.title}" to your Recipes tab ✅`,
+      });
+    } catch (e) {
+      console.warn("Save recipe error:", e);
+      Alert.alert("Save failed", "Could not save recipe. Check server logs.");
+    } finally {
+      setSavingKey(null);
+    }
   };
 
   const onSend = async () => {
@@ -109,17 +174,6 @@ export default function ChatTab() {
     }
   };
 
-  const openUrl = async (url: string) => {
-  const u = url.startsWith("http://") || url.startsWith("https://") ? url : `https://${url}`;
-  const can = await Linking.canOpenURL(u);
-  if (can) {
-    await Linking.openURL(u);
-  } else {
-    console.warn("Cannot open url:", u);
-  }
-};
-
-
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isUser = item.role === "user";
 
@@ -139,42 +193,70 @@ export default function ChatTab() {
 
         {!!item.recipes?.length && (
           <View style={{ marginTop: 10, gap: 10 }}>
-            {item.recipes.map((r, idx) => (
-              <View
-                key={`${item.id}-recipe-${idx}`}
-                style={{
-                  backgroundColor: "#fff",
-                  borderRadius: 12,
-                  padding: 12,
-                  borderWidth: 1,
-                  borderColor: "#eee",
-                }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: "600" }}>{r.title}</Text>
+            {item.recipes.map((r, idx) => {
+              const key = `${item.id}-recipe-${idx}`;
+              const saving = savingKey === key;
 
-                <Text style={{ marginTop: 6, fontSize: 13 }}>
-                  You have: {r.used.length ? r.used.join(", ") : "—"}
-                </Text>
-
-                <Text style={{ marginTop: 2, fontSize: 13 }}>
-                  You need: {r.missing.length ? r.missing.join(", ") : "—"}
-                </Text>
-
-                {!!r.url && (
-                  <Text
-                    style={{
-                      marginTop: 6,
-                      fontSize: 12,
-                      color: "#1a73e8",
-                      textDecorationLine: "underline",
-                    }}
-                    onPress={() => openUrl(r.url!)}
-                  >
-                    {r.url}
+              return (
+                <View
+                  key={key}
+                  style={{
+                    backgroundColor: "#fff",
+                    borderRadius: 12,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: "#eee",
+                  }}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: "600" }}>
+                    {r.title}
                   </Text>
-                )}
-              </View>
-            ))}
+
+                  <Text style={{ marginTop: 6, fontSize: 13 }}>
+                    You have: {r.used.length ? r.used.join(", ") : "—"}
+                  </Text>
+
+                  <Text style={{ marginTop: 2, fontSize: 13 }}>
+                    You need: {r.missing.length ? r.missing.join(", ") : "—"}
+                  </Text>
+
+                  {!!r.url && (
+                    <Text
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "#1a73e8",
+                        textDecorationLine: "underline",
+                      }}
+                      onPress={() => openUrl(r.url!)}
+                    >
+                      {r.url}
+                    </Text>
+                  )}
+
+                  <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                    <TouchableOpacity
+                      onPress={() => saveRecipe(r, key)}
+                      disabled={saving}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 10,
+                        backgroundColor: saving ? "#ccc" : "#111",
+                      }}
+                    >
+                      {saving ? (
+                        <ActivityIndicator />
+                      ) : (
+                        <Text style={{ color: "#fff", fontWeight: "600" }}>
+                          Save
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         )}
       </View>

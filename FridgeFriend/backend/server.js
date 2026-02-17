@@ -24,7 +24,9 @@ const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
 const SPOON_BASE = "https://api.spoonacular.com";
 
 /**
- * Helpers
+ * -------------------------
+ * Store helpers
+ * -------------------------
  */
 async function getTescoStoreId() {
   try {
@@ -68,7 +70,6 @@ async function getNoStoreId() {
 function normalizeText(s) {
   return String(s || "")
     .toLowerCase()
-    // remove bracketed/parenthetical descriptors generically
     .replace(/\([^)]*\)/g, " ")
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/[^a-z0-9\s]/g, " ")
@@ -98,7 +99,6 @@ function ingredientMatchesInventory(ingredient, inventoryItems) {
     const invTokens = tokenize(inv);
     if (!invTokens.length) continue;
 
-    // any overlap token counts as match
     for (const t of ingTokens) {
       if (invTokens.includes(t)) return true;
     }
@@ -107,9 +107,7 @@ function ingredientMatchesInventory(ingredient, inventoryItems) {
 }
 
 /**
- * Dish extraction:
- * - handles "I want to make an apple pie"
- * - strips fluff + leading articles
+ * Dish extraction
  */
 function extractRequestedDish(message) {
   const raw = String(message || "").trim();
@@ -144,7 +142,7 @@ function extractRequestedDish(message) {
 }
 
 /**
- * Inventory summary for matching
+ * Inventory summary for matching (chat use)
  */
 async function getUserInventorySummary(userId) {
   const r = await pool.query(
@@ -211,18 +209,13 @@ async function spoonAutocompleteRecipe(dish) {
 }
 
 /**
- * -------------------------
- * Canonical title selection (generic, no dish hardcoding)
- * -------------------------
+ * Canonical title selection for “exact-ish” matching (no hardcoding dishes)
  */
-
 function scoreTitleForDish(dish, title) {
   const dishNorm = normalizeText(dish);
   const titleNorm = normalizeText(title);
 
   if (!dishNorm || !titleNorm) return -Infinity;
-
-  // exact title match is always best
   if (titleNorm === dishNorm) return 1_000_000;
 
   const dishTokens = dishNorm.split(" ").filter(Boolean);
@@ -234,19 +227,13 @@ function scoreTitleForDish(dish, title) {
   const hasPhrase = idx >= 0;
 
   if (hasPhrase) score += 2000;
-
-  // Prefer canonical-looking phrasing:
-  // "... apple pie" tends to be more canonical than "apple pie bars"
   if (hasPhrase && titleNorm.endsWith(dishNorm)) score += 1200;
   if (hasPhrase && titleNorm.startsWith(dishNorm)) score += 150;
 
-  // Penalize tokens after dish phrase (generic)
   if (hasPhrase) {
     const afterStr = titleNorm.slice(idx + dishNorm.length).trim();
     const afterTokens = afterStr ? afterStr.split(" ").filter(Boolean) : [];
 
-    // Generic modifiers that can reasonably appear after the dish phrase
-    // (NOT dessert-specific)
     const MODIFIERS = new Set([
       "recipe",
       "easy",
@@ -278,20 +265,16 @@ function scoreTitleForDish(dish, title) {
 
     const nonModifierCount = afterTokens.filter((t) => !MODIFIERS.has(t)).length;
 
-    // tokens after phrase are suspicious variants ("... bars", "... bites", "... cookies", etc.)
     score -= afterTokens.length * 250;
     score -= nonModifierCount * 450;
   }
 
-  // Prefer titles ending with the head word of the dish ("... pie", "... soup", "... curry", etc.)
   const titleTokens = titleNorm.split(" ").filter(Boolean);
   if (head && titleTokens[titleTokens.length - 1] === head) score += 600;
 
-  // Prefer fewer extra words overall
   const extraWords = Math.max(0, titleTokens.length - dishTokens.length);
   score -= extraWords * 40;
 
-  // Slight preference for shorter titles
   score -= titleNorm.length;
 
   return score;
@@ -327,14 +310,12 @@ function dedupeById(hits) {
 }
 
 async function spoonSearchRecipeByDish(dish) {
-  // 1) Autocomplete pass (fast)
   const suggestions = await spoonAutocompleteRecipe(dish);
   if (suggestions.length) {
     const bestAuto = pickBestRecipeHit(dish, suggestions);
     if (bestAuto) return { id: bestAuto.id, title: bestAuto.title };
   }
 
-  // 2) complexSearch pass (titleMatch + paging)
   const PAGE_SIZE = 50;
   const MAX_PAGES = 6;
 
@@ -349,11 +330,7 @@ async function spoonSearchRecipeByDish(dish) {
       offset,
       instructionsRequired: true,
       addRecipeInformation: false,
-
-      // Key change: focus on title matches to reduce "related but different" dishes
       titleMatch: true,
-
-      // Keep popularity for discoverability, then we re-rank with our scorer
       sort: "popularity",
       sortDirection: "desc",
     });
@@ -363,14 +340,13 @@ async function spoonSearchRecipeByDish(dish) {
 
     collected = dedupeById(collected.concat(results));
 
-    // If we ever get an exact title match, return immediately
     const dishNorm = normalizeText(dish);
-    const exact = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
+    const exact = collected.find(
+      (r) => normalizeText(r?.title || "") === dishNorm
+    );
     if (exact) return { id: exact.id, title: exact.title };
   }
 
-  // Optional: second ranking strategy to surface canonical titles that popularity might bury.
-  // (Costs 1 extra call; keep page small.)
   try {
     const data2 = await spoonFetchJson("/recipes/complexSearch", {
       query: dish,
@@ -387,11 +363,12 @@ async function spoonSearchRecipeByDish(dish) {
     if (results2.length) {
       collected = dedupeById(collected.concat(results2));
       const dishNorm = normalizeText(dish);
-      const exact2 = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
+      const exact2 = collected.find(
+        (r) => normalizeText(r?.title || "") === dishNorm
+      );
       if (exact2) return { id: exact2.id, title: exact2.title };
     }
   } catch (e) {
-    // If meta-score sorting isn't supported or errors, just ignore and continue.
     console.warn("complexSearch meta-score fallback error:", e?.message ?? e);
   }
 
@@ -404,8 +381,9 @@ async function spoonGetRecipeInformation(recipeId) {
     includeNutrition: false,
   });
 
-  const ingredients =
-    Array.isArray(info?.extendedIngredients) ? info.extendedIngredients : [];
+  const ingredients = Array.isArray(info?.extendedIngredients)
+    ? info.extendedIngredients
+    : [];
 
   const ingredientNames = ingredients
     .map((ing) => ing?.nameClean || ing?.originalName || ing?.name || "")
@@ -422,19 +400,455 @@ async function spoonGetRecipeInformation(recipeId) {
 
 /**
  * -------------------------
+ * RECIPES (SAVED / CUSTOM) HELPERS + ROUTES
+ * -------------------------
+ */
+
+async function getUserInventoryItems(userId) {
+  const r = await pool.query(
+    `
+    SELECT p.name
+    FROM user_products up
+    JOIN products p ON p.id = up.product_id
+    WHERE up.user_id = $1
+    GROUP BY p.name
+    ORDER BY p.name ASC
+    `,
+    [userId]
+  );
+  return r.rows.map((row) => String(row.name));
+}
+
+async function getRecipeWithIngredients(recipeId) {
+  const r = await pool.query(
+    `
+    SELECT id, title, source, external_id, source_url
+    FROM recipes
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [recipeId]
+  );
+  if (!r.rows.length) return null;
+
+  const ing = await pool.query(
+    `
+    SELECT id, recipe_id, name, amount, unit, position
+    FROM recipe_ingredients
+    WHERE recipe_id = $1
+    ORDER BY position ASC, id ASC
+    `,
+    [recipeId]
+  );
+
+  return { ...r.rows[0], ingredients: ing.rows };
+}
+
+/**
+ * One-time backfill:
+ * If a saved Spoonacular recipe has 0 ingredients in DB,
+ * fetch once from Spoonacular and store ingredient names in recipe_ingredients.
+ */
+async function ensureRecipeIngredientsInDb(recipeRow) {
+  if (!recipeRow) return;
+  if (recipeRow.source !== "spoonacular") return;
+  if (!recipeRow.external_id) return;
+
+  const currentCount = Array.isArray(recipeRow.ingredients)
+    ? recipeRow.ingredients.length
+    : 0;
+
+  if (currentCount > 0) return;
+
+  // Fetch from Spoonacular once
+  const info = await spoonGetRecipeInformation(Number(recipeRow.external_id));
+  const ingList = Array.isArray(info?.ingredients) ? info.ingredients : [];
+  if (!ingList.length) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Race-safe check
+    const countRes = await client.query(
+      `SELECT COUNT(*)::int AS c FROM recipe_ingredients WHERE recipe_id = $1`,
+      [recipeRow.id]
+    );
+    const c = Number(countRes.rows[0]?.c ?? 0);
+
+    if (c === 0) {
+      let pos = 0;
+      for (const raw of ingList) {
+        const name = String(raw || "").trim();
+        if (!name) continue;
+        pos++;
+        await client.query(
+          `
+          INSERT INTO recipe_ingredients (recipe_id, product_id, name, amount, unit, position)
+          VALUES ($1, NULL, $2, NULL, NULL, $3)
+          `,
+          [recipeRow.id, name, pos]
+        );
+      }
+    }
+
+    // Also store source_url if missing
+    if (!recipeRow.source_url && info.url) {
+      await client.query(
+        `UPDATE recipes SET source_url = $1 WHERE id = $2`,
+        [String(info.url), recipeRow.id]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function computeMissingForRecipe(userId, recipeId) {
+  let recipe = await getRecipeWithIngredients(recipeId);
+  if (!recipe) return null;
+
+  // DB-first: backfill only if DB has no ingredients for Spoonacular recipes
+  if (!recipe.ingredients || recipe.ingredients.length === 0) {
+    await ensureRecipeIngredientsInDb(recipe);
+    recipe = await getRecipeWithIngredients(recipeId);
+    if (!recipe) return null;
+  }
+
+  const inventoryNames = await getUserInventoryItems(userId);
+
+  const have = [];
+  const missing = [];
+
+  for (const ing of recipe.ingredients || []) {
+    const name = String(ing.name || "").trim();
+    if (!name) continue;
+
+    if (ingredientMatchesInventory(name, inventoryNames)) have.push(name);
+    else missing.push(name);
+  }
+
+  return {
+    recipe: {
+      id: Number(recipe.id),
+      title: String(recipe.title),
+      url: recipe.source_url || null,
+      source: String(recipe.source),
+      external_id: recipe.external_id || null,
+    },
+    have,
+    missing,
+  };
+}
+
+/**
+ * Shared helper: upsert/insert recipe + insert ingredients (NAME ONLY) + save to user
+ * - Ingredients stored as plain names; product_id is always NULL.
+ */
+async function upsertAndSaveRecipeForUser({
+  userId,
+  title,
+  source,
+  externalId,
+  url,
+  ingredientsRaw,
+}) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    let recipeId = null;
+    let createdNew = false;
+
+    if (externalId) {
+      // Upsert external recipe by (source, external_id)
+      const up = await client.query(
+        `
+        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id)
+        VALUES ($1, $2, $3, $4, NULL)
+        ON CONFLICT (source, external_id)
+        DO UPDATE SET
+          title = EXCLUDED.title,
+          source_url = COALESCE(EXCLUDED.source_url, recipes.source_url)
+        RETURNING id, (xmax = 0) AS inserted
+        `,
+        [title, source, externalId, url]
+      );
+
+      recipeId = Number(up.rows[0].id);
+      createdNew = Boolean(up.rows[0].inserted);
+    } else {
+      // Custom recipe always creates a new row
+      const ins = await client.query(
+        `
+        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id)
+        VALUES ($1, 'custom', NULL, $2, $3)
+        RETURNING id
+        `,
+        [title, url, userId]
+      );
+
+      recipeId = Number(ins.rows[0].id);
+      createdNew = true;
+    }
+
+    // Ingredients are NAME-ONLY now (product_id always NULL)
+    const safeIngredients = Array.isArray(ingredientsRaw) ? ingredientsRaw : [];
+
+    if (safeIngredients.length) {
+      // Only insert if newly created OR recipe has no ingredients yet
+      const countRes = await client.query(
+        `SELECT COUNT(*)::int AS c FROM recipe_ingredients WHERE recipe_id = $1`,
+        [recipeId]
+      );
+      const currentCount = Number(countRes.rows[0]?.c ?? 0);
+
+      if (createdNew || currentCount === 0) {
+        let pos = 0;
+        for (const ing of safeIngredients) {
+          pos++;
+
+          const name =
+            typeof ing === "string"
+              ? ing.trim()
+              : String(ing?.name || "").trim();
+
+          if (!name) continue;
+
+          await client.query(
+            `
+            INSERT INTO recipe_ingredients (recipe_id, product_id, name, amount, unit, position)
+            VALUES ($1, NULL, $2, NULL, NULL, $3)
+            `,
+            [recipeId, name, pos]
+          );
+        }
+      }
+    }
+
+    // Save to user
+    await client.query(
+      `
+      INSERT INTO user_saved_recipes (user_id, recipe_id)
+      VALUES ($1, $2)
+      ON CONFLICT (user_id, recipe_id) DO NOTHING
+      `,
+      [userId, recipeId]
+    );
+
+    await client.query("COMMIT");
+    return recipeId;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Optional: product search (useful for UI autocomplete)
+ * GET /products/search?q=milk
+ */
+app.get("/products/search", async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) return res.json([]);
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT id, name
+      FROM products
+      WHERE name ILIKE $1
+      ORDER BY name ASC
+      LIMIT 25
+      `,
+      [`%${q}%`]
+    );
+
+    res.json(r.rows.map((row) => ({ id: Number(row.id), name: String(row.name) })));
+  } catch (e) {
+    console.error("Product search error:", e);
+    res.status(500).json({ message: "Server error searching products" });
+  }
+});
+
+/**
+ * Save recipe (from chatbot)
+ * POST /user/:userId/recipes/save
+ * Body: { recipe: { title, url, source, external_id, ingredients: string[] } }
+ */
+app.post("/user/:userId/recipes/save", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const { recipe } = req.body || {};
+
+  if (!userId || !recipe?.title) {
+    return res.status(400).json({ message: "Missing userId or recipe.title" });
+  }
+
+  try {
+    const recipeId = await upsertAndSaveRecipeForUser({
+      userId,
+      title: String(recipe.title).trim(),
+      source: String(recipe.source || "custom"),
+      externalId: recipe.external_id != null ? String(recipe.external_id) : null,
+      url: recipe.url ? String(recipe.url) : null,
+      ingredientsRaw: Array.isArray(recipe.ingredients) ? recipe.ingredients : [],
+    });
+
+    res.json({ saved: true, recipe_id: recipeId });
+  } catch (e) {
+    console.error("Save recipe error:", e);
+    res.status(500).json({ message: "Server error saving recipe" });
+  }
+});
+
+/**
+ * Create custom recipe + save it (ingredients are just names)
+ * POST /user/:userId/recipes
+ * Body: { title, url?, ingredients: string[] }
+ */
+app.post("/user/:userId/recipes", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const { title, url, ingredients } = req.body || {};
+
+  if (!userId || !title || !String(title).trim()) {
+    return res.status(400).json({ message: "Missing title" });
+  }
+
+  try {
+    const recipeId = await upsertAndSaveRecipeForUser({
+      userId,
+      title: String(title).trim(),
+      source: "custom",
+      externalId: null,
+      url: url ? String(url) : null,
+      ingredientsRaw: Array.isArray(ingredients) ? ingredients : [],
+    });
+
+    res.json({ created: true, recipe_id: recipeId });
+  } catch (e) {
+    console.error("Create recipe error:", e);
+    res.status(500).json({ message: "Server error creating recipe" });
+  }
+});
+
+/**
+ * List user saved recipes
+ * GET /user/:userId/recipes
+ */
+app.get("/user/:userId/recipes", async (req, res) => {
+  const userId = Number(req.params.userId);
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT r.id, r.title, r.source, r.external_id, r.source_url, u.saved_at
+      FROM user_saved_recipes u
+      JOIN recipes r ON r.id = u.recipe_id
+      WHERE u.user_id = $1
+      ORDER BY u.saved_at DESC
+      LIMIT 200
+      `,
+      [userId]
+    );
+
+    res.json(
+      r.rows.map((row) => ({
+        id: Number(row.id),
+        title: String(row.title),
+        source: String(row.source),
+        external_id: row.external_id ?? null,
+        url: row.source_url ?? null,
+        saved_at: row.saved_at,
+      }))
+    );
+  } catch (e) {
+    console.error("List recipes error:", e);
+    res.status(500).json({ message: "Server error loading recipes" });
+  }
+});
+
+/**
+ * Get recipe details (must be saved by user)
+ * GET /user/:userId/recipes/:recipeId
+ */
+app.get("/user/:userId/recipes/:recipeId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const recipeId = Number(req.params.recipeId);
+
+  try {
+    const saved = await pool.query(
+      `SELECT 1 FROM user_saved_recipes WHERE user_id = $1 AND recipe_id = $2 LIMIT 1`,
+      [userId, recipeId]
+    );
+    if (!saved.rows.length) return res.status(403).json({ message: "Not saved by this user" });
+
+    const recipe = await getRecipeWithIngredients(recipeId);
+    if (!recipe) return res.status(404).json({ message: "Recipe not found" });
+
+    res.json({
+      id: Number(recipe.id),
+      title: String(recipe.title),
+      source: String(recipe.source),
+      external_id: recipe.external_id ?? null,
+      url: recipe.source_url ?? null,
+      ingredients: (recipe.ingredients || []).map((i) => ({
+        id: Number(i.id),
+        name: String(i.name),
+        amount: i.amount != null ? Number(i.amount) : null,
+        unit: i.unit ?? null,
+      })),
+    });
+  } catch (e) {
+    console.error("Recipe details error:", e);
+    res.status(500).json({ message: "Server error loading recipe" });
+  }
+});
+
+/**
+ * Missing items for a saved recipe (DB-first; Spoonacular only for one-time backfill)
+ * GET /user/:userId/recipes/:recipeId/missing
+ */
+app.get("/user/:userId/recipes/:recipeId/missing", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const recipeId = Number(req.params.recipeId);
+
+  try {
+    const saved = await pool.query(
+      `SELECT 1 FROM user_saved_recipes WHERE user_id = $1 AND recipe_id = $2 LIMIT 1`,
+      [userId, recipeId]
+    );
+    if (!saved.rows.length) return res.status(403).json({ message: "Not saved by this user" });
+
+    const out = await computeMissingForRecipe(userId, recipeId);
+    if (!out) return res.status(404).json({ message: "Recipe not found" });
+
+    res.json(out);
+  } catch (e) {
+    console.error("Recipe missing error:", e);
+    res.status(500).json({ message: "Server error computing missing" });
+  }
+});
+
+/**
+ * -------------------------
  * CHATBOT ROUTE (Spoonacular)
  * -------------------------
  * POST /chat/recipe
  * Body: { userId, message }
- * Response: { reply, recipes: [{title,url,used[],missing[]}] }
+ * Response: { reply, recipes: [{title,url,source,external_id,ingredients,used[],missing[]}] }
  */
 app.post("/chat/recipe", async (req, res) => {
   try {
     const { userId, message } = req.body || {};
     if (!userId || !message || !String(message).trim()) {
-      return res
-        .status(400)
-        .json({ reply: "Missing userId or message.", recipes: [] });
+      return res.status(400).json({ reply: "Missing userId or message.", recipes: [] });
     }
 
     const dish = extractRequestedDish(message);
@@ -458,7 +872,6 @@ app.post("/chat/recipe", async (req, res) => {
     }
 
     const hit = await spoonSearchRecipeByDish(dish);
-
     if (!hit) {
       return res.json({
         reply: `I couldn't find a Spoonacular recipe for "${dish}". Try a slightly different wording (e.g. “apple tart”).`,
@@ -486,6 +899,9 @@ app.post("/chat/recipe", async (req, res) => {
         {
           title: recipe.title,
           url: recipe.url,
+          source: "spoonacular",
+          external_id: String(recipe.id),
+          ingredients: recipe.ingredients, // so Save can persist to DB immediately
           used: used.slice(0, 20),
           missing: missing.slice(0, 20),
         },
@@ -503,9 +919,8 @@ app.post("/chat/recipe", async (req, res) => {
 
 /**
  * -------------------------
- * The rest of your existing routes
+ * EXISTING ROUTES (unchanged)
  * -------------------------
- * (Left unchanged from your current version)
  */
 
 /**
