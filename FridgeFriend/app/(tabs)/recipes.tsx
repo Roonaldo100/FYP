@@ -34,6 +34,15 @@ type MissingResponse = {
 
 type ProductHit = { id: number; name: string };
 
+type RecipeDetails = {
+  id: number;
+  title: string;
+  source: string;
+  external_id?: string | null;
+  url?: string | null;
+  ingredients: { id: number; name: string; amount: number | null; unit: string | null }[];
+};
+
 export default function RecipesTab() {
   const params = useGlobalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidUserId(params.user_id), [params.user_id]);
@@ -55,6 +64,15 @@ export default function RecipesTab() {
   const [ingredientInput, setIngredientInput] = useState("");
   const [productHits, setProductHits] = useState<ProductHit[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+
+  // Edit recipe form
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editRecipeId, setEditRecipeId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editIngredients, setEditIngredients] = useState<string[]>([]);
+  const [editIngredientInput, setEditIngredientInput] = useState("");
 
   const openUrl = async (url: string) => {
     const u =
@@ -118,40 +136,28 @@ export default function RecipesTab() {
 
   const addIngredientName = (raw: string) => {
     const name = raw.trim();
-
     if (!name) return;
 
-    // enforce minimum 3 characters for recipe ingredients
+    // enforce minimum 3 characters
     if (name.length < 3) {
-        Alert.alert(
-        "Ingredient too short",
-        "Ingredients must be at least 3 characters long."
-        );
-        return;
+      Alert.alert("Ingredient too short", "Ingredients must be at least 3 characters long.");
+      return;
     }
 
-  // avoid duplicates (case-insensitive)
-  setIngredients((prev) => {
-    const exists = prev.some((p) => p.toLowerCase() === name.toLowerCase());
-    return exists ? prev : [...prev, name];
-  });
+    setIngredients((prev) => {
+      const exists = prev.some((p) => p.toLowerCase() === name.toLowerCase());
+      return exists ? prev : [...prev, name];
+    });
 
-  setIngredientInput("");
-  setProductHits([]);
-};
-
+    setIngredientInput("");
+    setProductHits([]);
+  };
 
   const searchProducts = async (q: string) => {
     setIngredientInput(q);
 
     const query = q.trim();
-    if (!query) {
-      setProductHits([]);
-      return;
-    }
-
-    // Optional: only search when length >= 2
-    if (query.length < 2) {
+    if (!query || query.length < 2) {
       setProductHits([]);
       return;
     }
@@ -173,58 +179,211 @@ export default function RecipesTab() {
   };
 
   const createRecipe = async () => {
-  if (!userId) return;
+    if (!userId) return;
 
     const title = newTitle.trim();
     if (!title) {
-        Alert.alert("Missing title", "Please enter a recipe title.");
-        return;
+      Alert.alert("Missing title", "Please enter a recipe title.");
+      return;
     }
     if (!ingredients.length) {
-        Alert.alert("Missing ingredients", "Add at least one ingredient.");
-        return;
+      Alert.alert("Missing ingredients", "Add at least one ingredient.");
+      return;
     }
 
-    // safety net: block any < 3 char ingredients
     const bad = ingredients.find((x) => x.trim().length < 3);
-        if (bad) {
-            Alert.alert(
-            "Ingredient too short",
-            `This ingredient is too short: "${bad}". Ingredients must be at least 3 characters.`
-            );
-            return;
+    if (bad) {
+      Alert.alert(
+        "Ingredient too short",
+        `This ingredient is too short: "${bad}". Ingredients must be at least 3 characters.`
+      );
+      return;
     }
 
     try {
-        const res = await fetch(`${API_BASE_URL}/user/${userId}/recipes`, {
+      const res = await fetch(`${API_BASE_URL}/user/${userId}/recipes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            title,
-            url: newUrl.trim() || null,
-            ingredients, // string[]
+          title,
+          url: newUrl.trim() || null,
+          ingredients,
         }),
-        });
+      });
 
-        if (!res.ok) {
+      if (!res.ok) {
         const t = await res.text().catch(() => "");
         throw new Error(t || `HTTP ${res.status}`);
-        }
+      }
 
-        Alert.alert("Created", "Recipe saved to your list ✅");
-        setNewTitle("");
-        setNewUrl("");
-        setIngredients([]);
-        setIngredientInput("");
-        setProductHits([]);
-        setCreateOpen(false);
-        fetchSaved();
+      Alert.alert("Created", "Recipe saved to your list ✅");
+      setNewTitle("");
+      setNewUrl("");
+      setIngredients([]);
+      setIngredientInput("");
+      setProductHits([]);
+      setCreateOpen(false);
+      fetchSaved();
     } catch (e) {
-        console.warn(e);
-        Alert.alert("Error", "Could not create recipe. Check server logs.");
+      console.warn(e);
+      Alert.alert("Error", "Could not create recipe. Check server logs.");
     }
-};
+  };
 
+  // --------------------------
+  // EDIT / DELETE
+  // --------------------------
+  const openEdit = async (recipe: SavedRecipe) => {
+    if (!userId) return;
+
+    // UI rule: only custom recipes are editable
+    if (recipe.source !== "custom") {
+      Alert.alert("Not editable", "Only recipes you created can be edited.");
+      return;
+    }
+
+    setEditLoading(true);
+    setEditOpen(true);
+    setEditRecipeId(recipe.id);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/user/${userId}/recipes/${recipe.id}`);
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+      const details: RecipeDetails = await res.json();
+
+      setEditTitle(String(details.title || ""));
+      setEditUrl(String(details.url || ""));
+      setEditIngredients(
+        Array.isArray(details.ingredients)
+          ? details.ingredients.map((i) => String(i.name || "")).filter(Boolean)
+          : []
+      );
+      setEditIngredientInput("");
+    } catch (e) {
+      console.warn(e);
+      Alert.alert("Error", "Could not load recipe for editing.");
+      setEditOpen(false);
+      setEditRecipeId(null);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const addEditIngredientName = () => {
+    const name = editIngredientInput.trim();
+    if (!name) return;
+
+    if (name.length < 3) {
+      Alert.alert("Ingredient too short", "Ingredients must be at least 3 characters long.");
+      return;
+    }
+
+    setEditIngredients((prev) => {
+      const exists = prev.some((p) => p.toLowerCase() === name.toLowerCase());
+      return exists ? prev : [...prev, name];
+    });
+    setEditIngredientInput("");
+  };
+
+  const removeEditIngredientAt = (idx: number) => {
+    setEditIngredients((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const saveEdit = async () => {
+    if (!userId || !editRecipeId) return;
+
+    const title = editTitle.trim();
+    if (!title) {
+      Alert.alert("Missing title", "Please enter a recipe title.");
+      return;
+    }
+    if (!editIngredients.length) {
+      Alert.alert("Missing ingredients", "Add at least one ingredient.");
+      return;
+    }
+
+    const bad = editIngredients.find((x) => x.trim().length < 3);
+    if (bad) {
+      Alert.alert(
+        "Ingredient too short",
+        `This ingredient is too short: "${bad}". Ingredients must be at least 3 characters.`
+      );
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/user/${userId}/recipes/${editRecipeId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          url: editUrl.trim() || null,
+          ingredients: editIngredients,
+        }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+
+      Alert.alert("Saved", "Recipe updated ✅");
+      setEditOpen(false);
+      setEditRecipeId(null);
+      fetchSaved();
+    } catch (e) {
+      console.warn(e);
+      Alert.alert("Error", "Could not update recipe.");
+    }
+  };
+
+  const removeOrDelete = (recipe: SavedRecipe) => {
+    if (!userId) return;
+
+    const isCustom = recipe.source === "custom";
+    const verb = isCustom ? "Delete" : "Remove";
+    const msg = isCustom
+      ? "This will remove it from your saved list. If you created it and no one else saved it, it may be deleted permanently."
+      : "This will remove it from your saved recipes.";
+
+    Alert.alert(`${verb} recipe`, msg, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: verb,
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const res = await fetch(
+              `${API_BASE_URL}/user/${userId}/recipes/${recipe.id}`,
+              { method: "DELETE" }
+            );
+            if (!res.ok) {
+              const t = await res.text().catch(() => "");
+              throw new Error(t || `HTTP ${res.status}`);
+            }
+
+            if (missingData?.recipe?.id === recipe.id) setMissingData(null);
+
+            if (editRecipeId === recipe.id) {
+              setEditOpen(false);
+              setEditRecipeId(null);
+            }
+
+            fetchSaved();
+          } catch (e) {
+            console.warn(e);
+            Alert.alert("Error", `Could not ${verb.toLowerCase()} recipe.`);
+          }
+        },
+      },
+    ]);
+  };
+
+  const canAddIngredient = ingredientInput.trim().length >= 3;
+  const canAddEditIngredient = editIngredientInput.trim().length >= 3;
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fafafa" }}>
@@ -286,15 +445,13 @@ export default function RecipesTab() {
               }}
             />
 
-            <Text style={{ marginTop: 12, fontWeight: "700" }}>
-              Add ingredient
-            </Text>
+            <Text style={{ marginTop: 12, fontWeight: "700" }}>Add ingredient</Text>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
               <TextInput
                 value={ingredientInput}
                 onChangeText={searchProducts}
-                placeholder="Type ingredient (e.g. milk)"
+                placeholder="Type ingredient (min 3 chars)"
                 style={{
                   flex: 1,
                   borderWidth: 1,
@@ -305,11 +462,13 @@ export default function RecipesTab() {
               />
               <TouchableOpacity
                 onPress={() => addIngredientName(ingredientInput)}
+                disabled={!canAddIngredient}
                 style={{
-                  backgroundColor: "#111",
+                  backgroundColor: canAddIngredient ? "#111" : "#999",
                   paddingHorizontal: 12,
                   borderRadius: 10,
                   justifyContent: "center",
+                  opacity: canAddIngredient ? 1 : 0.7,
                 }}
               >
                 <Text style={{ color: "#fff", fontWeight: "700" }}>Add</Text>
@@ -348,9 +507,7 @@ export default function RecipesTab() {
               </View>
             )}
 
-            <Text style={{ marginTop: 12, fontWeight: "700" }}>
-              Ingredients
-            </Text>
+            <Text style={{ marginTop: 12, fontWeight: "700" }}>Ingredients</Text>
 
             {!ingredients.length ? (
               <Text style={{ marginTop: 6, color: "#666" }}>None yet.</Text>
@@ -372,9 +529,7 @@ export default function RecipesTab() {
                   >
                     <Text>{name}</Text>
                     <TouchableOpacity onPress={() => removeIngredientAt(idx)}>
-                      <Text style={{ color: "#b00020", fontWeight: "700" }}>
-                        Remove
-                      </Text>
+                      <Text style={{ color: "#b00020", fontWeight: "700" }}>Remove</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -391,10 +546,146 @@ export default function RecipesTab() {
                 alignItems: "center",
               }}
             >
-              <Text style={{ color: "#fff", fontWeight: "700" }}>
-                Save recipe
-              </Text>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Save recipe</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {editOpen && (
+          <View
+            style={{
+              marginTop: 12,
+              backgroundColor: "#fff",
+              borderRadius: 12,
+              padding: 12,
+              borderWidth: 1,
+              borderColor: "#eee",
+            }}
+          >
+            <Text style={{ fontWeight: "700", fontSize: 16 }}>Edit recipe</Text>
+
+            {editLoading ? (
+              <View style={{ marginTop: 10 }}>
+                <ActivityIndicator />
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  placeholder="Recipe title"
+                  style={{
+                    marginTop: 10,
+                    borderWidth: 1,
+                    borderColor: "#ddd",
+                    borderRadius: 10,
+                    padding: 10,
+                  }}
+                />
+
+                <TextInput
+                  value={editUrl}
+                  onChangeText={setEditUrl}
+                  placeholder="Optional source URL"
+                  style={{
+                    marginTop: 10,
+                    borderWidth: 1,
+                    borderColor: "#ddd",
+                    borderRadius: 10,
+                    padding: 10,
+                  }}
+                />
+
+                <Text style={{ marginTop: 12, fontWeight: "700" }}>Add ingredient</Text>
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                  <TextInput
+                    value={editIngredientInput}
+                    onChangeText={setEditIngredientInput}
+                    placeholder="Type ingredient (min 3 chars)"
+                    style={{
+                      flex: 1,
+                      borderWidth: 1,
+                      borderColor: "#ddd",
+                      borderRadius: 10,
+                      padding: 10,
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={addEditIngredientName}
+                    disabled={!canAddEditIngredient}
+                    style={{
+                      backgroundColor: canAddEditIngredient ? "#111" : "#999",
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                      justifyContent: "center",
+                      opacity: canAddEditIngredient ? 1 : 0.7,
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontWeight: "700" }}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={{ marginTop: 12, fontWeight: "700" }}>Ingredients</Text>
+
+                {!editIngredients.length ? (
+                  <Text style={{ marginTop: 6, color: "#666" }}>None yet.</Text>
+                ) : (
+                  <View style={{ marginTop: 6, gap: 6 }}>
+                    {editIngredients.map((name, idx) => (
+                      <View
+                        key={`${name}-${idx}`}
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          backgroundColor: "#fafafa",
+                          borderWidth: 1,
+                          borderColor: "#eee",
+                          padding: 10,
+                          borderRadius: 10,
+                        }}
+                      >
+                        <Text>{name}</Text>
+                        <TouchableOpacity onPress={() => removeEditIngredientAt(idx)}>
+                          <Text style={{ color: "#b00020", fontWeight: "700" }}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+                  <TouchableOpacity
+                    onPress={saveEdit}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#111",
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontWeight: "700" }}>Save</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditOpen(false);
+                      setEditRecipeId(null);
+                    }}
+                    style={{
+                      backgroundColor: "#eee",
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      borderRadius: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ fontWeight: "700" }}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         )}
       </View>
@@ -438,7 +729,14 @@ export default function RecipesTab() {
                   </Text>
                 )}
 
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 10,
+                    marginTop: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <TouchableOpacity
                     onPress={() => showMissing(item.id)}
                     style={{
@@ -450,6 +748,34 @@ export default function RecipesTab() {
                   >
                     <Text style={{ color: "#fff", fontWeight: "700" }}>
                       What am I missing?
+                    </Text>
+                  </TouchableOpacity>
+
+                  {item.source === "custom" && (
+                    <TouchableOpacity
+                      onPress={() => openEdit(item)}
+                      style={{
+                        backgroundColor: "#eee",
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: 10,
+                      }}
+                    >
+                      <Text style={{ fontWeight: "700" }}>Edit</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    onPress={() => removeOrDelete(item)}
+                    style={{
+                      backgroundColor: "#b00020",
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontWeight: "700" }}>
+                      {item.source === "custom" ? "Delete" : "Remove"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -464,18 +790,12 @@ export default function RecipesTab() {
                   <View style={{ marginTop: 10 }}>
                     <Text style={{ fontWeight: "700" }}>✅ Have</Text>
                     <Text style={{ marginTop: 4 }}>
-                      {missingData.have.length
-                        ? missingData.have.join(", ")
-                        : "—"}
+                      {missingData.have.length ? missingData.have.join(", ") : "—"}
                     </Text>
 
-                    <Text style={{ marginTop: 10, fontWeight: "700" }}>
-                      🛒 Missing
-                    </Text>
+                    <Text style={{ marginTop: 10, fontWeight: "700" }}>🛒 Missing</Text>
                     <Text style={{ marginTop: 4 }}>
-                      {missingData.missing.length
-                        ? missingData.missing.join(", ")
-                        : "—"}
+                      {missingData.missing.length ? missingData.missing.join(", ") : "—"}
                     </Text>
                   </View>
                 ) : null}

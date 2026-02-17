@@ -25,6 +25,18 @@ const SPOON_BASE = "https://api.spoonacular.com";
 
 /**
  * -------------------------
+ * Small error helper
+ * -------------------------
+ */
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/**
+ * -------------------------
  * Store helpers
  * -------------------------
  */
@@ -42,7 +54,6 @@ async function getTescoStoreId() {
 
 async function getNoStoreId() {
   const noStoreName = "No store";
-
   try {
     const r = await pool.query(
       `SELECT id FROM stores WHERE LOWER(name) = LOWER($1) LIMIT 1`,
@@ -63,10 +74,9 @@ async function getNoStoreId() {
 
 /**
  * -------------------------------
- * CHATBOT HELPERS (NO HARD-CODING)
+ * TEXT / MATCH HELPERS
  * -------------------------------
  */
-
 function normalizeText(s) {
   return String(s || "")
     .toLowerCase()
@@ -142,7 +152,7 @@ function extractRequestedDish(message) {
 }
 
 /**
- * Inventory summary for matching (chat use)
+ * Inventory summary for chat matching
  */
 async function getUserInventorySummary(userId) {
   const r = await pool.query(
@@ -176,7 +186,6 @@ async function getUserInventorySummary(userId) {
  * SPOONACULAR HELPERS
  * -------------------------
  */
-
 async function spoonFetchJson(path, paramsObj) {
   if (!SPOONACULAR_API_KEY) {
     throw new Error("Missing SPOONACULAR_API_KEY on server.");
@@ -209,7 +218,7 @@ async function spoonAutocompleteRecipe(dish) {
 }
 
 /**
- * Canonical title selection for “exact-ish” matching (no hardcoding dishes)
+ * Canonical title selection (no dish hardcoding)
  */
 function scoreTitleForDish(dish, title) {
   const dishNorm = normalizeText(dish);
@@ -341,9 +350,7 @@ async function spoonSearchRecipeByDish(dish) {
     collected = dedupeById(collected.concat(results));
 
     const dishNorm = normalizeText(dish);
-    const exact = collected.find(
-      (r) => normalizeText(r?.title || "") === dishNorm
-    );
+    const exact = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
     if (exact) return { id: exact.id, title: exact.title };
   }
 
@@ -363,9 +370,7 @@ async function spoonSearchRecipeByDish(dish) {
     if (results2.length) {
       collected = dedupeById(collected.concat(results2));
       const dishNorm = normalizeText(dish);
-      const exact2 = collected.find(
-        (r) => normalizeText(r?.title || "") === dishNorm
-      );
+      const exact2 = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
       if (exact2) return { id: exact2.id, title: exact2.title };
     }
   } catch (e) {
@@ -400,9 +405,48 @@ async function spoonGetRecipeInformation(recipeId) {
 
 /**
  * -------------------------
- * RECIPES (SAVED / CUSTOM) HELPERS + ROUTES
+ * RECIPES HELPERS (DB)
  * -------------------------
  */
+
+/** clean ingredient strings (enforces min 3 chars + unique) */
+function cleanIngredientStrings(value) {
+  const arr = Array.isArray(value) ? value : [];
+  const out = [];
+  const seen = new Set();
+
+  for (const v of arr) {
+    const raw = typeof v === "string" ? v : String(v?.name || "");
+    const name = raw.trim();
+    if (!name) continue;
+    if (name.length < 3) continue; // keep your new rule
+
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+
+  return out;
+}
+
+/** ensure user saved recipe */
+async function assertUserSavedRecipe(userId, recipeId) {
+  const r = await pool.query(
+    `SELECT 1 FROM user_saved_recipes WHERE user_id = $1 AND recipe_id = $2 LIMIT 1`,
+    [userId, recipeId]
+  );
+  if (!r.rows.length) throw new HttpError(403, "Not saved by this user");
+}
+
+/** ✅ NEW: get recipe meta for auth decisions */
+async function getRecipeMeta(recipeId) {
+  const r = await pool.query(
+    `SELECT id, source, created_by_user_id FROM recipes WHERE id = $1 LIMIT 1`,
+    [recipeId]
+  );
+  return r.rows[0] || null;
+}
 
 async function getUserInventoryItems(userId) {
   const r = await pool.query(
@@ -422,7 +466,7 @@ async function getUserInventoryItems(userId) {
 async function getRecipeWithIngredients(recipeId) {
   const r = await pool.query(
     `
-    SELECT id, title, source, external_id, source_url
+    SELECT id, title, source, external_id, source_url, created_by_user_id
     FROM recipes
     WHERE id = $1
     LIMIT 1
@@ -447,7 +491,7 @@ async function getRecipeWithIngredients(recipeId) {
 /**
  * One-time backfill:
  * If a saved Spoonacular recipe has 0 ingredients in DB,
- * fetch once from Spoonacular and store ingredient names in recipe_ingredients.
+ * fetch once and store ingredient names.
  */
 async function ensureRecipeIngredientsInDb(recipeRow) {
   if (!recipeRow) return;
@@ -457,10 +501,8 @@ async function ensureRecipeIngredientsInDb(recipeRow) {
   const currentCount = Array.isArray(recipeRow.ingredients)
     ? recipeRow.ingredients.length
     : 0;
-
   if (currentCount > 0) return;
 
-  // Fetch from Spoonacular once
   const info = await spoonGetRecipeInformation(Number(recipeRow.external_id));
   const ingList = Array.isArray(info?.ingredients) ? info.ingredients : [];
   if (!ingList.length) return;
@@ -469,7 +511,6 @@ async function ensureRecipeIngredientsInDb(recipeRow) {
   try {
     await client.query("BEGIN");
 
-    // Race-safe check
     const countRes = await client.query(
       `SELECT COUNT(*)::int AS c FROM recipe_ingredients WHERE recipe_id = $1`,
       [recipeRow.id]
@@ -492,12 +533,11 @@ async function ensureRecipeIngredientsInDb(recipeRow) {
       }
     }
 
-    // Also store source_url if missing
     if (!recipeRow.source_url && info.url) {
-      await client.query(
-        `UPDATE recipes SET source_url = $1 WHERE id = $2`,
-        [String(info.url), recipeRow.id]
-      );
+      await client.query(`UPDATE recipes SET source_url = $1 WHERE id = $2`, [
+        String(info.url),
+        recipeRow.id,
+      ]);
     }
 
     await client.query("COMMIT");
@@ -513,7 +553,6 @@ async function computeMissingForRecipe(userId, recipeId) {
   let recipe = await getRecipeWithIngredients(recipeId);
   if (!recipe) return null;
 
-  // DB-first: backfill only if DB has no ingredients for Spoonacular recipes
   if (!recipe.ingredients || recipe.ingredients.length === 0) {
     await ensureRecipeIngredientsInDb(recipe);
     recipe = await getRecipeWithIngredients(recipeId);
@@ -548,7 +587,6 @@ async function computeMissingForRecipe(userId, recipeId) {
 
 /**
  * Shared helper: upsert/insert recipe + insert ingredients (NAME ONLY) + save to user
- * - Ingredients stored as plain names; product_id is always NULL.
  */
 async function upsertAndSaveRecipeForUser({
   userId,
@@ -566,7 +604,6 @@ async function upsertAndSaveRecipeForUser({
     let createdNew = false;
 
     if (externalId) {
-      // Upsert external recipe by (source, external_id)
       const up = await client.query(
         `
         INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id)
@@ -583,7 +620,6 @@ async function upsertAndSaveRecipeForUser({
       recipeId = Number(up.rows[0].id);
       createdNew = Boolean(up.rows[0].inserted);
     } else {
-      // Custom recipe always creates a new row
       const ins = await client.query(
         `
         INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id)
@@ -597,11 +633,10 @@ async function upsertAndSaveRecipeForUser({
       createdNew = true;
     }
 
-    // Ingredients are NAME-ONLY now (product_id always NULL)
-    const safeIngredients = Array.isArray(ingredientsRaw) ? ingredientsRaw : [];
+    // Ingredients are NAME-only, min 3 chars, unique
+    const safeIngredients = cleanIngredientStrings(ingredientsRaw);
 
     if (safeIngredients.length) {
-      // Only insert if newly created OR recipe has no ingredients yet
       const countRes = await client.query(
         `SELECT COUNT(*)::int AS c FROM recipe_ingredients WHERE recipe_id = $1`,
         [recipeId]
@@ -610,16 +645,8 @@ async function upsertAndSaveRecipeForUser({
 
       if (createdNew || currentCount === 0) {
         let pos = 0;
-        for (const ing of safeIngredients) {
+        for (const name of safeIngredients) {
           pos++;
-
-          const name =
-            typeof ing === "string"
-              ? ing.trim()
-              : String(ing?.name || "").trim();
-
-          if (!name) continue;
-
           await client.query(
             `
             INSERT INTO recipe_ingredients (recipe_id, product_id, name, amount, unit, position)
@@ -631,7 +658,6 @@ async function upsertAndSaveRecipeForUser({
       }
     }
 
-    // Save to user
     await client.query(
       `
       INSERT INTO user_saved_recipes (user_id, recipe_id)
@@ -652,7 +678,13 @@ async function upsertAndSaveRecipeForUser({
 }
 
 /**
- * Optional: product search (useful for UI autocomplete)
+ * -------------------------
+ * RECIPES ROUTES
+ * -------------------------
+ */
+
+/**
+ * Optional product search (UI autocomplete)
  * GET /products/search?q=milk
  */
 app.get("/products/search", async (req, res) => {
@@ -681,7 +713,6 @@ app.get("/products/search", async (req, res) => {
 /**
  * Save recipe (from chatbot)
  * POST /user/:userId/recipes/save
- * Body: { recipe: { title, url, source, external_id, ingredients: string[] } }
  */
 app.post("/user/:userId/recipes/save", async (req, res) => {
   const userId = Number(req.params.userId);
@@ -709,7 +740,7 @@ app.post("/user/:userId/recipes/save", async (req, res) => {
 });
 
 /**
- * Create custom recipe + save it (ingredients are just names)
+ * Create custom recipe + save it
  * POST /user/:userId/recipes
  * Body: { title, url?, ingredients: string[] }
  */
@@ -721,6 +752,11 @@ app.post("/user/:userId/recipes", async (req, res) => {
     return res.status(400).json({ message: "Missing title" });
   }
 
+  const ing = cleanIngredientStrings(ingredients);
+  if (!ing.length) {
+    return res.status(400).json({ message: "Add at least one ingredient (min 3 chars)" });
+  }
+
   try {
     const recipeId = await upsertAndSaveRecipeForUser({
       userId,
@@ -728,7 +764,7 @@ app.post("/user/:userId/recipes", async (req, res) => {
       source: "custom",
       externalId: null,
       url: url ? String(url) : null,
-      ingredientsRaw: Array.isArray(ingredients) ? ingredients : [],
+      ingredientsRaw: ing,
     });
 
     res.json({ created: true, recipe_id: recipeId });
@@ -783,11 +819,7 @@ app.get("/user/:userId/recipes/:recipeId", async (req, res) => {
   const recipeId = Number(req.params.recipeId);
 
   try {
-    const saved = await pool.query(
-      `SELECT 1 FROM user_saved_recipes WHERE user_id = $1 AND recipe_id = $2 LIMIT 1`,
-      [userId, recipeId]
-    );
-    if (!saved.rows.length) return res.status(403).json({ message: "Not saved by this user" });
+    await assertUserSavedRecipe(userId, recipeId);
 
     const recipe = await getRecipeWithIngredients(recipeId);
     if (!recipe) return res.status(404).json({ message: "Recipe not found" });
@@ -807,7 +839,138 @@ app.get("/user/:userId/recipes/:recipeId", async (req, res) => {
     });
   } catch (e) {
     console.error("Recipe details error:", e);
-    res.status(500).json({ message: "Server error loading recipe" });
+    res.status(e.status || 500).json({ message: e.message || "Server error loading recipe" });
+  }
+});
+
+/**
+ * Update custom recipe (only owner)
+ * PUT /user/:userId/recipes/:recipeId
+ */
+app.put("/user/:userId/recipes/:recipeId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const recipeId = Number(req.params.recipeId);
+
+  const { title, url, ingredients } = req.body || {};
+  const newTitle = String(title || "").trim();
+  const newUrl = url ? String(url).trim() : null;
+  const newIngredients = cleanIngredientStrings(ingredients);
+
+  if (!userId || !recipeId) {
+    return res.status(400).json({ message: "Invalid userId or recipeId" });
+  }
+  if (!newTitle) {
+    return res.status(400).json({ message: "Missing title" });
+  }
+  if (!newIngredients.length) {
+    return res.status(400).json({ message: "Add at least one ingredient (min 3 chars)" });
+  }
+
+  try {
+    await assertUserSavedRecipe(userId, recipeId);
+
+    const meta = await getRecipeMeta(recipeId);
+    if (!meta) return res.status(404).json({ message: "Recipe not found" });
+
+    if (meta.source !== "custom" || Number(meta.created_by_user_id) !== userId) {
+      return res.status(403).json({
+        message: "Only custom recipes you created can be edited.",
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        `UPDATE recipes SET title = $1, source_url = $2 WHERE id = $3`,
+        [newTitle, newUrl, recipeId]
+      );
+
+      await client.query(`DELETE FROM recipe_ingredients WHERE recipe_id = $1`, [
+        recipeId,
+      ]);
+
+      let pos = 0;
+      for (const name of newIngredients) {
+        pos++;
+        await client.query(
+          `
+          INSERT INTO recipe_ingredients (recipe_id, product_id, name, amount, unit, position)
+          VALUES ($1, NULL, $2, NULL, NULL, $3)
+          `,
+          [recipeId, name, pos]
+        );
+      }
+
+      await client.query("COMMIT");
+      res.json({ updated: true });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error("Update recipe error:", e);
+    res.status(e.status || 500).json({ message: e.message || "Server error updating recipe" });
+  }
+});
+
+/**
+ * Remove from saved list; delete custom recipe row only if owner AND nobody else saved it
+ * DELETE /user/:userId/recipes/:recipeId
+ */
+app.delete("/user/:userId/recipes/:recipeId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const recipeId = Number(req.params.recipeId);
+
+  if (!userId || !recipeId) {
+    return res.status(400).json({ message: "Invalid userId or recipeId" });
+  }
+
+  try {
+    const delSaved = await pool.query(
+      `DELETE FROM user_saved_recipes WHERE user_id = $1 AND recipe_id = $2`,
+      [userId, recipeId]
+    );
+
+    if (delSaved.rowCount === 0) {
+      return res.status(404).json({ message: "Recipe was not saved" });
+    }
+
+    const meta = await getRecipeMeta(recipeId);
+    if (!meta) return res.json({ removed: true, deleted_recipe: false });
+
+    if (meta.source === "custom" && Number(meta.created_by_user_id) === userId) {
+      const c = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM user_saved_recipes WHERE recipe_id = $1`,
+        [recipeId]
+      );
+      const n = Number(c.rows[0]?.n ?? 0);
+
+      if (n === 0) {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await client.query(`DELETE FROM recipe_ingredients WHERE recipe_id = $1`, [recipeId]);
+          await client.query(`DELETE FROM recipes WHERE id = $1`, [recipeId]);
+          await client.query("COMMIT");
+        } catch (e) {
+          await client.query("ROLLBACK");
+          throw e;
+        } finally {
+          client.release();
+        }
+
+        return res.json({ removed: true, deleted_recipe: true });
+      }
+    }
+
+    res.json({ removed: true, deleted_recipe: false });
+  } catch (e) {
+    console.error("Delete recipe error:", e);
+    res.status(500).json({ message: "Server error deleting recipe" });
   }
 });
 
@@ -820,11 +983,7 @@ app.get("/user/:userId/recipes/:recipeId/missing", async (req, res) => {
   const recipeId = Number(req.params.recipeId);
 
   try {
-    const saved = await pool.query(
-      `SELECT 1 FROM user_saved_recipes WHERE user_id = $1 AND recipe_id = $2 LIMIT 1`,
-      [userId, recipeId]
-    );
-    if (!saved.rows.length) return res.status(403).json({ message: "Not saved by this user" });
+    await assertUserSavedRecipe(userId, recipeId);
 
     const out = await computeMissingForRecipe(userId, recipeId);
     if (!out) return res.status(404).json({ message: "Recipe not found" });
@@ -832,7 +991,7 @@ app.get("/user/:userId/recipes/:recipeId/missing", async (req, res) => {
     res.json(out);
   } catch (e) {
     console.error("Recipe missing error:", e);
-    res.status(500).json({ message: "Server error computing missing" });
+    res.status(e.status || 500).json({ message: e.message || "Server error computing missing" });
   }
 });
 
@@ -840,9 +999,6 @@ app.get("/user/:userId/recipes/:recipeId/missing", async (req, res) => {
  * -------------------------
  * CHATBOT ROUTE (Spoonacular)
  * -------------------------
- * POST /chat/recipe
- * Body: { userId, message }
- * Response: { reply, recipes: [{title,url,source,external_id,ingredients,used[],missing[]}] }
  */
 app.post("/chat/recipe", async (req, res) => {
   try {
@@ -901,7 +1057,7 @@ app.post("/chat/recipe", async (req, res) => {
           url: recipe.url,
           source: "spoonacular",
           external_id: String(recipe.id),
-          ingredients: recipe.ingredients, // so Save can persist to DB immediately
+          ingredients: recipe.ingredients,
           used: used.slice(0, 20),
           missing: missing.slice(0, 20),
         },
@@ -919,7 +1075,7 @@ app.post("/chat/recipe", async (req, res) => {
 
 /**
  * -------------------------
- * EXISTING ROUTES (unchanged)
+ * EXISTING ROUTES (unchanged from your original)
  * -------------------------
  */
 
@@ -1325,9 +1481,7 @@ app.get("/user/:userId/settings", async (req, res) => {
     }
 
     res.json({
-      notification_period_preference: Number(
-        r.rows[0].notification_period_preference ?? 0
-      ),
+      notification_period_preference: Number(r.rows[0].notification_period_preference ?? 0),
     });
   } catch (err) {
     console.error("Get settings error:", err);
@@ -1344,9 +1498,7 @@ app.post("/user/:userId/settings/notificationPeriod", async (req, res) => {
 
   const pref = Number(notification_period_preference);
   if (!Number.isFinite(pref) || pref < 0) {
-    return res
-      .status(400)
-      .json({ message: "Invalid notification_period_preference" });
+    return res.status(400).json({ message: "Invalid notification_period_preference" });
   }
 
   const override = Boolean(overrideExisting);
@@ -1449,9 +1601,7 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
     );
   } catch (err) {
     console.error("Pending notifications error:", err);
-    res
-      .status(500)
-      .json({ message: "Server error loading pending notifications" });
+    res.status(500).json({ message: "Server error loading pending notifications" });
   }
 });
 
