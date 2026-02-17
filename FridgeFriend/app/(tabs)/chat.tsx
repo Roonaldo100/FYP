@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Linking
 } from "react-native";
 import Constants from "expo-constants";
 import { useGlobalSearchParams } from "expo-router";
@@ -108,6 +109,17 @@ export default function ChatTab() {
     }
   };
 
+  const openUrl = async (url: string) => {
+  const u = url.startsWith("http://") || url.startsWith("https://") ? url : `https://${url}`;
+  const can = await Linking.canOpenURL(u);
+  if (can) {
+    await Linking.openURL(u);
+  } else {
+    console.warn("Cannot open url:", u);
+  }
+};
+
+
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isUser = item.role === "user";
 
@@ -149,7 +161,15 @@ export default function ChatTab() {
                 </Text>
 
                 {!!r.url && (
-                  <Text style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+                  <Text
+                    style={{
+                      marginTop: 6,
+                      fontSize: 12,
+                      color: "#1a73e8",
+                      textDecorationLine: "underline",
+                    }}
+                    onPress={() => openUrl(r.url!)}
+                  >
                     {r.url}
                   </Text>
                 )}
