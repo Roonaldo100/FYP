@@ -43,6 +43,14 @@ type RecipeDetails = {
   ingredients: { id: number; name: string; amount: number | null; unit: string | null }[];
 };
 
+type NutritionResponse = {
+  recipe_id: number;
+  servings: number | null;
+  nutrition: any | null;
+  nutrition_updated_at: string | null;
+  cached: boolean;
+};
+
 export default function RecipesTab() {
   const params = useGlobalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidUserId(params.user_id), [params.user_id]);
@@ -53,6 +61,10 @@ export default function RecipesTab() {
   // Missing display
   const [missingLoading, setMissingLoading] = useState(false);
   const [missingData, setMissingData] = useState<MissingResponse | null>(null);
+
+  // Nutrition display
+  const [nutritionLoading, setNutritionLoading] = useState(false);
+  const [nutritionData, setNutritionData] = useState<NutritionResponse | null>(null);
 
   // Create recipe form
   const [createOpen, setCreateOpen] = useState(false);
@@ -112,6 +124,10 @@ export default function RecipesTab() {
 
     setMissingLoading(true);
     setMissingData(null);
+
+    // Optional: clear nutrition panel when switching cards
+    // setNutritionData(null);
+
     try {
       const res = await fetch(
         `${API_BASE_URL}/user/${userId}/recipes/${recipeId}/missing`
@@ -130,6 +146,30 @@ export default function RecipesTab() {
     }
   };
 
+  const showNutrition = async (recipeId: number) => {
+    if (!userId) return;
+
+    setNutritionLoading(true);
+    setNutritionData(null);
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/user/${userId}/recipes/${recipeId}/nutrition`
+      );
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+      const data: NutritionResponse = await res.json();
+      setNutritionData(data);
+    } catch (e) {
+      console.warn(e);
+      Alert.alert("Error", "Could not load nutrition for this recipe.");
+    } finally {
+      setNutritionLoading(false);
+    }
+  };
+
   const removeIngredientAt = (idx: number) => {
     setIngredients((prev) => prev.filter((_, i) => i !== idx));
   };
@@ -138,9 +178,11 @@ export default function RecipesTab() {
     const name = raw.trim();
     if (!name) return;
 
-    // enforce minimum 3 characters
     if (name.length < 3) {
-      Alert.alert("Ingredient too short", "Ingredients must be at least 3 characters long.");
+      Alert.alert(
+        "Ingredient too short",
+        "Ingredients must be at least 3 characters long."
+      );
       return;
     }
 
@@ -230,13 +272,10 @@ export default function RecipesTab() {
     }
   };
 
-  // --------------------------
   // EDIT / DELETE
-  // --------------------------
   const openEdit = async (recipe: SavedRecipe) => {
     if (!userId) return;
 
-    // UI rule: only custom recipes are editable
     if (recipe.source !== "custom") {
       Alert.alert("Not editable", "Only recipes you created can be edited.");
       return;
@@ -277,7 +316,10 @@ export default function RecipesTab() {
     if (!name) return;
 
     if (name.length < 3) {
-      Alert.alert("Ingredient too short", "Ingredients must be at least 3 characters long.");
+      Alert.alert(
+        "Ingredient too short",
+        "Ingredients must be at least 3 characters long."
+      );
       return;
     }
 
@@ -366,6 +408,7 @@ export default function RecipesTab() {
             }
 
             if (missingData?.recipe?.id === recipe.id) setMissingData(null);
+            if (nutritionData?.recipe_id === recipe.id) setNutritionData(null);
 
             if (editRecipeId === recipe.id) {
               setEditOpen(false);
@@ -384,6 +427,22 @@ export default function RecipesTab() {
 
   const canAddIngredient = ingredientInput.trim().length >= 3;
   const canAddEditIngredient = editIngredientInput.trim().length >= 3;
+
+  const formatNutrientLine = (n: any) => {
+    const name = String(n?.name ?? "").trim();
+    const amount = n?.amount;
+    const unit = String(n?.unit ?? "").trim();
+    if (!name) return null;
+
+    const amt =
+      typeof amount === "number" && Number.isFinite(amount)
+        ? amount
+        : amount != null
+        ? String(amount)
+        : "";
+
+    return `${name}: ${amt}${unit ? ` ${unit}` : ""}`.trim();
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fafafa" }}>
@@ -647,7 +706,9 @@ export default function RecipesTab() {
                       >
                         <Text>{name}</Text>
                         <TouchableOpacity onPress={() => removeEditIngredientAt(idx)}>
-                          <Text style={{ color: "#b00020", fontWeight: "700" }}>Remove</Text>
+                          <Text style={{ color: "#b00020", fontWeight: "700" }}>
+                            Remove
+                          </Text>
                         </TouchableOpacity>
                       </View>
                     ))}
@@ -700,107 +761,179 @@ export default function RecipesTab() {
             data={recipes}
             keyExtractor={(r) => String(r.id)}
             contentContainerStyle={{ paddingBottom: 20 }}
-            renderItem={({ item }) => (
-              <View
-                style={{
-                  backgroundColor: "#fff",
-                  borderRadius: 12,
-                  padding: 12,
-                  borderWidth: 1,
-                  borderColor: "#eee",
-                  marginTop: 10,
-                }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: "700" }}>
-                  {item.title}
-                </Text>
+            renderItem={({ item }) => {
+              const isMissingThis = missingData?.recipe?.id === item.id;
+              const isNutritionThis = nutritionData?.recipe_id === item.id;
 
-                {!!item.url && (
-                  <Text
-                    style={{
-                      marginTop: 6,
-                      fontSize: 12,
-                      color: "#1a73e8",
-                      textDecorationLine: "underline",
-                    }}
-                    onPress={() => openUrl(item.url!)}
-                  >
-                    {item.url}
-                  </Text>
-                )}
+              const nutrients: any[] = Array.isArray(nutritionData?.nutrition?.nutrients)
+                ? nutritionData!.nutrition!.nutrients
+                : [];
 
+              return (
                 <View
                   style={{
-                    flexDirection: "row",
-                    gap: 10,
+                    backgroundColor: "#fff",
+                    borderRadius: 12,
+                    padding: 12,
+                    borderWidth: 1,
+                    borderColor: "#eee",
                     marginTop: 10,
-                    flexWrap: "wrap",
                   }}
                 >
-                  <TouchableOpacity
-                    onPress={() => showMissing(item.id)}
+                  <Text style={{ fontSize: 16, fontWeight: "700" }}>{item.title}</Text>
+
+                  {!!item.url && (
+                    <Text
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "#1a73e8",
+                        textDecorationLine: "underline",
+                      }}
+                      onPress={() => openUrl(item.url!)}
+                    >
+                      {item.url}
+                    </Text>
+                  )}
+
+                  <View
                     style={{
-                      backgroundColor: "#111",
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
-                      borderRadius: 10,
+                      flexDirection: "row",
+                      gap: 10,
+                      marginTop: 10,
+                      flexWrap: "wrap",
                     }}
                   >
-                    <Text style={{ color: "#fff", fontWeight: "700" }}>
-                      What am I missing?
-                    </Text>
-                  </TouchableOpacity>
-
-                  {item.source === "custom" && (
                     <TouchableOpacity
-                      onPress={() => openEdit(item)}
+                      onPress={() => showMissing(item.id)}
                       style={{
-                        backgroundColor: "#eee",
+                        backgroundColor: "#111",
                         paddingVertical: 10,
                         paddingHorizontal: 12,
                         borderRadius: 10,
                       }}
                     >
-                      <Text style={{ fontWeight: "700" }}>Edit</Text>
+                      <Text style={{ color: "#fff", fontWeight: "700" }}>
+                        What am I missing?
+                      </Text>
                     </TouchableOpacity>
-                  )}
 
-                  <TouchableOpacity
-                    onPress={() => removeOrDelete(item)}
-                    style={{
-                      backgroundColor: "#b00020",
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text style={{ color: "#fff", fontWeight: "700" }}>
-                      {item.source === "custom" ? "Delete" : "Remove"}
-                    </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => showNutrition(item.id)}
+                      style={{
+                        backgroundColor: "#111",
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: 10,
+                      }}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "700" }}>
+                        Show nutrition
+                      </Text>
+                    </TouchableOpacity>
+
+                    {item.source === "custom" && (
+                      <TouchableOpacity
+                        onPress={() => openEdit(item)}
+                        style={{
+                          backgroundColor: "#eee",
+                          paddingVertical: 10,
+                          paddingHorizontal: 12,
+                          borderRadius: 10,
+                        }}
+                      >
+                        <Text style={{ fontWeight: "700" }}>Edit</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      onPress={() => removeOrDelete(item)}
+                      style={{
+                        backgroundColor: "#b00020",
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: 10,
+                      }}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "700" }}>
+                        {item.source === "custom" ? "Delete" : "Remove"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {missingLoading && isMissingThis ? (
+                    <View style={{ marginTop: 10 }}>
+                      <ActivityIndicator />
+                    </View>
+                  ) : null}
+
+                  {isMissingThis && !missingLoading ? (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={{ fontWeight: "700" }}>✅ Have</Text>
+                      <Text style={{ marginTop: 4 }}>
+                        {missingData!.have.length ? missingData!.have.join(", ") : "—"}
+                      </Text>
+
+                      <Text style={{ marginTop: 10, fontWeight: "700" }}>🛒 Missing</Text>
+                      <Text style={{ marginTop: 4 }}>
+                        {missingData!.missing.length
+                          ? missingData!.missing.join(", ")
+                          : "—"}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {nutritionLoading && isNutritionThis ? (
+                    <View style={{ marginTop: 10 }}>
+                      <ActivityIndicator />
+                    </View>
+                  ) : null}
+
+                  {isNutritionThis && !nutritionLoading ? (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={{ fontWeight: "700" }}>Nutrition</Text>
+                      <Text style={{ marginTop: 4, color: "#444" }}>
+                        Servings: {nutritionData?.servings ?? "—"}
+                      </Text>
+
+                      {!nutritionData?.nutrition ? (
+                        <Text style={{ marginTop: 6, color: "#666" }}>
+                          No nutrition available for this recipe.
+                        </Text>
+                      ) : (
+                        <>
+                          <Text style={{ marginTop: 10, fontWeight: "700" }}>
+                            Nutrients (per serving)
+                          </Text>
+
+                          {nutrients.length ? (
+                            <View style={{ marginTop: 6, gap: 4 }}>
+                              {nutrients.slice(0, 10).map((n, idx) => {
+                                const line = formatNutrientLine(n);
+                                if (!line) return null;
+                                return (
+                                  <Text key={idx} style={{ color: "#333" }}>
+                                    {line}
+                                  </Text>
+                                );
+                              })}
+                            </View>
+                          ) : (
+                            <Text style={{ marginTop: 6, color: "#666" }}>—</Text>
+                          )}
+
+                          {!!nutritionData?.nutrition_updated_at && (
+                            <Text style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
+                              Updated: {nutritionData.nutrition_updated_at}
+                            </Text>
+                          )}
+                        </>
+                      )}
+                    </View>
+                  ) : null}
                 </View>
-
-                {missingLoading && missingData?.recipe?.id === item.id ? (
-                  <View style={{ marginTop: 10 }}>
-                    <ActivityIndicator />
-                  </View>
-                ) : null}
-
-                {missingData?.recipe?.id === item.id && !missingLoading ? (
-                  <View style={{ marginTop: 10 }}>
-                    <Text style={{ fontWeight: "700" }}>✅ Have</Text>
-                    <Text style={{ marginTop: 4 }}>
-                      {missingData.have.length ? missingData.have.join(", ") : "—"}
-                    </Text>
-
-                    <Text style={{ marginTop: 10, fontWeight: "700" }}>🛒 Missing</Text>
-                    <Text style={{ marginTop: 4 }}>
-                      {missingData.missing.length ? missingData.missing.join(", ") : "—"}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            )}
+              );
+            }}
           />
         )}
       </View>

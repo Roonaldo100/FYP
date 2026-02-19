@@ -488,10 +488,8 @@ async function getRecipeWithIngredients(recipeId) {
   return { ...r.rows[0], ingredients: ing.rows };
 }
 
-/**
- * One-time backfill:
- * If a saved Spoonacular recipe has 0 ingredients in DB,
- * fetch once and store ingredient names.
+/*
+ * If a saved Spoonacular recipe has 0 ingredients in DB, fetch once and store ingredient names.
  */
 async function ensureRecipeIngredientsInDb(recipeRow) {
   if (!recipeRow) return;
@@ -585,8 +583,8 @@ async function computeMissingForRecipe(userId, recipeId) {
   };
 }
 
-/**
- * Shared helper: upsert/insert recipe + insert ingredients (NAME ONLY) + save to user
+/*
+ * Shared helper: upsert/insert recipe + insert ingredients (name only) + save to user
  */
 async function upsertAndSaveRecipeForUser({
   userId,
