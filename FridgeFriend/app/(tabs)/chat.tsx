@@ -18,6 +18,13 @@ type ChatRole = "user" | "assistant";
 
 type RecipeIngredient = string | { name: string; productId?: number | null };
 
+type NutritionSummary = {
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+};
+
 type Recipe = {
   title: string;
   url?: string | null;
@@ -31,6 +38,10 @@ type Recipe = {
 
   used: string[];
   missing: string[];
+
+  servings?: number | null;
+  nutritionSummary?: NutritionSummary | null;
+  nutrition?: any | null;
 };
 
 type ChatMessage = {
@@ -102,6 +113,8 @@ export default function ChatTab() {
             external_id: r.external_id ?? null,
             // store ingredient strings so the saved recipe can show missing later
             ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+            servings: r.servings ?? null,
+            nutrition: r.nutrition ?? null,
           },
         }),
       });
@@ -219,6 +232,16 @@ export default function ChatTab() {
                   <Text style={{ marginTop: 2, fontSize: 13 }}>
                     You need: {r.missing.length ? r.missing.join(", ") : "—"}
                   </Text>
+                  {!!r.nutritionSummary && (
+                    <Text style={{ marginTop: 6, fontSize: 13 }}>
+                      Nutrition (per serving):{" "}
+                      {r.nutritionSummary.calories != null ? `${r.nutritionSummary.calories} kcal` : "—"} |{" "}
+                      {r.nutritionSummary.protein_g != null ? `${r.nutritionSummary.protein_g} g protein` : "—"} |{" "}
+                      {r.nutritionSummary.carbs_g != null ? `${r.nutritionSummary.carbs_g} g carbs` : "—"} |{" "}
+                      {r.nutritionSummary.fat_g != null ? `${r.nutritionSummary.fat_g} g fat` : "—"}
+                    </Text>
+                  )}
+
 
                   {!!r.url && (
                     <Text

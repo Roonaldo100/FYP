@@ -72,6 +72,22 @@ async function getNoStoreId() {
   }
 }
 
+async function getLastRecordedPrice(userId, productId, storeId) {
+  const r = await pool.query(
+    `
+    SELECT last_price
+    FROM user_product_prices
+    WHERE user_id = $1
+      AND product_id = $2
+      AND store_id IS NOT DISTINCT FROM $3
+    LIMIT 1
+    `,
+    [userId, productId, effectiveStoreId, price]
+  );
+
+  return r.rows.length ? r.rows[0].last_price : null;
+}
+
 /**
  * -------------------------------
  * TEXT / MATCH HELPERS
@@ -1329,7 +1345,7 @@ app.post("/products/create", async (req, res) => {
  * POST: Add product to user inventory
  */
 app.post("/user/addProduct", async (req, res) => {
-  const { userId, productId, storeId, expiryDate } = req.body;
+  const { userId, productId, storeId, expiryDate, price } = req.body;
 
   if (!userId || !productId) {
     return res.status(400).json({ message: "Missing required fields" });
@@ -1386,9 +1402,53 @@ app.post("/user/addProduct", async (req, res) => {
       effective_period_days,
       days_left,
     });
+
+    if (price !== undefined && price !== null) {
+      await pool.query(
+        `
+        INSERT INTO user_product_prices (user_id, product_id, store_id, last_price, updated_at)
+        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, product_id, store_id)
+        DO UPDATE SET
+          last_price = EXCLUDED.last_price,
+          updated_at = CURRENT_TIMESTAMP
+        `,
+        [userId, productId, storeId ?? null, price]
+      );
+}
   } catch (err) {
     console.error("Add product error:", err);
     res.status(500).json({ message: "Server error adding product" });
+  }
+});
+
+/**
+ * Allow the user to store prices for products per store
+ */
+
+app.get("/user/:userId/product/:productId/lastPrice", async (req, res) => {
+  const { userId, productId } = req.params;
+  const { storeId } = req.query;
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT last_price
+      FROM user_product_prices
+      WHERE user_id = $1
+        AND product_id = $2
+        AND store_id IS NOT DISTINCT FROM $3
+      LIMIT 1
+      `,
+      [userId, productId, storeId ?? null]
+    );
+
+    res.json({
+      last_price: r.rows.length ? r.rows[0].last_price : null
+    });
+  } catch (err) {
+    console.error("Get last price error:", err);
+    res.status(500).json({ message: "Server error fetching last price" });
   }
 });
 
@@ -1617,12 +1677,22 @@ app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
         s.id AS store_id,
         s.name AS store_name,
         COUNT(up.id) AS quantity,
-        MIN(up.expiry_date) AS nearest_expiry
+        MIN(up.expiry_date) AS nearest_expiry,
+        upp.last_price AS last_price
       FROM user_products up
       JOIN products p ON p.id = up.product_id
       LEFT JOIN stores s ON s.id = up.store_id
+      LEFT JOIN user_product_prices upp
+        ON upp.user_id = up.user_id
+      AND upp.product_id = up.product_id
+      AND upp.store_id IS NOT DISTINCT FROM up.store_id
       WHERE up.user_id = $1 AND p.food_type = $2
-      GROUP BY p.id, p.name, s.id, s.name
+      GROUP BY
+        p.id,
+        p.name,
+        s.id,
+        s.name,
+        upp.last_price
       ORDER BY p.name;
     `;
 

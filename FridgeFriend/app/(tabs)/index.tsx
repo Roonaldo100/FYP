@@ -26,6 +26,7 @@ type UserProduct = {
   store_name: string | null;
   quantity: number;
   nearest_expiry: string | null;
+  last_price?: number | null;   // 🔥 ADD THIS
 };
 
 export default function Home() {
@@ -331,6 +332,11 @@ export default function Home() {
           <Text style={styles.productDetails}>
             Expires: {prod.nearest_expiry ?? "None"}
           </Text>
+          {prod.last_price !== null && prod.last_price !== undefined && (
+          <Text style={styles.productDetails}>
+            Last price: €{Number(prod.last_price).toFixed(2)}
+          </Text>
+        )}
         </View>
       ))}
     </View>

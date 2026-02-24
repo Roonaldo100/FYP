@@ -32,6 +32,7 @@ export default function AddItemToFridge() {
 
   const [newStoreName, setNewStoreName] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
+  const [price, setPrice] = useState<string>("");
 
   const [loading, setLoading] = useState(false);
 
@@ -53,6 +54,32 @@ export default function AddItemToFridge() {
   useEffect(() => {
     loadStores();
   }, []);
+
+  useEffect(() => {
+    if (!user_id || !product_id) return;
+
+    const fetchLastPrice = async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/user/${user_id}/product/${product_id}/lastPrice?storeId=${selectedStoreId ?? ""}`
+        );
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+
+        if (data.last_price !== null && data.last_price !== undefined) {
+          setPrice(String(data.last_price));
+        } else {
+          setPrice("");
+        }
+      } catch (e) {
+        console.error("Fetch last price error:", e);
+      }
+    };
+
+    fetchLastPrice();
+  }, [selectedStoreId, user_id, product_id]);
 
   const createStore = async () => {
     const trimmed = newStoreName.trim();
@@ -119,6 +146,7 @@ export default function AddItemToFridge() {
           productId: Number(product_id),
           storeId: selectedStoreId,
           expiryDate: expiryToSend,
+          price: price ? Number(price) : null,
         }),
       });
 
@@ -186,53 +214,54 @@ export default function AddItemToFridge() {
 
       {!loading && (
         <>
+          {/* STORE SECTION */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Store (optional)</Text>
 
             <TouchableOpacity
               style={[
                 styles.storeButton,
-                selectedStoreId === null ? styles.storeButtonSelected : null,
+                selectedStoreId === null && styles.storeButtonSelected,
               ]}
               onPress={() => setSelectedStoreId(null)}
             >
-              <Text style={styles.storeButtonText}>No store</Text>
+              <Text>No store</Text>
             </TouchableOpacity>
 
-            <ScrollView style={styles.storeList} contentContainerStyle={styles.storeListContent}>
+            <ScrollView style={{ maxHeight: 180 }}>
               {stores.map((s) => (
                 <TouchableOpacity
                   key={s.id}
                   style={[
                     styles.storeButton,
-                    selectedStoreId === s.id ? styles.storeButtonSelected : null,
+                    selectedStoreId === s.id && styles.storeButtonSelected,
                   ]}
                   onPress={() => setSelectedStoreId(s.id)}
                 >
-                  <Text style={styles.storeButtonText}>{s.name}</Text>
+                  <Text>{s.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            <Text style={[styles.label, { marginTop: 10 }]}>Create new store</Text>
-            <View style={styles.row}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="e.g. Aldi"
-                value={newStoreName}
-                onChangeText={setNewStoreName}
-              />
-              <TouchableOpacity style={styles.smallButton} onPress={createStore}>
-                <Text style={styles.smallButtonText}>Add</Text>
-              </TouchableOpacity>
-            </View>
           </View>
 
+          {/* PRICE SECTION */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Expiry date (optional)</Text>
+            <Text style={styles.sectionTitle}>Price (optional)</Text>
             <TextInput
               style={styles.input}
-              placeholder="YYYY-MM-DD (leave blank for none)"
+              placeholder="e.g. 1.50"
+              keyboardType="decimal-pad"
+              value={price}
+              onChangeText={setPrice}
+            />
+          </View>
+
+          {/* EXPIRY SECTION */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Expiry (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
               value={expiryDate}
               onChangeText={setExpiryDate}
             />
@@ -248,66 +277,37 @@ export default function AddItemToFridge() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#663399",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  title: { color: "white", fontSize: 18, marginBottom: 12, textAlign: "center" },
-
+  container: { flex: 1, backgroundColor: "#663399", padding: 20 },
+  title: { color: "white", fontSize: 18, marginBottom: 12 },
   section: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#333", marginBottom: 10 },
-  label: { fontSize: 13, fontWeight: "600", color: "#333", marginBottom: 6 },
-
-  storeList: { maxHeight: 220 },
-  storeListContent: { paddingBottom: 4 },
-
-  storeButton: {
-    backgroundColor: "#eee",
+    backgroundColor: "#fff",
     borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    padding: 14,
+    marginBottom: 12,
   },
-  storeButtonSelected: {
-    backgroundColor: "#ffcc00",
-  },
-  storeButtonText: { color: "#333", fontWeight: "700" },
-
+  sectionTitle: { fontWeight: "700", marginBottom: 8 },
   input: {
-    width: "100%",
     backgroundColor: "#eee",
     padding: 10,
     borderRadius: 8,
   },
-
-  row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  smallButton: {
-    backgroundColor: "#663399",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+  storeButton: {
+    backgroundColor: "#eee",
+    padding: 10,
     borderRadius: 8,
+    marginBottom: 6,
   },
-  smallButtonText: { color: "#fff", fontWeight: "700" },
-
+  storeButtonSelected: {
+    backgroundColor: "#ffcc00",
+  },
   confirmButton: {
-    backgroundColor: "#ffffff",
-    paddingVertical: 12,
-    paddingHorizontal: 30,
+    backgroundColor: "#fff",
+    padding: 12,
     borderRadius: 10,
+    alignItems: "center",
   },
   confirmButtonText: {
     color: "#663399",
-    fontSize: 16,
     fontWeight: "bold",
   },
 });
