@@ -33,7 +33,7 @@ export default function NewProductClassification() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/categories`);
+        const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
         const data = await res.json();
         setCategories(Array.isArray(data) ? data : []);
       } catch (e) {
@@ -57,7 +57,7 @@ export default function NewProductClassification() {
     setFoodTypes([]);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/categories/${cat.id}/food`);
+      const res = await fetch(`${API_BASE_URL}/categories/${cat.id}/food?userId=${user_id}`);
       const data = await res.json();
       setFoodTypes(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -86,6 +86,7 @@ export default function NewProductClassification() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: Number(user_id),
           name: product_name,
           barcode,
           foodTypeId: selectedFoodType.id,

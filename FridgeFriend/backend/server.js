@@ -35,6 +35,21 @@ class HttpError extends Error {
   }
 }
 
+function parseOptionalUserId(raw) {
+  if (raw === undefined || raw === null) return null;
+
+  // If Express gives an array (can happen with repeated query params)
+  if (Array.isArray(raw)) raw = raw[0];
+
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  const n = Number(s);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return null;
+
+  return n;
+}
+
 /**
  * -------------------------
  * Store helpers
@@ -82,7 +97,7 @@ async function getLastRecordedPrice(userId, productId, storeId) {
       AND store_id IS NOT DISTINCT FROM $3
     LIMIT 1
     `,
-    [userId, productId, effectiveStoreId, price]
+    [userId, productId, storeId ?? null]
   );
 
   return r.rows.length ? r.rows[0].last_price : null;
@@ -703,14 +718,34 @@ async function upsertAndSaveRecipeForUser({
  */
 app.get("/products/search", async (req, res) => {
   const q = String(req.query.q || "").trim();
+  const userId = parseOptionalUserId(req.query.userId);
+
   if (!q) return res.json([]);
 
   try {
+    if (userId) {
+      const r = await pool.query(
+        `
+        SELECT id, name
+        FROM products
+        WHERE (is_system = true OR owner_user_id = $1)
+          AND name ILIKE $2
+        ORDER BY name ASC
+        LIMIT 25
+        `,
+        [userId, `%${q}%`]
+      );
+      return res.json(
+        r.rows.map((row) => ({ id: Number(row.id), name: String(row.name) }))
+      );
+    }
+
     const r = await pool.query(
       `
       SELECT id, name
       FROM products
-      WHERE name ILIKE $1
+      WHERE is_system = true
+        AND name ILIKE $1
       ORDER BY name ASC
       LIMIT 25
       `,
@@ -1097,8 +1132,30 @@ app.post("/chat/recipe", async (req, res) => {
  * GET: Categories
  */
 app.get("/categories", async (req, res) => {
+  const userId = parseOptionalUserId(req.query.userId);
+
   try {
-    const result = await pool.query("SELECT * FROM categories ORDER BY id");
+    if (userId) {
+      const result = await pool.query(
+        `
+        SELECT id, name, is_system, owner_user_id
+        FROM categories
+        WHERE is_system = true OR owner_user_id = $1
+        ORDER BY is_system DESC, id ASC
+        `,
+        [userId]
+      );
+      return res.json(result.rows);
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, name, is_system, owner_user_id
+      FROM categories
+      WHERE is_system = true
+      ORDER BY id ASC
+      `
+    );
     res.json(result.rows);
   } catch (err) {
     console.error("Categories error:", err);
@@ -1110,11 +1167,61 @@ app.get("/categories", async (req, res) => {
  * GET: Food types by category
  */
 app.get("/categories/:id/food", async (req, res) => {
-  const { id } = req.params;
+  const categoryId = Number(req.params.id);
+  const userId = parseOptionalUserId(req.query.userId);
+
+  if (!Number.isFinite(categoryId) || categoryId <= 0) {
+    return res.status(400).json({ message: "Invalid category id" });
+  }
+
   try {
+    // Ensure category is visible
+    if (userId) {
+      const cat = await pool.query(
+        `
+        SELECT id
+        FROM categories
+        WHERE id = $1 AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [categoryId, userId]
+      );
+      if (!cat.rows.length) return res.json([]);
+    } else {
+      const cat = await pool.query(
+        `
+        SELECT id
+        FROM categories
+        WHERE id = $1 AND is_system = true
+        LIMIT 1
+        `,
+        [categoryId]
+      );
+      if (!cat.rows.length) return res.json([]);
+    }
+
+    if (userId) {
+      const result = await pool.query(
+        `
+        SELECT id, category, name, is_system, owner_user_id
+        FROM food_types
+        WHERE category = $1
+          AND (is_system = true OR owner_user_id = $2)
+        ORDER BY is_system DESC, id ASC
+        `,
+        [categoryId, userId]
+      );
+      return res.json(result.rows);
+    }
+
     const result = await pool.query(
-      "SELECT * FROM food_types WHERE category = $1 ORDER BY id",
-      [id]
+      `
+      SELECT id, category, name, is_system, owner_user_id
+      FROM food_types
+      WHERE category = $1 AND is_system = true
+      ORDER BY id ASC
+      `,
+      [categoryId]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1182,16 +1289,40 @@ app.post("/stores", async (req, res) => {
  * POST: Scan barcode
  */
 app.post("/scan", async (req, res) => {
-  const { barcode } = req.body;
+  const { barcode, userId } = req.body;
+  const uid = parseOptionalUserId(userId);
+
   if (!barcode) {
     return res.status(400).json({ found: false, message: "Missing barcode" });
   }
 
   try {
-    const localProduct = await pool.query(
-      `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
-      [barcode]
-    );
+    let localProduct;
+
+    if (uid) {
+      localProduct = await pool.query(
+        `
+        SELECT id, name
+        FROM products
+        WHERE barcode = $1
+          AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [barcode, uid]
+      );
+    } else {
+      // system-only fallback if userId not provided
+      localProduct = await pool.query(
+        `
+        SELECT id, name
+        FROM products
+        WHERE barcode = $1
+          AND is_system = true
+        LIMIT 1
+        `,
+        [barcode]
+      );
+    }
 
     if (localProduct.rows.length > 0) {
       const product = localProduct.rows[0];
@@ -1258,24 +1389,43 @@ app.post("/scan", async (req, res) => {
  * POST: Create product
  */
 app.post("/products/create", async (req, res) => {
-  const { name, barcode, foodTypeId, storeId } = req.body;
+  const { userId, name, barcode, foodTypeId, storeId } = req.body;
+  const uid = parseOptionalUserId(userId);
 
+  if (!uid) {
+    return res.status(400).json({ message: "Missing userId (required after scoped products update)" });
+  }
   if (!name || !foodTypeId) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
   try {
-    const ft = await pool.query(`SELECT id FROM food_types WHERE id = $1 LIMIT 1`, [
-      foodTypeId,
-    ]);
+    // Ensure the food type exists AND is visible to the user
+    const ft = await pool.query(
+      `
+      SELECT id
+      FROM food_types
+      WHERE id = $1
+        AND (is_system = true OR owner_user_id = $2)
+      LIMIT 1
+      `,
+      [foodTypeId, uid]
+    );
     if (ft.rows.length === 0) {
-      return res.status(400).json({ message: "Invalid food type" });
+      return res.status(400).json({ message: "Invalid food type for this user" });
     }
 
+    // Prevent accidental reuse: if barcode exists in user's scope (or system), require explicit confirmation
     if (barcode) {
       const existing = await pool.query(
-        `SELECT id, name FROM products WHERE barcode = $1 LIMIT 1`,
-        [barcode]
+        `
+        SELECT id, name
+        FROM products
+        WHERE barcode = $1
+          AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [barcode, uid]
       );
 
       if (existing.rows.length > 0) {
@@ -1289,24 +1439,36 @@ app.post("/products/create", async (req, res) => {
           });
         }
 
+        let storeName = null;
+        if (storeId) {
+          const storeNameRes = await pool.query(
+            `SELECT name FROM stores WHERE id = $1 LIMIT 1`,
+            [storeId]
+          );
+          storeName = storeNameRes.rows[0]?.name ?? null;
+        }
+
         return res.json({
           product_id: existing.rows[0].id,
           product_name: existing.rows[0].name,
           store_id: storeId ?? null,
-          store_name: null,
+          store_name: storeName,
         });
       }
     }
 
     const insertProduct = await pool.query(
-      `INSERT INTO products (name, barcode, food_type)
-       VALUES ($1, $2, $3)
-       RETURNING id`,
-      [name, barcode ?? null, foodTypeId]
+      `
+      INSERT INTO products (name, barcode, food_type, is_system, owner_user_id)
+      VALUES ($1, $2, $3, false, $4)
+      RETURNING id
+      `,
+      [String(name).trim(), barcode ?? null, foodTypeId, uid]
     );
 
     const newProductId = insertProduct.rows[0].id;
 
+    // Attach store relationship only if a storeId was provided
     if (storeId) {
       try {
         await pool.query(
@@ -1331,7 +1493,7 @@ app.post("/products/create", async (req, res) => {
 
     return res.json({
       product_id: newProductId,
-      product_name: name,
+      product_name: String(name).trim(),
       store_id: storeId ?? null,
       store_name: storeName,
     });
@@ -1395,14 +1557,6 @@ app.post("/user/addProduct", async (req, res) => {
     const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
     const effective_period_days = expiry_period_days > 0 ? expiry_period_days : userPref;
 
-    res.json({
-      message: "Product added successfully",
-      user_product_id: upRow.id,
-      expiry_period_days,
-      effective_period_days,
-      days_left,
-    });
-
     if (price !== undefined && price !== null) {
       await pool.query(
         `
@@ -1413,9 +1567,17 @@ app.post("/user/addProduct", async (req, res) => {
           last_price = EXCLUDED.last_price,
           updated_at = CURRENT_TIMESTAMP
         `,
-        [userId, productId, storeId ?? null, price]
+        [userId, productId, effectiveStoreId, price]
       );
-}
+    }
+
+    res.json({
+      message: "Product added successfully",
+      user_product_id: upRow.id,
+      expiry_period_days,
+      effective_period_days,
+      days_left,
+    });
   } catch (err) {
     console.error("Add product error:", err);
     res.status(500).json({ message: "Server error adding product" });

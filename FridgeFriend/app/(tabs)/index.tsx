@@ -53,7 +53,7 @@ export default function Home() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/categories`);
+        const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
         const data = await res.json();
         setCategories(Array.isArray(data) ? data : []);
       } catch (e) {
@@ -135,7 +135,7 @@ export default function Home() {
     setUserProducts([]);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food`);
+      const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food?userId=${user_id}`);
       const data = await res.json();
       setFoodTypes(Array.isArray(data) ? data : []);
     } catch (e) {

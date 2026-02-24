@@ -32,7 +32,7 @@ export default function ManualAddProduct() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/categories`);
+        const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
         const data = await res.json();
         setCategories(Array.isArray(data) ? data : []);
       } catch (e) {
@@ -55,7 +55,7 @@ export default function ManualAddProduct() {
     setFoodTypes([]);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/categories/${cat.id}/food`);
+      const res = await fetch(`${API_BASE_URL}/categories/${cat.id}/food?userId=${user_id}`);
       const data = await res.json();
       setFoodTypes(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -82,11 +82,12 @@ export default function ManualAddProduct() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name,
-        barcode: trimmedBarcode,
-        foodTypeId: selectedFoodType.id,
-        storeId: null,
-        allowExisting: false,
+      userId: Number(user_id),      // REQUIRED for user-scoped product
+      name,
+      barcode: trimmedBarcode,
+      foodTypeId: selectedFoodType.id,
+      storeId: null,
+      allowExisting: false,         // or true in the confirm call
       }),
     });
 
@@ -116,6 +117,7 @@ export default function ManualAddProduct() {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
+                    userId: Number(user_id),
                     name,
                     barcode: trimmedBarcode,
                     foodTypeId: selectedFoodType.id,
