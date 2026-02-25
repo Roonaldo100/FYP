@@ -2138,6 +2138,51 @@ app.get("/user/:userId/product/:productId/lastPrice", async (req, res) => {
   }
 });
 
+app.get("/user/:userId/product/:productId/lastPriceAny", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const productId = Number(req.params.productId);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(productId) || productId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT
+        upp.store_id,
+        upp.last_price,
+        s.name AS store_name
+      FROM user_product_prices upp
+      LEFT JOIN stores s ON s.id = upp.store_id
+      WHERE upp.user_id = $1
+        AND upp.product_id = $2
+        AND (
+          upp.store_id IS NULL
+          OR s.is_system = true
+          OR s.owner_user_id = $1
+        )
+      ORDER BY upp.updated_at DESC NULLS LAST, upp.id DESC
+      LIMIT 1
+      `,
+      [userId, productId]
+    );
+
+    if (!r.rows.length) {
+      return res.json({ store_id: null, store_name: null, last_price: null });
+    }
+
+    return res.json({
+      store_id: r.rows[0].store_id ?? null,
+      store_name: r.rows[0].store_name ?? null,
+      last_price: r.rows[0].last_price ?? null,
+    });
+  } catch (err) {
+    console.error("Get last price any error:", err);
+    res.status(500).json({ message: "Server error fetching last price" });
+  }
+});
+
 /**
  * POST: Remove N items from user_products for a grouped product/store row
  */

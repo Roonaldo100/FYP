@@ -8,6 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
@@ -129,10 +130,8 @@ export default function AddItemToFridge() {
       return;
     }
 
-    // expiryDate is optional; if provided, do a basic YYYY-MM-DD sanity check
     const trimmedExpiry = expiryDate.trim();
-    const expiryToSend =
-      trimmedExpiry.length === 0 ? null : trimmedExpiry;
+    const expiryToSend = trimmedExpiry.length === 0 ? null : trimmedExpiry;
 
     if (expiryToSend) {
       const okFormat = /^\d{4}-\d{2}-\d{2}$/.test(expiryToSend);
@@ -177,7 +176,6 @@ export default function AddItemToFridge() {
           ? null
           : Number(inserted.effective_period_days);
 
-      // Only attempt notification if expiry date exists (daysLeft is not null)
       if (
         daysLeft !== null &&
         effectivePeriodDays !== null &&
@@ -188,23 +186,19 @@ export default function AddItemToFridge() {
           await sendExpiryNotification(product_name ?? "Item", daysLeft);
 
           if (userProductId) {
-            await fetch(
-              `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-              }
-            );
+            await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
           }
         }
       }
 
       Alert.alert("Added!", "Item added to your fridge.");
-        router.replace({
+      router.replace({
         pathname: "/(tabs)",
         params: { user_id: String(user_id) },
       });
-
     } catch (e) {
       console.error("Confirm add error:", e);
       Alert.alert("Error", "Unable to add item.");
@@ -220,8 +214,10 @@ export default function AddItemToFridge() {
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
       {!loading && (
-        <>
-          {/* STORE SECTION */}
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 30 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Store (optional)</Text>
 
@@ -235,36 +231,40 @@ export default function AddItemToFridge() {
               <Text>No store</Text>
             </TouchableOpacity>
 
-            <ScrollView style={{ maxHeight: 180 }}>
-              {stores.map((s) => (
-                <TouchableOpacity
-                  key={s.id}
-                  style={[
-                    styles.storeButton,
-                    selectedStoreId === s.id && styles.storeButtonSelected,
-                  ]}
-                  onPress={() => setSelectedStoreId(s.id)}
-                >
-                  <Text>{s.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <View style={{ marginTop: 10 }}>
-              <Text style={styles.sectionTitle}>Create store</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Aldi"
-                value={newStoreName}
-                onChangeText={setNewStoreName}
-              />
-              <TouchableOpacity style={styles.confirmButton} onPress={createStore}>
-                <Text style={styles.confirmButtonText}>Create store</Text>
-              </TouchableOpacity>
+            <View style={{ maxHeight: 180 }}>
+              <ScrollView
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+                directionalLockEnabled={Platform.OS === "ios"}
+              >
+                {stores.map((s) => (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[
+                      styles.storeButton,
+                      selectedStoreId === s.id && styles.storeButtonSelected,
+                    ]}
+                    onPress={() => setSelectedStoreId(s.id)}
+                  >
+                    <Text>{s.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
+
+            <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Create store</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Aldi"
+              value={newStoreName}
+              onChangeText={setNewStoreName}
+            />
+            <TouchableOpacity style={styles.createBtn} onPress={createStore}>
+              <Text style={styles.createBtnText}>Create store</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* PRICE SECTION */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Price (optional)</Text>
             <TextInput
@@ -276,7 +276,6 @@ export default function AddItemToFridge() {
             />
           </View>
 
-          {/* EXPIRY SECTION */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Expiry (optional)</Text>
             <TextInput
@@ -290,7 +289,7 @@ export default function AddItemToFridge() {
           <TouchableOpacity style={styles.confirmButton} onPress={confirmAdd}>
             <Text style={styles.confirmButtonText}>Confirm and Add</Text>
           </TouchableOpacity>
-        </>
+        </ScrollView>
       )}
     </View>
   );
@@ -321,6 +320,13 @@ const styles = StyleSheet.create({
   storeButtonSelected: {
     backgroundColor: "#ffcc00",
   },
+  createBtn: {
+    backgroundColor: "#663399",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  createBtnText: { color: "#fff", fontWeight: "900" },
   confirmButton: {
     backgroundColor: "#fff",
     padding: 12,

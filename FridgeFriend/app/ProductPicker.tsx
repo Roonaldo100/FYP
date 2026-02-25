@@ -14,8 +14,9 @@ import { API_BASE_URL } from "../config/apiConfig";
 type ProductRow = {
   id: number;
   name: string;
-  food_type_id: number;
-  user_id: number | null;
+  food_type: number | null;
+  is_system: boolean;
+  owner_user_id: number | null;
 };
 
 export default function ProductPicker() {
@@ -63,7 +64,6 @@ export default function ProductPicker() {
         if (!r.ok) {
           const txt = await r.text().catch(() => "");
           console.error("products/search failed:", r.status, txt);
-          // Don’t hard-crash UI; just stop loading
           hasMoreRef.current = false;
           return;
         }
@@ -117,13 +117,24 @@ export default function ProductPicker() {
   };
 
   const onEndReached = () => {
-    // Only load more if we're not in the initial load
     if (!loading) fetchPage(false);
+  };
+
+  const goManualAdd = () => {
+    if (!user_id) return;
+    router.push({
+      pathname: "/ManualAddProduct",
+      params: { user_id: String(user_id) },
+    });
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Add an item</Text>
+
+      <TouchableOpacity style={styles.manualBtn} onPress={goManualAdd}>
+        <Text style={styles.manualBtnText}>➕ Add a brand new product (Manual)</Text>
+      </TouchableOpacity>
 
       <TextInput
         value={q}
@@ -146,7 +157,7 @@ export default function ProductPicker() {
             <TouchableOpacity style={styles.row} onPress={() => onPick(item)}>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.meta}>
-                {item.user_id ? "Your product" : "System product"}
+                {item.owner_user_id ? "Your product" : "System product"}
               </Text>
             </TouchableOpacity>
           )}
@@ -163,6 +174,14 @@ export default function ProductPicker() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#663399", padding: 16 },
   title: { color: "white", fontSize: 22, fontWeight: "800", marginBottom: 12 },
+  manualBtn: {
+    backgroundColor: "#ffcc00",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  manualBtnText: { color: "#333", fontWeight: "900" },
   search: {
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -187,21 +206,3 @@ const styles = StyleSheet.create({
   },
   backText: { color: "#663399", fontWeight: "800" },
 });
-
-/*
-Bugs: -I still need manually add product to be an option 
--Historical data should autofill 
-For example, when I run: 
-select upp.id, upp.user_id, upp.product_id, upp.store_id, upp.last_price, p.food_type, p.name 
-from user_product_prices upp 
-join products p on p.id = upp.product_id 
-where p.owner_user_id = 1 or p.owner_user_id = null; 
-Returned is: 3 1 34 1 3.00 1 "Useroneprodtestone" 
-Therefore, store id and price should be autofilled with tesco (which is store id 1) and 3.00. 
-This can be edited. 
-Edits to price here should update app.last_price for that product. 
-A new store which has not been seen in user_product_price table (for user, product_id, store_id) should update that table 
-( for example, for Useroneprodtestone, I change the store to aldi, for which there is no record of having come from that store before, 
-this needs to be reflected. If aldi does not exist in the stores table, it should be created) 
--store names should be used instead of id on app
-*/

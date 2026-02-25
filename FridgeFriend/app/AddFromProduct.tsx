@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -10,6 +11,8 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
+
+type Store = { id: number; name: string };
 
 export default function AddFromProduct() {
   const router = useRouter();
@@ -27,10 +30,9 @@ export default function AddFromProduct() {
     [params.productName]
   );
 
-  // Store is optional. We'll accept either:
-  // - blank => null (No store)
-  // - numeric storeId
-  const [storeIdText, setStoreIdText] = useState<string>("");
+  const [stores, setStores] = useState<Store[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
+  const [newStoreName, setNewStoreName] = useState("");
 
   // Expiry is optional: YYYY-MM-DD or blank
   const [expiryText, setExpiryText] = useState<string>("");
@@ -39,6 +41,7 @@ export default function AddFromProduct() {
   const [priceText, setPriceText] = useState<string>("");
 
   const [saving, setSaving] = useState(false);
+  const [loadingStores, setLoadingStores] = useState(false);
 
   const validateExpiry = (s: string) => {
     if (!s.trim()) return true;
@@ -51,34 +54,130 @@ export default function AddFromProduct() {
     return Number.isFinite(n) && n >= 0;
   };
 
+  const loadStores = useCallback(async () => {
+    if (!userId) return;
+    try {
+      setLoadingStores(true);
+      const res = await fetch(`${API_BASE_URL}/stores?userId=${encodeURIComponent(String(userId))}`);
+      const data = await res.json();
+      setStores(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Stores fetch error:", e);
+      setStores([]);
+    } finally {
+      setLoadingStores(false);
+    }
+  }, [userId]);
+
+  // Autofill: most recent store+price for this product (historical)
+  const loadLastAny = useCallback(async () => {
+    if (!userId || !productId) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/user/${encodeURIComponent(String(userId))}/product/${encodeURIComponent(
+          String(productId)
+        )}/lastPriceAny`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data?.store_id !== undefined && data?.store_id !== null) {
+        setSelectedStoreId(Number(data.store_id));
+      } else {
+        setSelectedStoreId(null);
+      }
+
+      if (data?.last_price !== null && data?.last_price !== undefined) {
+        setPriceText(String(data.last_price));
+      } else {
+        setPriceText("");
+      }
+    } catch (e) {
+      console.error("Load lastPriceAny error:", e);
+    }
+  }, [userId, productId]);
+
+  // If the user changes store selection, autofill price for THAT store if known
+  useEffect(() => {
+    if (!userId || !productId) return;
+
+    const fetchLastPriceForStore = async () => {
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/user/${userId}/product/${productId}/lastPrice?storeId=${selectedStoreId ?? ""}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.last_price !== null && data.last_price !== undefined) {
+          setPriceText(String(data.last_price));
+        }
+      } catch (e) {
+        console.error("Fetch last price error:", e);
+      }
+    };
+
+    fetchLastPriceForStore();
+  }, [selectedStoreId, userId, productId]);
+
+  useEffect(() => {
+    loadStores();
+  }, [loadStores]);
+
+  useEffect(() => {
+    loadLastAny();
+  }, [loadLastAny]);
+
+  const createStore = useCallback(async () => {
+    const trimmed = newStoreName.trim();
+    if (!trimmed) {
+      Alert.alert("Missing store name", "Enter a store name.");
+      return null;
+    }
+    if (!userId) {
+      Alert.alert("Error", "Missing user.");
+      return null;
+    }
+
+    try {
+      const resp = await fetch(`${API_BASE_URL}/stores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, userId: Number(userId) }),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("Create store failed:", resp.status, txt);
+        Alert.alert("Error", "Failed to create store.");
+        return null;
+      }
+
+      const created = await resp.json();
+      await loadStores();
+      setNewStoreName("");
+      return Number(created.store_id);
+    } catch (e) {
+      console.error("Create store error:", e);
+      Alert.alert("Error", "Failed to create store.");
+      return null;
+    }
+  }, [newStoreName, userId, loadStores]);
+
   const onSave = useCallback(async () => {
     if (!userId || !productId) {
       Alert.alert("Error", "Missing user or product.");
       return;
     }
 
-    const storeTrim = storeIdText.trim();
     const expiryTrim = expiryText.trim();
     const priceTrim = priceText.trim();
 
-    // Store ID: optional, but if provided must be a valid number
-    let storeId: number | null = null;
-    if (storeTrim.length > 0) {
-      const n = Number(storeTrim);
-      if (!Number.isFinite(n) || n <= 0) {
-        Alert.alert("Invalid store", "Store ID must be a positive number (or blank for no store).");
-        return;
-      }
-      storeId = n;
-    }
-
-    // Expiry: optional, but if provided must be YYYY-MM-DD
     if (!validateExpiry(expiryTrim)) {
       Alert.alert("Invalid expiry", "Use YYYY-MM-DD (e.g. 2026-02-27) or leave blank.");
       return;
     }
 
-    // Price: optional, but if provided must be >= 0
     if (!validatePrice(priceTrim)) {
       Alert.alert("Invalid price", "Enter a valid number (e.g. 2.99) or leave blank.");
       return;
@@ -96,9 +195,9 @@ export default function AddFromProduct() {
         body: JSON.stringify({
           userId,
           productId: Number(productId),
-          storeId,       // null allowed
-          expiryDate,    // null allowed
-          price,         // null allowed
+          storeId: selectedStoreId,
+          expiryDate,
+          price,
         }),
       });
 
@@ -109,7 +208,6 @@ export default function AddFromProduct() {
         return;
       }
 
-      // Success: go back to picker (or wherever user came from)
       Alert.alert("Added", `${productName} added to your inventory.`);
       router.back();
     } catch (e) {
@@ -118,7 +216,7 @@ export default function AddFromProduct() {
     } finally {
       setSaving(false);
     }
-  }, [userId, productId, storeIdText, expiryText, priceText, productName, router]);
+  }, [userId, productId, expiryText, priceText, productName, router, selectedStoreId]);
 
   return (
     <View style={styles.container}>
@@ -129,49 +227,93 @@ export default function AddFromProduct() {
         <Text style={styles.backBtnText}>← Back</Text>
       </TouchableOpacity>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Store ID (optional)</Text>
-        <TextInput
-          value={storeIdText}
-          onChangeText={setStoreIdText}
-          placeholder="e.g. 3 (blank = No store)"
-          style={styles.input}
-          keyboardType="number-pad"
-          editable={!saving}
-        />
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        <View style={styles.card}>
+          <Text style={styles.label}>Store (optional)</Text>
 
-        <Text style={styles.label}>Expiry date (optional)</Text>
-        <TextInput
-          value={expiryText}
-          onChangeText={setExpiryText}
-          placeholder="YYYY-MM-DD (blank = no expiry)"
-          style={styles.input}
-          autoCapitalize="none"
-          editable={!saving}
-        />
-
-        <Text style={styles.label}>Price (optional)</Text>
-        <TextInput
-          value={priceText}
-          onChangeText={setPriceText}
-          placeholder="e.g. 2.99 (blank = unknown)"
-          style={styles.input}
-          keyboardType="decimal-pad"
-          editable={!saving}
-        />
-
-        <TouchableOpacity style={styles.saveBtn} onPress={onSave} disabled={saving}>
-          {saving ? (
+          {loadingStores ? (
             <ActivityIndicator />
           ) : (
-            <Text style={styles.saveBtnText}>Add to inventory</Text>
-          )}
-        </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.storeButton,
+                  selectedStoreId === null && styles.storeButtonSelected,
+                ]}
+                onPress={() => setSelectedStoreId(null)}
+                disabled={saving}
+              >
+                <Text>No store</Text>
+              </TouchableOpacity>
 
-        <Text style={styles.help}>
-          Tip: Expiry is used for expiry buckets. Leave blank if this item doesn’t expire.
-        </Text>
-      </View>
+              <View style={{ maxHeight: 220 }}>
+                <ScrollView>
+                  {stores.map((s) => (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[
+                        styles.storeButton,
+                        selectedStoreId === s.id && styles.storeButtonSelected,
+                      ]}
+                      onPress={() => setSelectedStoreId(s.id)}
+                      disabled={saving}
+                    >
+                      <Text>{s.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <Text style={[styles.label, { marginTop: 10 }]}>Create store</Text>
+              <TextInput
+                value={newStoreName}
+                onChangeText={setNewStoreName}
+                placeholder="e.g. Aldi"
+                style={styles.input}
+                editable={!saving}
+              />
+              <TouchableOpacity
+                style={styles.createBtn}
+                onPress={async () => {
+                  const sid = await createStore();
+                  if (sid) setSelectedStoreId(sid);
+                }}
+                disabled={saving}
+              >
+                <Text style={styles.createBtnText}>Create and select</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          <Text style={styles.label}>Expiry date (optional)</Text>
+          <TextInput
+            value={expiryText}
+            onChangeText={setExpiryText}
+            placeholder="YYYY-MM-DD (blank = no expiry)"
+            style={styles.input}
+            autoCapitalize="none"
+            editable={!saving}
+          />
+
+          <Text style={styles.label}>Price (optional)</Text>
+          <TextInput
+            value={priceText}
+            onChangeText={setPriceText}
+            placeholder="e.g. 2.99 (blank = unknown)"
+            style={styles.input}
+            keyboardType="decimal-pad"
+            editable={!saving}
+          />
+
+          <TouchableOpacity style={styles.saveBtn} onPress={onSave} disabled={saving}>
+            {saving ? <ActivityIndicator /> : <Text style={styles.saveBtnText}>Add to inventory</Text>}
+          </TouchableOpacity>
+
+          <Text style={styles.help}>
+            Tip: Store and price will autofill from your last recorded value for this product (if any).
+          </Text>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -198,12 +340,33 @@ const styles = StyleSheet.create({
   },
 
   label: { color: "#333", fontWeight: "800", marginTop: 10, marginBottom: 6 },
+
   input: {
     backgroundColor: "#eee",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    marginBottom: 6,
   },
+
+  storeButton: {
+    backgroundColor: "#eee",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  storeButtonSelected: {
+    backgroundColor: "#ffcc00",
+  },
+
+  createBtn: {
+    backgroundColor: "#663399",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  createBtnText: { color: "#fff", fontWeight: "900" },
 
   saveBtn: {
     marginTop: 16,
