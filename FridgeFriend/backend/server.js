@@ -924,10 +924,28 @@ app.get("/user/:userId/recipes/:recipeId/nutrition", async (req, res) => {
 
     const row = meta.rows[0];
 
+    // If cached nutrition exists, still fetch servings (unless not Spoonacular)
     if (row.nutrition_json) {
+      let servings = null;
+
+      if (String(row.source) === "spoonacular" && row.external_id) {
+        const externalIdNum = Number(row.external_id);
+        if (Number.isFinite(externalIdNum)) {
+          try {
+            const info = await spoonFetchJson(`/recipes/${externalIdNum}/information`, {
+              includeNutrition: false,
+            });
+            servings = info?.servings ?? null;
+          } catch (e) {
+            // keep servings null if Spoonacular call fails
+            console.warn("Servings fetch (cached nutrition) failed:", e?.message ?? e);
+          }
+        }
+      }
+
       return res.json({
         recipe_id: Number(row.id),
-        servings: null,
+        servings,
         nutrition: row.nutrition_json,
         nutrition_updated_at: null,
         cached: true,
@@ -956,6 +974,12 @@ app.get("/user/:userId/recipes/:recipeId/nutrition", async (req, res) => {
       {}
     );
 
+    const info = await spoonFetchJson(`/recipes/${externalIdNum}/information`, {
+      includeNutrition: false,
+    });
+
+    const servings = info?.servings ?? null;
+
     await pool.query(`UPDATE recipes SET nutrition_json = $1 WHERE id = $2`, [
       widget,
       recipeId,
@@ -963,7 +987,7 @@ app.get("/user/:userId/recipes/:recipeId/nutrition", async (req, res) => {
 
     return res.json({
       recipe_id: Number(row.id),
-      servings: null,
+      servings,
       nutrition: widget,
       nutrition_updated_at: null,
       cached: false,
