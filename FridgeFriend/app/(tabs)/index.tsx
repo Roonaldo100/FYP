@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,7 +26,7 @@ type UserProduct = {
   store_name: string | null;
   quantity: number;
   nearest_expiry: string | null;
-  last_price?: number | null;   // 🔥 ADD THIS
+  last_price?: number | null;   
 };
 
 export default function Home() {
@@ -50,18 +50,24 @@ export default function Home() {
   // -------------------------------
   // Load categories (app boot)
   // -------------------------------
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
-        const data = await res.json();
-        setCategories(Array.isArray(data) ? data : []);
-      } catch (e) {
-        console.error("Categories fetch error:", e);
-        setCategories([]);
-      }
-    })();
-  }, []);
+  const loadCategories = useCallback(async () => {
+  if (!user_id) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
+    const data = await res.json();
+    setCategories(Array.isArray(data) ? data : []);
+  } catch (e) {
+    console.error("Categories fetch error:", e);
+    setCategories([]);
+  }
+}, [user_id]);
+
+useFocusEffect(
+  useCallback(() => {
+    loadCategories();
+  }, [loadCategories])
+);
 
   // -------------------------------
   // Poll due notifications (DB-driven)
@@ -211,6 +217,19 @@ export default function Home() {
     });
   };
 
+  const handleManageTypesPress = () => {
+  if (!user_id) {
+    Alert.alert("Not logged in", "Please log in again.");
+    router.replace("/LoginScreen");
+    return;
+  }
+
+  router.push({
+    pathname: "/ManageCategoriesFoodTypes",
+    params: { user_id: String(user_id) },
+  });
+};
+
   // -------------------------------
   // Remove flow
   // -------------------------------
@@ -353,6 +372,9 @@ export default function Home() {
         <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
           <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.manageButton} onPress={handleManageTypesPress}>
+          <Text style={styles.manageButtonText}> Manage Types</Text>
+          </TouchableOpacity>
       </View>
 
       <Text style={styles.title}>{title}</Text>
@@ -448,9 +470,11 @@ const styles = StyleSheet.create({
   },
 
   topRow: {
-    width: "100%",
-    alignItems: "flex-end",
-    marginBottom: 6,
+  width: "100%",
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 6,
   },
 
   settingsButton: {
@@ -461,6 +485,19 @@ const styles = StyleSheet.create({
   },
 
   settingsButtonText: {
+    color: "#663399",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+
+  manageButton: {
+  backgroundColor: "#fff",
+  paddingVertical: 10,
+  paddingHorizontal: 14,
+  borderRadius: 10,
+  },
+
+  manageButtonText: {
     color: "#663399",
     fontWeight: "800",
     fontSize: 14,

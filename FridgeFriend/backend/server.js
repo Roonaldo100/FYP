@@ -1408,6 +1408,238 @@ app.get("/categories/:id/food", async (req, res) => {
 });
 
 /**
+ * --------------------------------------------
+ * USER-CREATED CATEGORIES + FOOD TYPES (CRUD)
+ * --------------------------------------------
+ * - Only creates/deletes NON-system rows (is_system = false)
+ * - Enforces ownership via owner_user_id
+ * - Prevents deletion if referenced by products (avoid cascade deletes)
+ */
+
+/**
+ * POST: Create a user category
+ * POST /user/:userId/categories
+ * Body: { name: string }
+ */
+app.post("/user/:userId/categories", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const name = String(req.body?.name || "").trim();
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: "Invalid userId" });
+  }
+  if (!name) return res.status(400).json({ message: "Missing category name" });
+  if (name.length > 20) {
+    return res.status(400).json({ message: "Category name must be <= 20 characters" });
+  }
+
+  try {
+    // Optional: verify user exists
+    const u = await pool.query(`SELECT 1 FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (!u.rows.length) return res.status(404).json({ message: "User not found" });
+
+    const inserted = await pool.query(
+      `
+      INSERT INTO categories (name, is_system, owner_user_id)
+      VALUES ($1, false, $2)
+      RETURNING id, name, is_system, owner_user_id
+      `,
+      [name, userId]
+    );
+
+    return res.status(201).json({
+      category: {
+        id: Number(inserted.rows[0].id),
+        name: String(inserted.rows[0].name),
+        is_system: Boolean(inserted.rows[0].is_system),
+        owner_user_id: inserted.rows[0].owner_user_id ?? null,
+      },
+    });
+  } catch (e) {
+    // Unique index: categories_user_unique (owner_user_id, lower(name)) for is_system=false :contentReference[oaicite:4]{index=4}
+    if (e?.code === "23505") {
+      return res.status(409).json({ message: "You already have a category with that name" });
+    }
+    console.error("Create category error:", e);
+    return res.status(500).json({ message: "Server error creating category" });
+  }
+});
+
+/**
+ * DELETE: Delete a user category (only if NOT used by any products)
+ * DELETE /user/:userId/categories/:categoryId
+ */
+app.delete("/user/:userId/categories/:categoryId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const categoryId = Number(req.params.categoryId);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(categoryId) || categoryId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or categoryId" });
+  }
+
+  try {
+    // Must be a user-owned (non-system) category
+    const cat = await pool.query(
+      `
+      SELECT id
+      FROM categories
+      WHERE id = $1 AND is_system = false AND owner_user_id = $2
+      LIMIT 1
+      `,
+      [categoryId, userId]
+    );
+    if (!cat.rows.length) {
+      return res.status(404).json({ message: "Category not found (or not owned by user)" });
+    }
+
+    // Safety: prevent deleting if any products reference any food_type in this category
+    // Because products.food_type -> food_types.id is ON DELETE CASCADE :contentReference[oaicite:5]{index=5}
+    const usage = await pool.query(
+      `
+      SELECT COUNT(*)::int AS n
+      FROM products p
+      JOIN food_types ft ON ft.id = p.food_type
+      WHERE ft.category = $1
+      `,
+      [categoryId]
+    );
+    const n = Number(usage.rows[0]?.n ?? 0);
+    if (n > 0) {
+      return res.status(409).json({
+        message:
+          "Category is in use by products. Move/delete those products (or change their food type) before deleting this category.",
+        products_using_category: n,
+      });
+    }
+
+    // This will also delete food_types in that category via FK ON DELETE CASCADE :contentReference[oaicite:6]{index=6}
+    await pool.query(
+      `DELETE FROM categories WHERE id = $1 AND is_system = false AND owner_user_id = $2`,
+      [categoryId, userId]
+    );
+
+    return res.json({ deleted: true });
+  } catch (e) {
+    console.error("Delete category error:", e);
+    return res.status(500).json({ message: "Server error deleting category" });
+  }
+});
+
+/**
+ * POST: Create a user food type inside a category (system or user category)
+ * POST /user/:userId/categories/:categoryId/food
+ * Body: { name: string }
+ */
+app.post("/user/:userId/categories/:categoryId/food", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const categoryId = Number(req.params.categoryId);
+  const name = String(req.body?.name || "").trim();
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(categoryId) || categoryId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or categoryId" });
+  }
+  if (!name) return res.status(400).json({ message: "Missing food type name" });
+  if (name.length > 20) {
+    return res.status(400).json({ message: "Food type name must be <= 20 characters" });
+  }
+
+  try {
+    // Category must be visible to the user (system OR owned)
+    const cat = await pool.query(
+      `
+      SELECT id
+      FROM categories
+      WHERE id = $1 AND (is_system = true OR owner_user_id = $2)
+      LIMIT 1
+      `,
+      [categoryId, userId]
+    );
+    if (!cat.rows.length) return res.status(404).json({ message: "Category not found for this user" });
+
+    const inserted = await pool.query(
+      `
+      INSERT INTO food_types (category, name, is_system, owner_user_id)
+      VALUES ($1, $2, false, $3)
+      RETURNING id, category, name, is_system, owner_user_id
+      `,
+      [categoryId, name, userId]
+    );
+
+    return res.status(201).json({
+      food_type: {
+        id: Number(inserted.rows[0].id),
+        category: Number(inserted.rows[0].category),
+        name: String(inserted.rows[0].name),
+        is_system: Boolean(inserted.rows[0].is_system),
+        owner_user_id: inserted.rows[0].owner_user_id ?? null,
+      },
+    });
+  } catch (e) {
+    // Unique index: food_types_user_unique (owner_user_id, category, lower(name)) for is_system=false :contentReference[oaicite:7]{index=7}
+    if (e?.code === "23505") {
+      return res
+        .status(409)
+        .json({ message: "You already have that food type name in this category" });
+    }
+    console.error("Create food type error:", e);
+    return res.status(500).json({ message: "Server error creating food type" });
+  }
+});
+
+/**
+ * DELETE: Delete a user food type (only if NOT used by any products)
+ * DELETE /user/:userId/foodtypes/:foodTypeId
+ */
+app.delete("/user/:userId/foodtypes/:foodTypeId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const foodTypeId = Number(req.params.foodTypeId);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(foodTypeId) || foodTypeId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or foodTypeId" });
+  }
+
+  try {
+    // Must be user-owned (non-system) food type
+    const ft = await pool.query(
+      `
+      SELECT id
+      FROM food_types
+      WHERE id = $1 AND is_system = false AND owner_user_id = $2
+      LIMIT 1
+      `,
+      [foodTypeId, userId]
+    );
+    if (!ft.rows.length) {
+      return res.status(404).json({ message: "Food type not found (or not owned by user)" });
+    }
+
+    // Safety: prevent deleting if any products use it (otherwise cascade would delete products) :contentReference[oaicite:8]{index=8}
+    const usage = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM products WHERE food_type = $1`,
+      [foodTypeId]
+    );
+    const n = Number(usage.rows[0]?.n ?? 0);
+    if (n > 0) {
+      return res.status(409).json({
+        message:
+          "Food type is in use by products. Change those products to a different food type before deleting this one.",
+        products_using_food_type: n,
+      });
+    }
+
+    await pool.query(
+      `DELETE FROM food_types WHERE id = $1 AND is_system = false AND owner_user_id = $2`,
+      [foodTypeId, userId]
+    );
+
+    return res.json({ deleted: true });
+  } catch (e) {
+    console.error("Delete food type error:", e);
+    return res.status(500).json({ message: "Server error deleting food type" });
+  }
+});
+
+/**
  * GET: Stores
  */
 app.get("/stores", async (req, res) => {

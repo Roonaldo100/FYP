@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   Alert,
@@ -29,18 +30,24 @@ export default function ManualAddProduct() {
   const [loading, setLoading] = useState(false);
 
   // Load categories
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
-        const data = await res.json();
-        setCategories(Array.isArray(data) ? data : []);
-      } catch (e) {
-        console.error("Categories fetch error:", e);
-        setCategories([]);
-      }
-    })();
-  }, []);
+  const loadCategories = useCallback(async () => {
+  if (!user_id) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
+    const data = await res.json();
+    setCategories(Array.isArray(data) ? data : []);
+  } catch (e) {
+    console.error("Categories fetch error:", e);
+    setCategories([]);
+  }
+}, [user_id]);
+
+useFocusEffect(
+  useCallback(() => {
+    loadCategories();
+  }, [loadCategories])
+);
 
   const title = useMemo(() => {
     if (selectedFoodType) return "Confirm Product";
