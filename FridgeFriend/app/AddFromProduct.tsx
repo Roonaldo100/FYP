@@ -34,10 +34,7 @@ export default function AddFromProduct() {
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
   const [newStoreName, setNewStoreName] = useState("");
 
-  // Expiry is optional: YYYY-MM-DD or blank
   const [expiryText, setExpiryText] = useState<string>("");
-
-  // Price optional: numeric or blank
   const [priceText, setPriceText] = useState<string>("");
 
   const [saving, setSaving] = useState(false);
@@ -69,7 +66,6 @@ export default function AddFromProduct() {
     }
   }, [userId]);
 
-  // Autofill: most recent store+price for this product (historical)
   const loadLastAny = useCallback(async () => {
     if (!userId || !productId) return;
 
@@ -98,7 +94,6 @@ export default function AddFromProduct() {
     }
   }, [userId, productId]);
 
-  // If the user changes store selection, autofill price for THAT store if known
   useEffect(() => {
     if (!userId || !productId) return;
 
@@ -163,6 +158,85 @@ export default function AddFromProduct() {
       return null;
     }
   }, [newStoreName, userId, loadStores]);
+
+  const clearPersonalHistory = useCallback(async () => {
+    if (!userId || !productId) return;
+
+    const run = async (confirmDeleteInventory: boolean) => {
+      const resp = await fetch(
+        `${API_BASE_URL}/user/${encodeURIComponent(String(userId))}/product/${encodeURIComponent(
+          String(productId)
+        )}/clearPersonalHistory`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmDeleteInventory }),
+        }
+      );
+
+      const text = await resp.text().catch(() => "");
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {}
+
+      if (resp.status === 409 && data?.requiresConfirmation) {
+        Alert.alert(
+          "This will delete inventory",
+          `You currently have ${data.inventoryCount} item(s) of "${productName}" in your fridge.\n\nClearing history will also delete those inventory items.\n\nProceed?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Delete history + inventory",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  setSaving(true);
+                  await run(true);
+                  Alert.alert("Cleared", "Your history (and inventory for this product) was removed.");
+                  router.back();
+                } catch (e) {
+                  Alert.alert("Error", "Failed to clear history.");
+                } finally {
+                  setSaving(false);
+                }
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      if (!resp.ok) {
+        console.error("clearPersonalHistory failed:", resp.status, text);
+        Alert.alert("Error", data?.message || "Failed to clear history.");
+        return;
+      }
+
+      Alert.alert("Cleared", "Your history for this product was removed.");
+      router.back();
+    };
+
+    Alert.alert(
+      "Clear history?",
+      `Remove "${productName}" from your historical data?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setSaving(true);
+              await run(false);
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [userId, productId, productName, router]);
 
   const onSave = useCallback(async () => {
     if (!userId || !productId) {
@@ -247,7 +321,7 @@ export default function AddFromProduct() {
               </TouchableOpacity>
 
               <View style={{ maxHeight: 220 }}>
-                <ScrollView>
+                <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
                   {stores.map((s) => (
                     <TouchableOpacity
                       key={s.id}
@@ -309,9 +383,9 @@ export default function AddFromProduct() {
             {saving ? <ActivityIndicator /> : <Text style={styles.saveBtnText}>Add to inventory</Text>}
           </TouchableOpacity>
 
-          <Text style={styles.help}>
-            Tip: Store and price will autofill from your last recorded value for this product (if any).
-          </Text>
+          <TouchableOpacity style={styles.dangerBtn} onPress={clearPersonalHistory} disabled={saving}>
+            <Text style={styles.dangerBtnText}>Clear my history for this product</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -377,5 +451,12 @@ const styles = StyleSheet.create({
   },
   saveBtnText: { color: "#333", fontWeight: "900", fontSize: 16 },
 
-  help: { marginTop: 10, color: "#666" },
+  dangerBtn: {
+    marginTop: 10,
+    backgroundColor: "#b00020",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  dangerBtnText: { color: "#fff", fontWeight: "900" },
 });

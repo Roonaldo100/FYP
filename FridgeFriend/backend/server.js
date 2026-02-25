@@ -2183,6 +2183,82 @@ app.get("/user/:userId/product/:productId/lastPriceAny", async (req, res) => {
   }
 });
 
+app.post("/user/:userId/product/:productId/clearPersonalHistory", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const productId = Number(req.params.productId);
+  const confirmDeleteInventory = req.body?.confirmDeleteInventory === true;
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(productId) || productId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const inv = await client.query(
+      `
+      SELECT COUNT(*)::int AS n
+      FROM user_products
+      WHERE user_id = $1 AND product_id = $2
+      `,
+      [userId, productId]
+    );
+    const inventoryCount = Number(inv.rows[0]?.n ?? 0);
+
+    const hist = await client.query(
+      `
+      SELECT COUNT(*)::int AS n
+      FROM user_product_prices
+      WHERE user_id = $1 AND product_id = $2
+      `,
+      [userId, productId]
+    );
+    const historyCount = Number(hist.rows[0]?.n ?? 0);
+
+    if (inventoryCount > 0 && !confirmDeleteInventory) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message:
+          "This product exists in your inventory. Clearing history will also delete your current inventory for this product. Confirm to proceed.",
+        inventoryCount,
+        historyCount,
+        requiresConfirmation: true,
+      });
+    }
+
+    const delHist = await client.query(
+      `
+      DELETE FROM user_product_prices
+      WHERE user_id = $1 AND product_id = $2
+      `,
+      [userId, productId]
+    );
+
+    const delInv = await client.query(
+      `
+      DELETE FROM user_products
+      WHERE user_id = $1 AND product_id = $2
+      `,
+      [userId, productId]
+    );
+
+    await client.query("COMMIT");
+
+    return res.json({
+      cleared: true,
+      deleted_history_rows: delHist.rowCount,
+      deleted_inventory_rows: delInv.rowCount,
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("clearPersonalHistory error:", e);
+    return res.status(500).json({ message: "Server error clearing history" });
+  } finally {
+    client.release();
+  }
+});
+
 /**
  * POST: Remove N items from user_products for a grouped product/store row
  */
