@@ -8,7 +8,6 @@ import {
   Text,
   TouchableOpacity,
   View,
-  TextInput,
 } from "react-native";
 import { API_BASE_URL } from "../../config/apiConfig";
 
@@ -26,7 +25,7 @@ type UserProduct = {
   store_name: string | null;
   quantity: number;
   nearest_expiry: string | null;
-  last_price?: number | null;   
+  last_price?: number | null;
 };
 
 export default function Home() {
@@ -42,32 +41,27 @@ export default function Home() {
 
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Remove flow state
-  const [removeTarget, setRemoveTarget] = useState<UserProduct | null>(null);
-  const [removeQtyText, setRemoveQtyText] = useState<string>("1");
-  const [removing, setRemoving] = useState<boolean>(false);
-
   // -------------------------------
-  // Load categories (app boot)
+  // Load categories (app boot / focus)
   // -------------------------------
   const loadCategories = useCallback(async () => {
-  if (!user_id) return;
+    if (!user_id) return;
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
-    const data = await res.json();
-    setCategories(Array.isArray(data) ? data : []);
-  } catch (e) {
-    console.error("Categories fetch error:", e);
-    setCategories([]);
-  }
-}, [user_id]);
+    try {
+      const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Categories fetch error:", e);
+      setCategories([]);
+    }
+  }, [user_id]);
 
-useFocusEffect(
-  useCallback(() => {
-    loadCategories();
-  }, [loadCategories])
-);
+  useFocusEffect(
+    useCallback(() => {
+      loadCategories();
+    }, [loadCategories])
+  );
 
   // -------------------------------
   // Poll due notifications (DB-driven)
@@ -124,7 +118,6 @@ useFocusEffect(
       return;
     }
 
-    // Use absolute path for reliability with expo-router
     router.push({
       pathname: "../Settings",
       params: { user_id: String(user_id) },
@@ -141,7 +134,9 @@ useFocusEffect(
     setUserProducts([]);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food?userId=${user_id}`);
+      const res = await fetch(
+        `${API_BASE_URL}/categories/${category.id}/food?userId=${user_id}`
+      );
       const data = await res.json();
       setFoodTypes(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -152,32 +147,44 @@ useFocusEffect(
     }
   };
 
-  const handleFoodTypePress = async (foodType: FoodType) => {
-    if (!user_id) {
-      Alert.alert("Not logged in", "Please log in again.");
-      router.replace("/LoginScreen");
-      return;
-    }
+  const handleFoodTypePress = useCallback(
+    async (foodType: FoodType) => {
+      if (!user_id) {
+        Alert.alert("Not logged in", "Please log in again.");
+        router.replace("/LoginScreen");
+        return;
+      }
 
-    setLoading(true);
-    setSelectedFoodType(foodType);
+      setLoading(true);
+      setSelectedFoodType(foodType);
 
-    try {
-      const res = await fetch(
-        `${API_BASE_URL}/user/${user_id}/foodtype/${foodType.id}`
-      );
-      const data = await res.json();
-      setUserProducts(Array.isArray(data) ? data : []);
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/user/${user_id}/foodtype/${foodType.id}`
+        );
+        const data = await res.json();
+        setUserProducts(Array.isArray(data) ? data : []);
 
-      // Also poll here (covers “back then re-enter strawberries”)
-      await pollPendingNotifications();
-    } catch (e) {
-      console.error("UserProducts fetch error:", e);
-      setUserProducts([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+        await pollPendingNotifications();
+      } catch (e) {
+        console.error("UserProducts fetch error:", e);
+        setUserProducts([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [user_id, router, pollPendingNotifications]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      // When returning from ExpiryBuckets (or any child screen),
+      // refresh the grouped list if we're currently inside a food type.
+      if (selectedFoodType) {
+        handleFoodTypePress(selectedFoodType);
+      }
+    }, [selectedFoodType, handleFoodTypePress])
+  );
 
   const handleBackPress = async () => {
     if (selectedFoodType) {
@@ -218,94 +225,35 @@ useFocusEffect(
   };
 
   const handleManageTypesPress = () => {
-  if (!user_id) {
-    Alert.alert("Not logged in", "Please log in again.");
-    router.replace("/LoginScreen");
-    return;
-  }
-
-  router.push({
-    pathname: "/ManageCategoriesFoodTypes",
-    params: { user_id: String(user_id) },
-  });
-};
-
-  // -------------------------------
-  // Remove flow
-  // -------------------------------
-  const openRemove = (prod: UserProduct) => {
-    setRemoveTarget(prod);
-    setRemoveQtyText("1");
-  };
-
-  const closeRemove = () => {
-    setRemoveTarget(null);
-    setRemoveQtyText("1");
-    setRemoving(false);
-  };
-
-  const confirmRemove = async () => {
-    if (!removeTarget || !user_id) return;
-
-    const maxQty = Number(removeTarget.quantity);
-    const parsed = Number(removeQtyText);
-
-    if (!parsed || parsed <= 0) {
-      Alert.alert("Invalid quantity", "Enter a number greater than 0.");
-      return;
-    }
-    if (parsed > maxQty) {
-      Alert.alert("Invalid quantity", `You can remove up to ${maxQty}.`);
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
       return;
     }
 
-    Alert.alert(
-      "Confirm removal",
-      `Remove ${parsed} of ${removeTarget.product_name} from ${
-        removeTarget.store_name ?? "No store"
-      }?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setRemoving(true);
+    router.push({
+      pathname: "/ManageCategoriesFoodTypes",
+      params: { user_id: String(user_id) },
+    });
+  };
 
-              const resp = await fetch(`${API_BASE_URL}/user_products/remove`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  userId: user_id,
-                  productId: removeTarget.product_id,
-                  storeId: removeTarget.store_id,
-                  quantity: parsed,
-                }),
-              });
+  // -------------------------------
+  // Expiry buckets navigation (tap a grouped card)
+  // -------------------------------
+  const openBuckets = (prod: UserProduct) => {
+    if (!user_id) return;
 
-              if (!resp.ok) {
-                const txt = await resp.text().catch(() => "");
-                console.error("Remove failed:", resp.status, txt);
-                Alert.alert("Error", "Failed to remove items.");
-                setRemoving(false);
-                return;
-              }
-
-              if (selectedFoodType) {
-                await handleFoodTypePress(selectedFoodType);
-              }
-
-              closeRemove();
-            } catch (e) {
-              console.error("Remove error:", e);
-              Alert.alert("Error", "Failed to remove items.");
-              setRemoving(false);
-            }
-          },
-        },
-      ]
-    );
+    router.push({
+      pathname: "../ExpiryBuckets",
+      params: {
+        user_id: String(user_id),
+        productId: String(prod.product_id),
+        productName: prod.product_name,
+        storeId: prod.store_id === null ? "" : String(prod.store_id),
+        storeName: prod.store_name ?? "No store",
+        foodTypeId: selectedFoodType ? String(selectedFoodType.id) : "",
+      },
+    });
   };
 
   // -------------------------------
@@ -337,26 +285,29 @@ useFocusEffect(
   const renderUserProducts = () => (
     <View style={styles.grid}>
       {userProducts.map((prod, idx) => (
-        <View
+        <TouchableOpacity
           key={`${prod.product_id}-${String(prod.store_id)}-${idx}`}
           style={styles.productCard}
+          onPress={() => openBuckets(prod)}
+          activeOpacity={0.8}
         >
-          <TouchableOpacity style={styles.removeX} onPress={() => openRemove(prod)}>
-            <Text style={styles.removeXText}>×</Text>
-          </TouchableOpacity>
-
           <Text style={styles.productName}>{prod.product_name}</Text>
-          <Text style={styles.productDetails}>Store: {prod.store_name ?? "None"}</Text>
+          <Text style={styles.productDetails}>
+            Store: {prod.store_name ?? "None"}
+          </Text>
           <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
           <Text style={styles.productDetails}>
-            Expires: {prod.nearest_expiry ?? "None"}
+            Nearest expiry: {prod.nearest_expiry ?? "None"}
           </Text>
+
           {prod.last_price !== null && prod.last_price !== undefined && (
-          <Text style={styles.productDetails}>
-            Last price: €{Number(prod.last_price).toFixed(2)}
-          </Text>
-        )}
-        </View>
+            <Text style={styles.productDetails}>
+              Last price: €{Number(prod.last_price).toFixed(2)}
+            </Text>
+          )}
+
+          <Text style={styles.tapHint}>Tap to manage expiry batches →</Text>
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -369,12 +320,19 @@ useFocusEffect(
       <StatusBar style="light" />
 
       <View style={styles.topRow}>
-        <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={handleSettingsPress}
+        >
           <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.manageButton} onPress={handleManageTypesPress}>
-          <Text style={styles.manageButtonText}> Manage Types</Text>
-          </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.manageButton}
+          onPress={handleManageTypesPress}
+        >
+          <Text style={styles.manageButtonText}>Manage Types</Text>
+        </TouchableOpacity>
       </View>
 
       <Text style={styles.title}>{title}</Text>
@@ -403,7 +361,10 @@ useFocusEffect(
             )
           ) : (
             renderButtons(
-              categories.map((cat) => ({ key: String(cat.id), label: cat.name })),
+              categories.map((cat) => ({
+                key: String(cat.id),
+                label: cat.name,
+              })),
               (idStr) => {
                 const cat = categories.find((c) => String(c.id) === idStr);
                 if (cat) handleCategoryPress(cat);
@@ -417,44 +378,6 @@ useFocusEffect(
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
-      )}
-
-      {removeTarget && (
-        <View style={styles.removeOverlay}>
-          <View style={styles.removePanel}>
-            <Text style={styles.removeTitle}>Remove items</Text>
-            <Text style={styles.removeSub}>
-              {removeTarget.product_name} ({removeTarget.store_name ?? "No store"})
-            </Text>
-            <Text style={styles.removeSub}>Max: {removeTarget.quantity}</Text>
-
-            <TextInput
-              style={styles.removeInput}
-              value={removeQtyText}
-              onChangeText={setRemoveQtyText}
-              keyboardType="number-pad"
-              placeholder="Quantity"
-            />
-
-            <TouchableOpacity
-              style={styles.removeConfirmButton}
-              onPress={confirmRemove}
-              disabled={removing}
-            >
-              <Text style={styles.removeConfirmText}>
-                {removing ? "Removing..." : "Continue"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.removeCancelButton}
-              onPress={closeRemove}
-              disabled={removing}
-            >
-              <Text style={styles.removeCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       )}
     </View>
   );
@@ -470,11 +393,11 @@ const styles = StyleSheet.create({
   },
 
   topRow: {
-  width: "100%",
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: 6,
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
   },
 
   settingsButton: {
@@ -491,10 +414,10 @@ const styles = StyleSheet.create({
   },
 
   manageButton: {
-  backgroundColor: "#fff",
-  paddingVertical: 10,
-  paddingHorizontal: 14,
-  borderRadius: 10,
+    backgroundColor: "#fff",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
   },
 
   manageButtonText: {
@@ -543,10 +466,17 @@ const styles = StyleSheet.create({
     padding: 10,
     margin: 5,
     alignItems: "center",
-    position: "relative",
   },
   productName: { fontSize: 16, fontWeight: "bold", color: "#333" },
-  productDetails: { fontSize: 14, color: "#555" },
+  productDetails: { fontSize: 14, color: "#555", textAlign: "center" },
+
+  tapHint: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#663399",
+    textAlign: "center",
+  },
 
   backButton: {
     marginTop: 20,
@@ -555,80 +485,4 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
-
-  removeX: {
-    position: "absolute",
-    top: 6,
-    right: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 40,
-    backgroundColor: "#eee",
-  },
-  removeXText: {
-    fontSize: 18,
-    color: "#333",
-    fontWeight: "700",
-    lineHeight: 18,
-  },
-
-  removeOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "#0008",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  removePanel: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-  },
-  removeTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#333",
-    marginBottom: 6,
-  },
-  removeSub: {
-    fontSize: 14,
-    color: "#555",
-    marginBottom: 6,
-  },
-  removeInput: {
-    backgroundColor: "#eee",
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  removeConfirmButton: {
-    backgroundColor: "#663399",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  removeConfirmText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 16,
-  },
-  removeCancelButton: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  removeCancelText: {
-    color: "#333",
-    fontWeight: "700",
-    fontSize: 16,
-  },
 });

@@ -2063,6 +2063,87 @@ app.post("/user_products/remove", async (req, res) => {
 });
 
 /**
+ * GET: Expiry buckets for a grouped product/store
+ * /user_products/buckets?userId=1&productId=2&storeId=3
+ * storeId can be omitted/null (No store)
+ */
+app.get("/user_products/buckets", async (req, res) => {
+  const userId = Number(req.query.userId);
+  const productId = Number(req.query.productId);
+  const storeIdRaw = req.query.storeId;
+
+  const storeId =
+    storeIdRaw === undefined || storeIdRaw === null || String(storeIdRaw) === ""
+      ? null
+      : Number(storeIdRaw);
+
+  if (!userId || !productId) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT
+        expiry_date,
+        COUNT(*)::int AS quantity
+      FROM user_products
+      WHERE user_id = $1
+        AND product_id = $2
+        AND store_id IS NOT DISTINCT FROM $3
+      GROUP BY expiry_date
+      ORDER BY expiry_date ASC NULLS LAST;
+      `,
+      [userId, productId, storeId]
+    );
+
+    res.json(r.rows);
+  } catch (err) {
+    console.error("Buckets fetch error:", err);
+    res.status(500).json({ message: "Server error loading buckets" });
+  }
+});
+
+/**
+ * POST: Remove N items from a SPECIFIC expiry bucket
+ * Body: { userId, productId, storeId, expiryDate, quantity }
+ * expiryDate can be null (removes from "no expiry" bucket)
+ */
+app.post("/user_products/removeByExpiry", async (req, res) => {
+  const { userId, productId, storeId, expiryDate, quantity } = req.body;
+  const qty = Number(quantity);
+
+  if (!userId || !productId || !qty || qty <= 0) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    const del = await pool.query(
+      `
+      DELETE FROM user_products
+      WHERE id IN (
+        SELECT id
+        FROM user_products
+        WHERE user_id = $1
+          AND product_id = $2
+          AND store_id IS NOT DISTINCT FROM $3
+          AND expiry_date IS NOT DISTINCT FROM $4
+        ORDER BY id ASC
+        LIMIT $5
+      )
+      RETURNING id
+      `,
+      [userId, productId, storeId ?? null, expiryDate ?? null, qty]
+    );
+
+    res.json({ removed: del.rowCount });
+  } catch (err) {
+    console.error("RemoveByExpiry error:", err);
+    res.status(500).json({ message: "Server error removing items" });
+  }
+});
+
+/**
  * POST: Mark notified
  */
 app.post("/user_products/:id/markNotified", async (req, res) => {
