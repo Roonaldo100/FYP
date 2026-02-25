@@ -219,7 +219,7 @@ export default function Home() {
     }
 
     router.push({
-      pathname: "/ManualAddProduct",
+      pathname: "/ProductPicker",
       params: { user_id: String(user_id) },
     });
   };

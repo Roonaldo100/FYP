@@ -2358,6 +2358,53 @@ app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
   }
 });
 
+// GET /products/search?userId=1&q=coleslaw&limit=30&offset=0
+app.get("/products/search", async (req, res) => {
+  const userId = Number(req.query.userId);
+  const q = String(req.query.q ?? "").trim();
+  const limit = Math.min(Number(req.query.limit ?? 30), 50);
+  const offset = Number(req.query.offset ?? 0);
+
+  if (!userId) return res.status(400).json({ message: "Missing userId" });
+
+  try {
+    // If no query, return recent products (by id desc) for fast browsing
+    if (!q) {
+      const r = await pool.query(
+        `
+        SELECT id, name, food_type_id, user_id
+        FROM products
+        WHERE user_id IS NULL OR user_id = $1
+        ORDER BY id DESC
+        LIMIT $2 OFFSET $3
+        `,
+        [userId, limit, offset]
+      );
+      return res.json(r.rows);
+    }
+
+    // Search by name (ILIKE)
+    const r = await pool.query(
+      `
+      SELECT id, name, food_type_id, user_id
+      FROM products
+      WHERE (user_id IS NULL OR user_id = $1)
+        AND name ILIKE $2
+      ORDER BY
+        CASE WHEN user_id = $1 THEN 0 ELSE 1 END,  -- user's products first
+        name ASC
+      LIMIT $3 OFFSET $4
+      `,
+      [userId, `%${q}%`, limit, offset]
+    );
+
+    res.json(r.rows);
+  } catch (err) {
+    console.error("products/search error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 /**
  * LOGIN
  */
