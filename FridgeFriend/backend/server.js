@@ -381,7 +381,9 @@ async function spoonSearchRecipeByDish(dish) {
     collected = dedupeById(collected.concat(results));
 
     const dishNorm = normalizeText(dish);
-    const exact = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
+    const exact = collected.find(
+      (r) => normalizeText(r?.title || "") === dishNorm
+    );
     if (exact) return { id: exact.id, title: exact.title };
   }
 
@@ -401,7 +403,9 @@ async function spoonSearchRecipeByDish(dish) {
     if (results2.length) {
       collected = dedupeById(collected.concat(results2));
       const dishNorm = normalizeText(dish);
-      const exact2 = collected.find((r) => normalizeText(r?.title || "") === dishNorm);
+      const exact2 = collected.find(
+        (r) => normalizeText(r?.title || "") === dishNorm
+      );
       if (exact2) return { id: exact2.id, title: exact2.title };
     }
   } catch (e) {
@@ -617,6 +621,21 @@ async function computeMissingForRecipe(userId, recipeId) {
 /*
  * Shared helper: upsert/insert recipe + insert ingredients (name only) + save to user
  */
+function normalizeJsonbInput(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (!s) return null;
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === "object") return value;
+  return null;
+}
+
 async function upsertAndSaveRecipeForUser({
   userId,
   title,
@@ -624,10 +643,13 @@ async function upsertAndSaveRecipeForUser({
   externalId,
   url,
   ingredientsRaw,
+  nutritionJson,
 }) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    const normalizedNutrition = normalizeJsonbInput(nutritionJson);
 
     let recipeId = null;
     let createdNew = false;
@@ -635,15 +657,16 @@ async function upsertAndSaveRecipeForUser({
     if (externalId) {
       const up = await client.query(
         `
-        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id)
-        VALUES ($1, $2, $3, $4, NULL)
+        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id, nutrition_json)
+        VALUES ($1, $2, $3, $4, NULL, $5)
         ON CONFLICT (source, external_id)
         DO UPDATE SET
           title = EXCLUDED.title,
-          source_url = COALESCE(EXCLUDED.source_url, recipes.source_url)
+          source_url = COALESCE(EXCLUDED.source_url, recipes.source_url),
+          nutrition_json = COALESCE(EXCLUDED.nutrition_json, recipes.nutrition_json)
         RETURNING id, (xmax = 0) AS inserted
         `,
-        [title, source, externalId, url]
+        [title, source, externalId, url, normalizedNutrition]
       );
 
       recipeId = Number(up.rows[0].id);
@@ -651,11 +674,11 @@ async function upsertAndSaveRecipeForUser({
     } else {
       const ins = await client.query(
         `
-        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id)
-        VALUES ($1, 'custom', NULL, $2, $3)
+        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id, nutrition_json)
+        VALUES ($1, 'custom', NULL, $2, $3, $4)
         RETURNING id
         `,
-        [title, url, userId]
+        [title, url, userId, normalizedNutrition]
       );
 
       recipeId = Number(ins.rows[0].id);
@@ -752,7 +775,9 @@ app.get("/products/search", async (req, res) => {
       [`%${q}%`]
     );
 
-    res.json(r.rows.map((row) => ({ id: Number(row.id), name: String(row.name) })));
+    res.json(
+      r.rows.map((row) => ({ id: Number(row.id), name: String(row.name) }))
+    );
   } catch (e) {
     console.error("Product search error:", e);
     res.status(500).json({ message: "Server error searching products" });
@@ -779,6 +804,7 @@ app.post("/user/:userId/recipes/save", async (req, res) => {
       externalId: recipe.external_id != null ? String(recipe.external_id) : null,
       url: recipe.url ? String(recipe.url) : null,
       ingredientsRaw: Array.isArray(recipe.ingredients) ? recipe.ingredients : [],
+      nutritionJson: recipe.nutrition ?? null,
     });
 
     res.json({ saved: true, recipe_id: recipeId });
@@ -803,7 +829,9 @@ app.post("/user/:userId/recipes", async (req, res) => {
 
   const ing = cleanIngredientStrings(ingredients);
   if (!ing.length) {
-    return res.status(400).json({ message: "Add at least one ingredient (min 3 chars)" });
+    return res
+      .status(400)
+      .json({ message: "Add at least one ingredient (min 3 chars)" });
   }
 
   try {
@@ -814,6 +842,7 @@ app.post("/user/:userId/recipes", async (req, res) => {
       externalId: null,
       url: url ? String(url) : null,
       ingredientsRaw: ing,
+      nutritionJson: null,
     });
 
     res.json({ created: true, recipe_id: recipeId });
@@ -860,6 +889,94 @@ app.get("/user/:userId/recipes", async (req, res) => {
 });
 
 /**
+ * Get nutrition for a saved recipe
+ * GET /user/:userId/recipes/:recipeId/nutrition
+ *
+ * If recipe is spoonacular -> fetch nutrition from Spoonacular using external_id
+ * If recipe is custom -> return a friendly message (no nutrition available)
+ */
+app.get("/user/:userId/recipes/:recipeId/nutrition", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const recipeId = Number(req.params.recipeId);
+
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(recipeId) ||
+    recipeId <= 0
+  ) {
+    return res.status(400).json({ message: "Invalid userId or recipeId" });
+  }
+
+  try {
+    await assertUserSavedRecipe(userId, recipeId);
+
+    const meta = await pool.query(
+      `SELECT id, source, external_id, title, nutrition_json
+       FROM recipes
+       WHERE id = $1
+       LIMIT 1`,
+      [recipeId]
+    );
+    if (!meta.rows.length) {
+      return res.status(404).json({ message: "Recipe not found" });
+    }
+
+    const row = meta.rows[0];
+
+    if (row.nutrition_json) {
+      return res.json({
+        recipe_id: Number(row.id),
+        servings: null,
+        nutrition: row.nutrition_json,
+        nutrition_updated_at: null,
+        cached: true,
+      });
+    }
+
+    if (String(row.source) !== "spoonacular" || !row.external_id) {
+      return res.json({
+        recipe_id: Number(row.id),
+        servings: null,
+        nutrition: null,
+        nutrition_updated_at: null,
+        cached: true,
+      });
+    }
+
+    const externalIdNum = Number(row.external_id);
+    if (!Number.isFinite(externalIdNum)) {
+      return res
+        .status(400)
+        .json({ message: "Invalid external_id for Spoonacular recipe" });
+    }
+
+    const widget = await spoonFetchJson(
+      `/recipes/${externalIdNum}/nutritionWidget.json`,
+      {}
+    );
+
+    await pool.query(`UPDATE recipes SET nutrition_json = $1 WHERE id = $2`, [
+      widget,
+      recipeId,
+    ]);
+
+    return res.json({
+      recipe_id: Number(row.id),
+      servings: null,
+      nutrition: widget,
+      nutrition_updated_at: null,
+      cached: false,
+    });
+  } catch (e) {
+    console.error("Nutrition error:", e);
+    return res.status(e.status || 500).json({
+      message: e.message || "Server error loading nutrition",
+    });
+  }
+});
+
+/**
  * Get recipe details (must be saved by user)
  * GET /user/:userId/recipes/:recipeId
  */
@@ -888,7 +1005,9 @@ app.get("/user/:userId/recipes/:recipeId", async (req, res) => {
     });
   } catch (e) {
     console.error("Recipe details error:", e);
-    res.status(e.status || 500).json({ message: e.message || "Server error loading recipe" });
+    res
+      .status(e.status || 500)
+      .json({ message: e.message || "Server error loading recipe" });
   }
 });
 
@@ -912,7 +1031,9 @@ app.put("/user/:userId/recipes/:recipeId", async (req, res) => {
     return res.status(400).json({ message: "Missing title" });
   }
   if (!newIngredients.length) {
-    return res.status(400).json({ message: "Add at least one ingredient (min 3 chars)" });
+    return res
+      .status(400)
+      .json({ message: "Add at least one ingredient (min 3 chars)" });
   }
 
   try {
@@ -962,7 +1083,9 @@ app.put("/user/:userId/recipes/:recipeId", async (req, res) => {
     }
   } catch (e) {
     console.error("Update recipe error:", e);
-    res.status(e.status || 500).json({ message: e.message || "Server error updating recipe" });
+    res
+      .status(e.status || 500)
+      .json({ message: e.message || "Server error updating recipe" });
   }
 });
 
@@ -1002,7 +1125,10 @@ app.delete("/user/:userId/recipes/:recipeId", async (req, res) => {
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-          await client.query(`DELETE FROM recipe_ingredients WHERE recipe_id = $1`, [recipeId]);
+          await client.query(
+            `DELETE FROM recipe_ingredients WHERE recipe_id = $1`,
+            [recipeId]
+          );
           await client.query(`DELETE FROM recipes WHERE id = $1`, [recipeId]);
           await client.query("COMMIT");
         } catch (e) {
@@ -1040,7 +1166,9 @@ app.get("/user/:userId/recipes/:recipeId/missing", async (req, res) => {
     res.json(out);
   } catch (e) {
     console.error("Recipe missing error:", e);
-    res.status(e.status || 500).json({ message: e.message || "Server error computing missing" });
+    res
+      .status(e.status || 500)
+      .json({ message: e.message || "Server error computing missing" });
   }
 });
 
@@ -1086,6 +1214,28 @@ app.post("/chat/recipe", async (req, res) => {
 
     const recipe = await spoonGetRecipeInformation(hit.id);
 
+    let nutritionWidget = null;
+    try {
+      nutritionWidget = await spoonFetchJson(`/recipes/${hit.id}/nutritionWidget.json`, {});
+    } catch (e) {
+      nutritionWidget = null;
+    }
+
+    const parseNum = (v) => {
+      const s = String(v ?? "");
+      const m = s.match(/(\d+(\.\d+)?)/);
+      return m ? Number(m[1]) : null;
+    };
+
+    const nutritionSummary = nutritionWidget
+      ? {
+          calories: parseNum(nutritionWidget?.calories),
+          protein_g: parseNum(nutritionWidget?.protein),
+          carbs_g: parseNum(nutritionWidget?.carbs),
+          fat_g: parseNum(nutritionWidget?.fat),
+        }
+      : null;
+
     const used = recipe.ingredients.filter((i) =>
       ingredientMatchesInventory(i, inventoryItems)
     );
@@ -1109,6 +1259,9 @@ app.post("/chat/recipe", async (req, res) => {
           ingredients: recipe.ingredients,
           used: used.slice(0, 20),
           missing: missing.slice(0, 20),
+          servings: null,
+          nutritionSummary,
+          nutrition: nutritionWidget,
         },
       ],
     });
@@ -1393,7 +1546,9 @@ app.post("/products/create", async (req, res) => {
   const uid = parseOptionalUserId(userId);
 
   if (!uid) {
-    return res.status(400).json({ message: "Missing userId (required after scoped products update)" });
+    return res
+      .status(400)
+      .json({ message: "Missing userId (required after scoped products update)" });
   }
   if (!name || !foodTypeId) {
     return res.status(400).json({ message: "Missing required fields" });
@@ -1606,7 +1761,7 @@ app.get("/user/:userId/product/:productId/lastPrice", async (req, res) => {
     );
 
     res.json({
-      last_price: r.rows.length ? r.rows[0].last_price : null
+      last_price: r.rows.length ? r.rows[0].last_price : null,
     });
   } catch (err) {
     console.error("Get last price error:", err);
@@ -1873,10 +2028,10 @@ app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    const r = await pool.query(
-      "SELECT * FROM users WHERE username = $1 AND password = $2",
-      [username, password]
-    );
+    const r = await pool.query("SELECT * FROM users WHERE username = $1 AND password = $2", [
+      username,
+      password,
+    ]);
 
     if (r.rows.length === 0) {
       return res.status(401).json({ message: "Invalid credentials" });
