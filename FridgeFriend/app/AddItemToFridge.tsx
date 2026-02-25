@@ -42,7 +42,8 @@ export default function AddItemToFridge() {
 
   const loadStores = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/stores`);
+      const qs = user_id ? `?userId=${encodeURIComponent(String(user_id))}` : "";
+      const res = await fetch(`${API_BASE_URL}/stores${qs}`);
       const data = await res.json();
       setStores(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -53,7 +54,7 @@ export default function AddItemToFridge() {
 
   useEffect(() => {
     loadStores();
-  }, []);
+  }, [user_id]);
 
   useEffect(() => {
     if (!user_id || !product_id) return;
@@ -88,13 +89,19 @@ export default function AddItemToFridge() {
       return;
     }
 
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
     try {
       setLoading(true);
 
       const resp = await fetch(`${API_BASE_URL}/stores`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
+        body: JSON.stringify({ name: trimmed, userId: Number(user_id) }),
       });
 
       if (!resp.ok) {
@@ -242,6 +249,19 @@ export default function AddItemToFridge() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+
+            <View style={{ marginTop: 10 }}>
+              <Text style={styles.sectionTitle}>Create store</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Aldi"
+                value={newStoreName}
+                onChangeText={setNewStoreName}
+              />
+              <TouchableOpacity style={styles.confirmButton} onPress={createStore}>
+                <Text style={styles.confirmButtonText}>Create store</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* PRICE SECTION */}
@@ -290,6 +310,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#eee",
     padding: 10,
     borderRadius: 8,
+    marginBottom: 8,
   },
   storeButton: {
     backgroundColor: "#eee",
@@ -305,6 +326,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 10,
     alignItems: "center",
+    marginTop: 6,
   },
   confirmButtonText: {
     color: "#663399",

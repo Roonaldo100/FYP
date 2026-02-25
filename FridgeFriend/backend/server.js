@@ -58,7 +58,7 @@ function parseOptionalUserId(raw) {
 async function getTescoStoreId() {
   try {
     const r = await pool.query(
-      `SELECT id FROM stores WHERE LOWER(name) = 'tesco' LIMIT 1`
+      `SELECT id FROM stores WHERE LOWER(name) = 'tesco' AND is_system = true LIMIT 1`
     );
     if (r.rows.length > 0) return r.rows[0].id;
   } catch (e) {
@@ -71,13 +71,13 @@ async function getNoStoreId() {
   const noStoreName = "No store";
   try {
     const r = await pool.query(
-      `SELECT id FROM stores WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      `SELECT id FROM stores WHERE LOWER(name) = LOWER($1) AND is_system = true LIMIT 1`,
       [noStoreName]
     );
     if (r.rows.length > 0) return r.rows[0].id;
 
     const inserted = await pool.query(
-      `INSERT INTO stores (name) VALUES ($1) RETURNING id`,
+      `INSERT INTO stores (name, is_system, owner_user_id) VALUES ($1, true, NULL) RETURNING id`,
       [noStoreName]
     );
     return inserted.rows[0].id;
@@ -498,10 +498,51 @@ async function getUserInventoryItems(userId) {
   return r.rows.map((row) => String(row.name));
 }
 
+function normalizeIngredientsJsonbInput(value) {
+  if (value === undefined || value === null) return null;
+
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (!s) return null;
+    try {
+      const parsed = JSON.parse(s);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  if (Array.isArray(value)) return value;
+
+  return null;
+}
+
+function toIngredientObjects(ingredientsArray) {
+  const arr = Array.isArray(ingredientsArray) ? ingredientsArray : [];
+  const out = [];
+
+  let i = 0;
+  for (const v of arr) {
+    const name = String(v ?? "").trim();
+    if (!name) continue;
+    i++;
+    out.push({
+      id: i,
+      recipe_id: null,
+      name,
+      amount: null,
+      unit: null,
+      position: i,
+    });
+  }
+
+  return out;
+}
+
 async function getRecipeWithIngredients(recipeId) {
   const r = await pool.query(
     `
-    SELECT id, title, source, external_id, source_url, created_by_user_id
+    SELECT id, title, source, external_id, source_url, created_by_user_id, igredients_json
     FROM recipes
     WHERE id = $1
     LIMIT 1
@@ -510,17 +551,12 @@ async function getRecipeWithIngredients(recipeId) {
   );
   if (!r.rows.length) return null;
 
-  const ing = await pool.query(
-    `
-    SELECT id, recipe_id, name, amount, unit, position
-    FROM recipe_ingredients
-    WHERE recipe_id = $1
-    ORDER BY position ASC, id ASC
-    `,
-    [recipeId]
-  );
+  const row = r.rows[0];
 
-  return { ...r.rows[0], ingredients: ing.rows };
+  const ingredientsArr = normalizeIngredientsJsonbInput(row.igredients_json);
+  const ingredients = toIngredientObjects(ingredientsArr);
+
+  return { ...row, ingredients };
 }
 
 /*
@@ -540,33 +576,30 @@ async function ensureRecipeIngredientsInDb(recipeRow) {
   const ingList = Array.isArray(info?.ingredients) ? info.ingredients : [];
   if (!ingList.length) return;
 
+  const safeIngredients = cleanIngredientStrings(ingList);
+  if (!safeIngredients.length) return;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const countRes = await client.query(
-      `SELECT COUNT(*)::int AS c FROM recipe_ingredients WHERE recipe_id = $1`,
+    const check = await client.query(
+      `SELECT igredients_json, source_url FROM recipes WHERE id = $1 LIMIT 1`,
       [recipeRow.id]
     );
-    const c = Number(countRes.rows[0]?.c ?? 0);
+    const existing = check.rows[0] || null;
 
-    if (c === 0) {
-      let pos = 0;
-      for (const raw of ingList) {
-        const name = String(raw || "").trim();
-        if (!name) continue;
-        pos++;
-        await client.query(
-          `
-          INSERT INTO recipe_ingredients (recipe_id, product_id, name, amount, unit, position)
-          VALUES ($1, NULL, $2, NULL, NULL, $3)
-          `,
-          [recipeRow.id, name, pos]
-        );
-      }
+    const existingArr = normalizeIngredientsJsonbInput(existing?.igredients_json);
+    const existingCount = Array.isArray(existingArr) ? existingArr.length : 0;
+
+    if (existingCount === 0) {
+      await client.query(
+        `UPDATE recipes SET igredients_json = $1 WHERE id = $2`,
+        [JSON.stringify(safeIngredients), recipeRow.id]
+      );
     }
 
-    if (!recipeRow.source_url && info.url) {
+    if (!existing?.source_url && info.url) {
       await client.query(`UPDATE recipes SET source_url = $1 WHERE id = $2`, [
         String(info.url),
         recipeRow.id,
@@ -652,62 +685,52 @@ async function upsertAndSaveRecipeForUser({
     const normalizedNutrition = normalizeJsonbInput(nutritionJson);
 
     let recipeId = null;
-    let createdNew = false;
+
+    // Ingredients are NAME-only, min 3 chars, unique
+    const safeIngredients = cleanIngredientStrings(ingredientsRaw);
+    const ingredientsJson = safeIngredients.length ? safeIngredients : null;
 
     if (externalId) {
       const up = await client.query(
         `
-        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id, nutrition_json)
-        VALUES ($1, $2, $3, $4, NULL, $5)
+        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id, nutrition_json, igredients_json)
+        VALUES ($1, $2, $3, $4, NULL, $5, $6)
         ON CONFLICT (source, external_id)
         DO UPDATE SET
           title = EXCLUDED.title,
           source_url = COALESCE(EXCLUDED.source_url, recipes.source_url),
-          nutrition_json = COALESCE(EXCLUDED.nutrition_json, recipes.nutrition_json)
-        RETURNING id, (xmax = 0) AS inserted
+          nutrition_json = COALESCE(EXCLUDED.nutrition_json, recipes.nutrition_json),
+          igredients_json = COALESCE(EXCLUDED.igredients_json, recipes.igredients_json)
+        RETURNING id
         `,
-        [title, source, externalId, url, normalizedNutrition]
+        [
+          title,
+          source,
+          externalId,
+          url,
+          normalizedNutrition,
+          ingredientsJson ? JSON.stringify(ingredientsJson) : null,
+        ]
       );
 
       recipeId = Number(up.rows[0].id);
-      createdNew = Boolean(up.rows[0].inserted);
     } else {
       const ins = await client.query(
         `
-        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id, nutrition_json)
-        VALUES ($1, 'custom', NULL, $2, $3, $4)
+        INSERT INTO recipes (title, source, external_id, source_url, created_by_user_id, nutrition_json, igredients_json)
+        VALUES ($1, 'custom', NULL, $2, $3, $4, $5)
         RETURNING id
         `,
-        [title, url, userId, normalizedNutrition]
+        [
+          title,
+          url,
+          userId,
+          normalizedNutrition,
+          ingredientsJson ? JSON.stringify(ingredientsJson) : null,
+        ]
       );
 
       recipeId = Number(ins.rows[0].id);
-      createdNew = true;
-    }
-
-    // Ingredients are NAME-only, min 3 chars, unique
-    const safeIngredients = cleanIngredientStrings(ingredientsRaw);
-
-    if (safeIngredients.length) {
-      const countRes = await client.query(
-        `SELECT COUNT(*)::int AS c FROM recipe_ingredients WHERE recipe_id = $1`,
-        [recipeId]
-      );
-      const currentCount = Number(countRes.rows[0]?.c ?? 0);
-
-      if (createdNew || currentCount === 0) {
-        let pos = 0;
-        for (const name of safeIngredients) {
-          pos++;
-          await client.query(
-            `
-            INSERT INTO recipe_ingredients (recipe_id, product_id, name, amount, unit, position)
-            VALUES ($1, NULL, $2, NULL, NULL, $3)
-            `,
-            [recipeId, name, pos]
-          );
-        }
-      }
     }
 
     await client.query(
@@ -743,23 +766,62 @@ app.get("/products/search", async (req, res) => {
   const q = String(req.query.q || "").trim();
   const userId = parseOptionalUserId(req.query.userId);
 
-  if (!q) return res.json([]);
+  const limitRaw = req.query.limit;
+  const offsetRaw = req.query.offset;
+
+  const limit = Math.min(
+    Math.max(Number(limitRaw ?? 25), 1),
+    50
+  );
+  const offset = Math.max(Number(offsetRaw ?? 0), 0);
+
+  if (!q && !userId) return res.json([]);
 
   try {
     if (userId) {
+      if (!q) {
+        const r = await pool.query(
+          `
+          SELECT id, name, food_type, is_system, owner_user_id
+          FROM products
+          WHERE (is_system = true OR owner_user_id = $1)
+          ORDER BY id DESC
+          LIMIT $2 OFFSET $3
+          `,
+          [userId, limit, offset]
+        );
+        return res.json(
+          r.rows.map((row) => ({
+            id: Number(row.id),
+            name: String(row.name),
+            food_type: row.food_type != null ? Number(row.food_type) : null,
+            is_system: Boolean(row.is_system),
+            owner_user_id: row.owner_user_id ?? null,
+          }))
+        );
+      }
+
       const r = await pool.query(
         `
-        SELECT id, name
+        SELECT id, name, food_type, is_system, owner_user_id
         FROM products
         WHERE (is_system = true OR owner_user_id = $1)
           AND name ILIKE $2
-        ORDER BY name ASC
-        LIMIT 25
+        ORDER BY
+          CASE WHEN owner_user_id = $1 THEN 0 ELSE 1 END,
+          name ASC
+        LIMIT $3 OFFSET $4
         `,
-        [userId, `%${q}%`]
+        [userId, `%${q}%`, limit, offset]
       );
       return res.json(
-        r.rows.map((row) => ({ id: Number(row.id), name: String(row.name) }))
+        r.rows.map((row) => ({
+          id: Number(row.id),
+          name: String(row.name),
+          food_type: row.food_type != null ? Number(row.food_type) : null,
+          is_system: Boolean(row.is_system),
+          owner_user_id: row.owner_user_id ?? null,
+        }))
       );
     }
 
@@ -770,9 +832,9 @@ app.get("/products/search", async (req, res) => {
       WHERE is_system = true
         AND name ILIKE $1
       ORDER BY name ASC
-      LIMIT 25
+      LIMIT $2 OFFSET $3
       `,
-      [`%${q}%`]
+      [`%${q}%`, limit, offset]
     );
 
     res.json(
@@ -1077,25 +1139,9 @@ app.put("/user/:userId/recipes/:recipeId", async (req, res) => {
       await client.query("BEGIN");
 
       await client.query(
-        `UPDATE recipes SET title = $1, source_url = $2 WHERE id = $3`,
-        [newTitle, newUrl, recipeId]
+        `UPDATE recipes SET title = $1, source_url = $2, igredients_json = $3 WHERE id = $4`,
+        [newTitle, newUrl, JSON.stringify(newIngredients), recipeId]
       );
-
-      await client.query(`DELETE FROM recipe_ingredients WHERE recipe_id = $1`, [
-        recipeId,
-      ]);
-
-      let pos = 0;
-      for (const name of newIngredients) {
-        pos++;
-        await client.query(
-          `
-          INSERT INTO recipe_ingredients (recipe_id, product_id, name, amount, unit, position)
-          VALUES ($1, NULL, $2, NULL, NULL, $3)
-          `,
-          [recipeId, name, pos]
-        );
-      }
 
       await client.query("COMMIT");
       res.json({ updated: true });
@@ -1149,10 +1195,6 @@ app.delete("/user/:userId/recipes/:recipeId", async (req, res) => {
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-          await client.query(
-            `DELETE FROM recipe_ingredients WHERE recipe_id = $1`,
-            [recipeId]
-          );
           await client.query(`DELETE FROM recipes WHERE id = $1`, [recipeId]);
           await client.query("COMMIT");
         } catch (e) {
@@ -1643,8 +1685,30 @@ app.delete("/user/:userId/foodtypes/:foodTypeId", async (req, res) => {
  * GET: Stores
  */
 app.get("/stores", async (req, res) => {
+  const userId = parseOptionalUserId(req.query.userId);
+
   try {
-    const result = await pool.query("SELECT * FROM stores ORDER BY name ASC");
+    if (userId) {
+      const result = await pool.query(
+        `
+        SELECT id, name, is_system, owner_user_id
+        FROM stores
+        WHERE is_system = true OR owner_user_id = $1
+        ORDER BY is_system DESC, name ASC
+        `,
+        [userId]
+      );
+      return res.json(result.rows);
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, name, is_system, owner_user_id
+      FROM stores
+      WHERE is_system = true
+      ORDER BY name ASC
+      `
+    );
     res.json(result.rows);
   } catch (err) {
     console.error("Store fetch error:", err);
@@ -1656,7 +1720,12 @@ app.get("/stores", async (req, res) => {
  * POST: Create a new store
  */
 app.post("/stores", async (req, res) => {
-  const { name } = req.body;
+  const { name, userId } = req.body;
+  const uid = parseOptionalUserId(userId);
+
+  if (!uid) {
+    return res.status(400).json({ message: "Missing userId" });
+  }
 
   if (!name || !String(name).trim()) {
     return res.status(400).json({ message: "Missing store name" });
@@ -1666,8 +1735,14 @@ app.post("/stores", async (req, res) => {
 
   try {
     const existing = await pool.query(
-      `SELECT id, name FROM stores WHERE LOWER(name) = LOWER($1) LIMIT 1`,
-      [cleaned]
+      `
+      SELECT id, name, is_system, owner_user_id
+      FROM stores
+      WHERE LOWER(name) = LOWER($1)
+        AND (is_system = true OR owner_user_id = $2)
+      LIMIT 1
+      `,
+      [cleaned, uid]
     );
 
     if (existing.rows.length > 0) {
@@ -1679,8 +1754,8 @@ app.post("/stores", async (req, res) => {
     }
 
     const inserted = await pool.query(
-      `INSERT INTO stores (name) VALUES ($1) RETURNING id, name`,
-      [cleaned]
+      `INSERT INTO stores (name, is_system, owner_user_id) VALUES ($1, false, $2) RETURNING id, name`,
+      [cleaned, uid]
     );
 
     res.json({
@@ -1881,16 +1956,28 @@ app.post("/products/create", async (req, res) => {
 
     // Attach store relationship only if a storeId was provided
     if (storeId) {
-      try {
-        await pool.query(
-          `
-          INSERT INTO product_store (product_id, store_id, price)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (product_id, store_id) DO NOTHING
-          `,
-          [newProductId, storeId, 0.0]
-        );
-      } catch {}
+      const storeOk = await pool.query(
+        `
+        SELECT id
+        FROM stores
+        WHERE id = $1 AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [storeId, uid]
+      );
+
+      if (storeOk.rows.length) {
+        try {
+          await pool.query(
+            `
+            INSERT INTO product_store (product_id, store_id)
+            VALUES ($1, $2)
+            ON CONFLICT (product_id, store_id) DO NOTHING
+            `,
+            [newProductId, storeId]
+          );
+        } catch {}
+      }
     }
 
     let storeName = null;
@@ -1925,15 +2012,41 @@ app.post("/user/addProduct", async (req, res) => {
   }
 
   try {
-    const effectiveStoreId = storeId ? Number(storeId) : await getNoStoreId();
+    let effectiveStoreId = null;
+
+    if (storeId === undefined || storeId === null || String(storeId).trim() === "") {
+      effectiveStoreId = await getNoStoreId();
+    } else {
+      const sid = Number(storeId);
+      if (!Number.isFinite(sid) || sid <= 0) {
+        return res.status(400).json({ message: "Invalid storeId" });
+      }
+
+      const uid = parseOptionalUserId(userId);
+      const storeOk = await pool.query(
+        `
+        SELECT id
+        FROM stores
+        WHERE id = $1 AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [sid, uid]
+      );
+
+      if (!storeOk.rows.length) {
+        return res.status(400).json({ message: "Invalid store for this user" });
+      }
+
+      effectiveStoreId = sid;
+    }
 
     await pool.query(
       `
-      INSERT INTO product_store (product_id, store_id, price)
-      VALUES ($1, $2, $3)
+      INSERT INTO product_store (product_id, store_id)
+      VALUES ($1, $2)
       ON CONFLICT (product_id, store_id) DO NOTHING
       `,
-      [productId, effectiveStoreId, 0.0]
+      [productId, effectiveStoreId]
     );
 
     const inserted = await pool.query(
@@ -2359,51 +2472,6 @@ app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
 });
 
 // GET /products/search?userId=1&q=coleslaw&limit=30&offset=0
-app.get("/products/search", async (req, res) => {
-  const userId = Number(req.query.userId);
-  const q = String(req.query.q ?? "").trim();
-  const limit = Math.min(Number(req.query.limit ?? 30), 50);
-  const offset = Number(req.query.offset ?? 0);
-
-  if (!userId) return res.status(400).json({ message: "Missing userId" });
-
-  try {
-    // If no query, return recent products (by id desc) for fast browsing
-    if (!q) {
-      const r = await pool.query(
-        `
-        SELECT id, name, food_type_id, user_id
-        FROM products
-        WHERE user_id IS NULL OR user_id = $1
-        ORDER BY id DESC
-        LIMIT $2 OFFSET $3
-        `,
-        [userId, limit, offset]
-      );
-      return res.json(r.rows);
-    }
-
-    // Search by name (ILIKE)
-    const r = await pool.query(
-      `
-      SELECT id, name, food_type_id, user_id
-      FROM products
-      WHERE (user_id IS NULL OR user_id = $1)
-        AND name ILIKE $2
-      ORDER BY
-        CASE WHEN user_id = $1 THEN 0 ELSE 1 END,  -- user's products first
-        name ASC
-      LIMIT $3 OFFSET $4
-      `,
-      [userId, `%${q}%`, limit, offset]
-    );
-
-    res.json(r.rows);
-  } catch (err) {
-    console.error("products/search error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
 /**
  * LOGIN

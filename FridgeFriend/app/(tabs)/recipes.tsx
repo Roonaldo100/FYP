@@ -40,7 +40,7 @@ type RecipeDetails = {
   source: string;
   external_id?: string | null;
   url?: string | null;
-  ingredients: { id: number; name: string; amount: number | null; unit: string | null }[];
+  ingredients: { name: string }[];
 };
 
 type NutritionResponse = {
@@ -204,10 +204,15 @@ export default function RecipesTab() {
       return;
     }
 
+    if (!userId) {
+      setProductHits([]);
+      return;
+    }
+
     setProductSearchLoading(true);
     try {
       const res = await fetch(
-        `${API_BASE_URL}/products/search?q=${encodeURIComponent(query)}`
+        `${API_BASE_URL}/products/search?q=${encodeURIComponent(query)}&userId=${encodeURIComponent(String(userId))}`
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ProductHit[] = await res.json();
@@ -295,11 +300,10 @@ export default function RecipesTab() {
 
       setEditTitle(String(details.title || ""));
       setEditUrl(String(details.url || ""));
-      setEditIngredients(
-        Array.isArray(details.ingredients)
-          ? details.ingredients.map((i) => String(i.name || "")).filter(Boolean)
-          : []
-      );
+      const names = Array.isArray(details.ingredients)
+        ? details.ingredients.map((i: any) => String(i?.name ?? "")).filter(Boolean)
+        : [];
+      setEditIngredients(names);
       setEditIngredientInput("");
     } catch (e) {
       console.warn(e);
