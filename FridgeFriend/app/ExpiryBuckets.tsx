@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { API_BASE_URL } from "../config/apiConfig"; // adjust if needed (your index uses ../../config)
+import { API_BASE_URL } from "../config/apiConfig"; 
 
 type Bucket = {
   expiry_date: string | null;

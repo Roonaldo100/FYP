@@ -1,4 +1,5 @@
-import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -27,6 +28,18 @@ type UserProduct = {
   nearest_expiry: string | null;
   last_price?: number | null;
 };
+type ExpiringSoonRow = {
+  product_id: number;
+  product_name: string;
+  store_id: number | null;
+  store_name: string | null;
+  quantity: number;
+  nearest_expiry: string;
+  days_left: number;
+  effective_period_days: number;
+};
+
+
 
 export default function Home() {
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
@@ -40,6 +53,8 @@ export default function Home() {
   const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(null);
 
   const [loading, setLoading] = useState<boolean>(false);
+
+  const [expiringSoon, setExpiringSoon] = useState<ExpiringSoonRow[]>([]);
 
   // -------------------------------
   // Load categories (app boot / focus)
@@ -256,6 +271,27 @@ export default function Home() {
     });
   };
 
+  const loadExpiringSoon = useCallback(async () => {
+    if (!user_id) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/user/${user_id}/expiringSoon`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      setExpiringSoon(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Expiring soon fetch error:", e);
+      setExpiringSoon([]);
+    }
+  }, [user_id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadExpiringSoon();
+    }, [loadExpiringSoon])
+  );
+
   // -------------------------------
   // Render helpers
   // -------------------------------
@@ -334,6 +370,29 @@ export default function Home() {
           <Text style={styles.manageButtonText}>Manage Types</Text>
         </TouchableOpacity>
       </View>
+
+      {!selectedCategory && !selectedFoodType && (
+        <TouchableOpacity
+          style={styles.soonCard}
+          activeOpacity={0.85}
+          disabled={!user_id}
+          onPress={() =>
+            router.push({
+              pathname: "/ExpiringSoon",
+              params: { user_id: String(user_id) },
+            })
+          }
+        >
+          <View style={styles.soonHeaderRow}>
+            <Text style={styles.soonTitle}>Expiring soon</Text>
+            <Text style={styles.soonCount}>{expiringSoon.length}</Text>
+          </View>
+
+          <Text style={styles.soonHint}>
+            Tap to view items expiring within your notification windows
+          </Text>
+        </TouchableOpacity>
+      )}
 
       <Text style={styles.title}>{title}</Text>
 
@@ -485,4 +544,30 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
+
+  soonCard: {
+  width: "100%",
+  maxWidth: 360,
+  backgroundColor: "#fff",
+  borderRadius: 12,
+  padding: 14,
+  marginTop: 10,
+  marginBottom: 10,
+  },
+  soonHeaderRow: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  },
+  soonTitle: { fontWeight: "900", color: "#333", fontSize: 16 },
+  soonCount: {
+    fontWeight: "900",
+    color: "#333",
+    fontSize: 18,
+    backgroundColor: "#ffcc00",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  soonHint: { marginTop: 8, color: "#666", fontSize: 12 },
 });
