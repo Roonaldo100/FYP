@@ -2583,7 +2583,7 @@ app.post("/products/create", async (req, res) => {
  * POST: Add product to user inventory
  */
 app.post("/user/addProduct", async (req, res) => {
-  const { userId, productId, storeId, expiryDate, price } = req.body;
+  const { userId, productId, storeId, expiryDate, price, expiryPeriodDays } = req.body;
 
   if (!userId || !productId) {
     return res.status(400).json({ message: "Missing required fields" });
@@ -2618,6 +2618,19 @@ app.post("/user/addProduct", async (req, res) => {
       effectiveStoreId = sid;
     }
 
+    let expiryPeriodToStore = 0;
+    if (
+      expiryPeriodDays !== undefined &&
+      expiryPeriodDays !== null &&
+      String(expiryPeriodDays).trim() !== ""
+    ) {
+      const n = Number(expiryPeriodDays);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+        return res.status(400).json({ message: "Invalid expiryPeriodDays" });
+      }
+      expiryPeriodToStore = n;
+    }
+
     await pool.query(
       `
       INSERT INTO product_store (product_id, store_id)
@@ -2630,10 +2643,10 @@ app.post("/user/addProduct", async (req, res) => {
     const inserted = await pool.query(
       `
       INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
-      VALUES ($1, $2, $3, $4, 0, false)
+      VALUES ($1, $2, $3, $4, $5, false)
       RETURNING id, expiry_period_days, expiry_date
       `,
-      [userId, productId, effectiveStoreId, expiryDate ?? null]
+      [userId, productId, effectiveStoreId, expiryDate ?? null, expiryPeriodToStore]
     );
 
     const upRow = inserted.rows[0];
@@ -2657,8 +2670,7 @@ app.post("/user/addProduct", async (req, res) => {
     }
 
     const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
-    const effective_period_days =
-      expiry_period_days > 0 ? expiry_period_days : userPref;
+    const effective_period_days = expiry_period_days > 0 ? expiry_period_days : userPref;
 
     if (price !== undefined && price !== null) {
       await pool.query(
@@ -2684,6 +2696,69 @@ app.post("/user/addProduct", async (req, res) => {
   } catch (err) {
     console.error("Add product error:", err);
     res.status(500).json({ message: "Server error adding product" });
+  }
+});
+
+app.post("/user_products/setExpiryPeriod", async (req, res) => {
+  const { userId, productId, storeId, expiryDate, expiryPeriodDays } = req.body;
+
+  const uid = Number(userId);
+  const pid = Number(productId);
+  const sid =
+    storeId === undefined || storeId === null || String(storeId) === ""
+      ? null
+      : Number(storeId);
+
+  if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(pid) || pid <= 0) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+  if (sid !== null && (!Number.isFinite(sid) || sid <= 0)) {
+    return res.status(400).json({ message: "Invalid storeId" });
+  }
+
+  let period = 0;
+  if (
+    expiryPeriodDays !== undefined &&
+    expiryPeriodDays !== null &&
+    String(expiryPeriodDays).trim() !== ""
+  ) {
+    const n = Number(expiryPeriodDays);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+      return res.status(400).json({ message: "Invalid expiryPeriodDays" });
+    }
+    period = n;
+  }
+
+  const exp =
+    expiryDate === undefined
+      ? undefined
+      : expiryDate === null || String(expiryDate).trim() === ""
+      ? null
+      : String(expiryDate).trim();
+
+  if (exp !== undefined && exp !== null) {
+    const okFormat = /^\d{4}-\d{2}-\d{2}$/.test(exp);
+    if (!okFormat) {
+      return res.status(400).json({ message: "Invalid expiryDate (YYYY-MM-DD or null)" });
+    }
+  }
+
+  try {
+    const q = `
+      UPDATE user_products
+      SET expiry_period_days = $1
+      WHERE user_id = $2
+        AND product_id = $3
+        AND store_id IS NOT DISTINCT FROM $4
+        AND ($5::date IS NULL OR expiry_date IS NOT DISTINCT FROM $5::date)
+      RETURNING id
+    `;
+
+    const r = await pool.query(q, [period, uid, pid, sid, exp === undefined ? null : exp]);
+    return res.json({ updated: true, updated_rows: r.rowCount });
+  } catch (e) {
+    console.error("setExpiryPeriod error:", e);
+    return res.status(500).json({ message: "Server error updating expiry period" });
   }
 });
 

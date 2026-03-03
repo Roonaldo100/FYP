@@ -37,9 +37,17 @@ export default function AddItemToFridge() {
 
   const [loading, setLoading] = useState(false);
 
+  const [expiryPeriodText, setExpiryPeriodText] = useState<string>("");
+
   const title = useMemo(() => {
     return `Add Item: ${product_name ?? "Unnamed Product"}`;
   }, [product_name]);
+
+  const validateExpiryPeriod = (s: string) => {
+    if (!s.trim()) return true;
+    const n = Number(s);
+    return Number.isFinite(n) && Number.isInteger(n) && n >= 0;
+  };
 
   const loadStores = async () => {
     try {
@@ -141,6 +149,13 @@ export default function AddItemToFridge() {
       }
     }
 
+    const periodTrim = expiryPeriodText.trim();
+    if (!validateExpiryPeriod(periodTrim)) {
+      Alert.alert("Invalid value", "Enter a whole number ≥ 0 (or leave blank).");
+      return;
+    }
+    const expiryPeriodDaysToSend = periodTrim.length ? Number(periodTrim) : null;
+
     try {
       setLoading(true);
 
@@ -153,6 +168,7 @@ export default function AddItemToFridge() {
           storeId: selectedStoreId,
           expiryDate: expiryToSend,
           price: price ? Number(price) : null,
+          expiryPeriodDays: expiryPeriodDaysToSend,
         }),
       });
 
@@ -283,6 +299,17 @@ export default function AddItemToFridge() {
               placeholder="YYYY-MM-DD"
               value={expiryDate}
               onChangeText={setExpiryDate}
+            />
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Expiry notification override (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Days before expiry to notify (blank = use Settings)"
+              keyboardType="number-pad"
+              value={expiryPeriodText}
+              onChangeText={setExpiryPeriodText}
             />
           </View>
 

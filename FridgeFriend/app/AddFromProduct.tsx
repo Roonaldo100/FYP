@@ -40,6 +40,14 @@ export default function AddFromProduct() {
   const [saving, setSaving] = useState(false);
   const [loadingStores, setLoadingStores] = useState(false);
 
+  const [expiryPeriodText, setExpiryPeriodText] = useState<string>("");
+
+  const validateExpiryPeriod = (s: string) => {
+    if (!s.trim()) return true;
+    const n = Number(s);
+    return Number.isFinite(n) && Number.isInteger(n) && n >= 0;
+  };
+
   const validateExpiry = (s: string) => {
     if (!s.trim()) return true;
     return /^\d{4}-\d{2}-\d{2}$/.test(s.trim());
@@ -259,6 +267,13 @@ export default function AddFromProduct() {
 
     const expiryDate: string | null = expiryTrim.length > 0 ? expiryTrim : null;
     const price: number | null = priceTrim.length > 0 ? Number(priceTrim) : null;
+    const periodTrim = expiryPeriodText.trim();
+    if (!validateExpiryPeriod(periodTrim)) {
+      Alert.alert("Invalid value", "Enter a whole number ≥ 0 (or leave blank).");
+      return;
+    }
+    const expiryPeriodDays: number | null = periodTrim.length > 0 ? Number(periodTrim) : null;
+
 
     try {
       setSaving(true);
@@ -272,6 +287,7 @@ export default function AddFromProduct() {
           storeId: selectedStoreId,
           expiryDate,
           price,
+          expiryPeriodDays,
         }),
       });
 
@@ -376,6 +392,16 @@ export default function AddFromProduct() {
             placeholder="e.g. 2.99 (blank = unknown)"
             style={styles.input}
             keyboardType="decimal-pad"
+            editable={!saving}
+          />
+
+          <Text style={styles.label}>Expiry notification override (optional)</Text>
+          <TextInput
+            value={expiryPeriodText}
+            onChangeText={setExpiryPeriodText}
+            placeholder="Days before expiry to notify (blank = use Settings)"
+            style={styles.input}
+            keyboardType="number-pad"
             editable={!saving}
           />
 
