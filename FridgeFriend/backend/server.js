@@ -50,6 +50,70 @@ function parseOptionalUserId(raw) {
   return n;
 }
 
+function cleanListName(name) {
+  const s = String(name || "").trim();
+  if (!s) return null;
+  if (s.length > 80) return s.slice(0, 80);
+  return s;
+}
+
+function cleanCustomItemName(name) {
+  const s = String(name || "").trim();
+  if (!s) return null;
+  if (s.length > 80) return s.slice(0, 80);
+  return s;
+}
+
+function toPositiveInt(v, fallback = null) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return fallback;
+  return n;
+}
+
+async function assertUserOwnsList(userId, listId) {
+  const r = await pool.query(
+    `SELECT id, user_id, name, created_at, updated_at FROM shopping_lists WHERE id = $1 LIMIT 1`,
+    [listId]
+  );
+  const row = r.rows[0] || null;
+  if (!row) throw new HttpError(404, "Shopping list not found");
+  if (Number(row.user_id) !== Number(userId))
+    throw new HttpError(403, "Not your shopping list");
+  return row;
+}
+
+async function assertStoreVisibleToUser(userId, storeId) {
+  if (storeId === null || storeId === undefined) return true;
+
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM stores
+    WHERE id = $1
+      AND (is_system = true OR owner_user_id = $2)
+    LIMIT 1
+    `,
+    [storeId, userId]
+  );
+  if (!r.rows.length) throw new HttpError(400, "Invalid store for this user");
+  return true;
+}
+
+async function assertProductVisibleToUser(userId, productId) {
+  const r = await pool.query(
+    `
+    SELECT id
+    FROM products
+    WHERE id = $1
+      AND (is_system = true OR owner_user_id = $2)
+    LIMIT 1
+    `,
+    [productId, userId]
+  );
+  if (!r.rows.length) throw new HttpError(400, "Invalid product for this user");
+  return true;
+}
+
 /**
  * -------------------------
  * Store helpers
@@ -686,7 +750,6 @@ async function upsertAndSaveRecipeForUser({
 
     let recipeId = null;
 
-    // Ingredients are NAME-only, min 3 chars, unique
     const safeIngredients = cleanIngredientStrings(ingredientsRaw);
     const ingredientsJson = safeIngredients.length ? safeIngredients : null;
 
@@ -769,10 +832,7 @@ app.get("/products/search", async (req, res) => {
   const limitRaw = req.query.limit;
   const offsetRaw = req.query.offset;
 
-  const limit = Math.min(
-    Math.max(Number(limitRaw ?? 25), 1),
-    50
-  );
+  const limit = Math.min(Math.max(Number(limitRaw ?? 25), 1), 50);
   const offset = Math.max(Number(offsetRaw ?? 0), 0);
 
   if (!q && !userId) return res.json([]);
@@ -837,9 +897,7 @@ app.get("/products/search", async (req, res) => {
       [`%${q}%`, limit, offset]
     );
 
-    res.json(
-      r.rows.map((row) => ({ id: Number(row.id), name: String(row.name) }))
-    );
+    res.json(r.rows.map((row) => ({ id: Number(row.id), name: String(row.name) })));
   } catch (e) {
     console.error("Product search error:", e);
     res.status(500).json({ message: "Server error searching products" });
@@ -986,7 +1044,6 @@ app.get("/user/:userId/recipes/:recipeId/nutrition", async (req, res) => {
 
     const row = meta.rows[0];
 
-    // If cached nutrition exists, still fetch servings (unless not Spoonacular)
     if (row.nutrition_json) {
       let servings = null;
 
@@ -994,13 +1051,18 @@ app.get("/user/:userId/recipes/:recipeId/nutrition", async (req, res) => {
         const externalIdNum = Number(row.external_id);
         if (Number.isFinite(externalIdNum)) {
           try {
-            const info = await spoonFetchJson(`/recipes/${externalIdNum}/information`, {
-              includeNutrition: false,
-            });
+            const info = await spoonFetchJson(
+              `/recipes/${externalIdNum}/information`,
+              {
+                includeNutrition: false,
+              }
+            );
             servings = info?.servings ?? null;
           } catch (e) {
-            // keep servings null if Spoonacular call fails
-            console.warn("Servings fetch (cached nutrition) failed:", e?.message ?? e);
+            console.warn(
+              "Servings fetch (cached nutrition) failed:",
+              e?.message ?? e
+            );
           }
         }
       }
@@ -1247,7 +1309,9 @@ app.post("/chat/recipe", async (req, res) => {
   try {
     const { userId, message } = req.body || {};
     if (!userId || !message || !String(message).trim()) {
-      return res.status(400).json({ reply: "Missing userId or message.", recipes: [] });
+      return res
+        .status(400)
+        .json({ reply: "Missing userId or message.", recipes: [] });
     }
 
     const dish = extractRequestedDish(message);
@@ -1282,7 +1346,10 @@ app.post("/chat/recipe", async (req, res) => {
 
     let nutritionWidget = null;
     try {
-      nutritionWidget = await spoonFetchJson(`/recipes/${hit.id}/nutritionWidget.json`, {});
+      nutritionWidget = await spoonFetchJson(
+        `/recipes/${hit.id}/nutritionWidget.json`,
+        {}
+      );
     } catch (e) {
       nutritionWidget = null;
     }
@@ -1472,12 +1539,16 @@ app.post("/user/:userId/categories", async (req, res) => {
   }
   if (!name) return res.status(400).json({ message: "Missing category name" });
   if (name.length > 20) {
-    return res.status(400).json({ message: "Category name must be <= 20 characters" });
+    return res
+      .status(400)
+      .json({ message: "Category name must be <= 20 characters" });
   }
 
   try {
     // Optional: verify user exists
-    const u = await pool.query(`SELECT 1 FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    const u = await pool.query(`SELECT 1 FROM users WHERE id = $1 LIMIT 1`, [
+      userId,
+    ]);
     if (!u.rows.length) return res.status(404).json({ message: "User not found" });
 
     const inserted = await pool.query(
@@ -1498,9 +1569,10 @@ app.post("/user/:userId/categories", async (req, res) => {
       },
     });
   } catch (e) {
-    // Unique index: categories_user_unique (owner_user_id, lower(name)) for is_system=false :contentReference[oaicite:4]{index=4}
     if (e?.code === "23505") {
-      return res.status(409).json({ message: "You already have a category with that name" });
+      return res
+        .status(409)
+        .json({ message: "You already have a category with that name" });
     }
     console.error("Create category error:", e);
     return res.status(500).json({ message: "Server error creating category" });
@@ -1515,12 +1587,16 @@ app.delete("/user/:userId/categories/:categoryId", async (req, res) => {
   const userId = Number(req.params.userId);
   const categoryId = Number(req.params.categoryId);
 
-  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(categoryId) || categoryId <= 0) {
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(categoryId) ||
+    categoryId <= 0
+  ) {
     return res.status(400).json({ message: "Invalid userId or categoryId" });
   }
 
   try {
-    // Must be a user-owned (non-system) category
     const cat = await pool.query(
       `
       SELECT id
@@ -1531,11 +1607,11 @@ app.delete("/user/:userId/categories/:categoryId", async (req, res) => {
       [categoryId, userId]
     );
     if (!cat.rows.length) {
-      return res.status(404).json({ message: "Category not found (or not owned by user)" });
+      return res
+        .status(404)
+        .json({ message: "Category not found (or not owned by user)" });
     }
 
-    // Safety: prevent deleting if any products reference any food_type in this category
-    // Because products.food_type -> food_types.id is ON DELETE CASCADE :contentReference[oaicite:5]{index=5}
     const usage = await pool.query(
       `
       SELECT COUNT(*)::int AS n
@@ -1554,7 +1630,6 @@ app.delete("/user/:userId/categories/:categoryId", async (req, res) => {
       });
     }
 
-    // This will also delete food_types in that category via FK ON DELETE CASCADE :contentReference[oaicite:6]{index=6}
     await pool.query(
       `DELETE FROM categories WHERE id = $1 AND is_system = false AND owner_user_id = $2`,
       [categoryId, userId]
@@ -1577,16 +1652,22 @@ app.post("/user/:userId/categories/:categoryId/food", async (req, res) => {
   const categoryId = Number(req.params.categoryId);
   const name = String(req.body?.name || "").trim();
 
-  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(categoryId) || categoryId <= 0) {
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(categoryId) ||
+    categoryId <= 0
+  ) {
     return res.status(400).json({ message: "Invalid userId or categoryId" });
   }
   if (!name) return res.status(400).json({ message: "Missing food type name" });
   if (name.length > 20) {
-    return res.status(400).json({ message: "Food type name must be <= 20 characters" });
+    return res
+      .status(400)
+      .json({ message: "Food type name must be <= 20 characters" });
   }
 
   try {
-    // Category must be visible to the user (system OR owned)
     const cat = await pool.query(
       `
       SELECT id
@@ -1596,7 +1677,8 @@ app.post("/user/:userId/categories/:categoryId/food", async (req, res) => {
       `,
       [categoryId, userId]
     );
-    if (!cat.rows.length) return res.status(404).json({ message: "Category not found for this user" });
+    if (!cat.rows.length)
+      return res.status(404).json({ message: "Category not found for this user" });
 
     const inserted = await pool.query(
       `
@@ -1617,11 +1699,10 @@ app.post("/user/:userId/categories/:categoryId/food", async (req, res) => {
       },
     });
   } catch (e) {
-    // Unique index: food_types_user_unique (owner_user_id, category, lower(name)) for is_system=false :contentReference[oaicite:7]{index=7}
     if (e?.code === "23505") {
-      return res
-        .status(409)
-        .json({ message: "You already have that food type name in this category" });
+      return res.status(409).json({
+        message: "You already have that food type name in this category",
+      });
     }
     console.error("Create food type error:", e);
     return res.status(500).json({ message: "Server error creating food type" });
@@ -1636,12 +1717,16 @@ app.delete("/user/:userId/foodtypes/:foodTypeId", async (req, res) => {
   const userId = Number(req.params.userId);
   const foodTypeId = Number(req.params.foodTypeId);
 
-  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(foodTypeId) || foodTypeId <= 0) {
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(foodTypeId) ||
+    foodTypeId <= 0
+  ) {
     return res.status(400).json({ message: "Invalid userId or foodTypeId" });
   }
 
   try {
-    // Must be user-owned (non-system) food type
     const ft = await pool.query(
       `
       SELECT id
@@ -1652,10 +1737,11 @@ app.delete("/user/:userId/foodtypes/:foodTypeId", async (req, res) => {
       [foodTypeId, userId]
     );
     if (!ft.rows.length) {
-      return res.status(404).json({ message: "Food type not found (or not owned by user)" });
+      return res.status(404).json({
+        message: "Food type not found (or not owned by user)",
+      });
     }
 
-    // Safety: prevent deleting if any products use it (otherwise cascade would delete products) :contentReference[oaicite:8]{index=8}
     const usage = await pool.query(
       `SELECT COUNT(*)::int AS n FROM products WHERE food_type = $1`,
       [foodTypeId]
@@ -1769,6 +1855,462 @@ app.post("/stores", async (req, res) => {
   }
 });
 
+app.get("/user/:userId/shopping/candidates/inventory", async (req, res) => {
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: "Invalid userId" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT
+        p.id AS product_id,
+        p.name AS product_name,
+        COUNT(*)::int AS qty_in_inventory
+      FROM user_products up
+      JOIN products p ON p.id = up.product_id
+      WHERE up.user_id = $1
+        AND (p.is_system = true OR p.owner_user_id = $1)
+      GROUP BY p.id, p.name
+      ORDER BY qty_in_inventory DESC, p.name ASC
+      LIMIT 300
+      `,
+      [userId]
+    );
+
+    res.json(
+      r.rows.map((row) => ({
+        product_id: Number(row.product_id),
+        product_name: String(row.product_name),
+        qty_in_inventory: Number(row.qty_in_inventory),
+      }))
+    );
+  } catch (e) {
+    console.error("shopping candidates inventory error:", e);
+    res
+      .status(500)
+      .json({ message: "Server error loading inventory candidates" });
+  }
+});
+
+app.get("/user/:userId/shopping/candidates/history", async (req, res) => {
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: "Invalid userId" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT DISTINCT ON (upp.product_id)
+        upp.product_id,
+        p.name AS product_name,
+        upp.store_id,
+        s.name AS store_name,
+        upp.last_price,
+        upp.updated_at
+      FROM user_product_prices upp
+      JOIN products p ON p.id = upp.product_id
+      LEFT JOIN stores s ON s.id = upp.store_id
+      WHERE upp.user_id = $1
+        AND (p.is_system = true OR p.owner_user_id = $1)
+        AND (
+          upp.store_id IS NULL
+          OR s.is_system = true
+          OR s.owner_user_id = $1
+        )
+      ORDER BY upp.product_id, upp.updated_at DESC NULLS LAST, upp.id DESC
+      LIMIT 400
+      `,
+      [userId]
+    );
+
+    res.json(
+      r.rows.map((row) => ({
+        product_id: Number(row.product_id),
+        product_name: String(row.product_name),
+        suggested_store_id: row.store_id ?? null,
+        suggested_store_name: row.store_name ?? null,
+        suggested_price: row.last_price ?? null,
+      }))
+    );
+  } catch (e) {
+    console.error("shopping candidates history error:", e);
+    res
+      .status(500)
+      .json({ message: "Server error loading history candidates" });
+  }
+});
+
+app.post("/user/:userId/shoppingLists", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const name = cleanListName(req.body?.name);
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: "Invalid userId" });
+  }
+  if (!name) return res.status(400).json({ message: "Missing list name" });
+
+  try {
+    const ins = await pool.query(
+      `
+      INSERT INTO shopping_lists (user_id, name)
+      VALUES ($1, $2)
+      RETURNING id
+      `,
+      [userId, name]
+    );
+    res.status(201).json({ list_id: Number(ins.rows[0].id) });
+  } catch (e) {
+    console.error("create shopping list error:", e);
+    res.status(500).json({ message: "Server error creating shopping list" });
+  }
+});
+
+app.get("/user/:userId/shoppingLists", async (req, res) => {
+  const userId = Number(req.params.userId);
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: "Invalid userId" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT id, name, created_at, updated_at
+      FROM shopping_lists
+      WHERE user_id = $1
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 200
+      `,
+      [userId]
+    );
+
+    res.json(
+      r.rows.map((row) => ({
+        id: Number(row.id),
+        name: String(row.name),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }))
+    );
+  } catch (e) {
+    console.error("list shopping lists error:", e);
+    res.status(500).json({ message: "Server error listing shopping lists" });
+  }
+});
+
+app.delete("/user/:userId/shoppingLists/:listId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const listId = Number(req.params.listId);
+
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(listId) ||
+    listId <= 0
+  ) {
+    return res.status(400).json({ message: "Invalid userId or listId" });
+  }
+
+  try {
+    await assertUserOwnsList(userId, listId);
+
+    await pool.query(`DELETE FROM shopping_lists WHERE id = $1 AND user_id = $2`, [
+      listId,
+      userId,
+    ]);
+
+    res.json({ deleted: true });
+  } catch (e) {
+    console.error("delete shopping list error:", e);
+    res
+      .status(e.status || 500)
+      .json({ message: e.message || "Server error deleting shopping list" });
+  }
+});
+
+app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const listId = Number(req.params.listId);
+
+  const productId = req.body?.productId != null ? Number(req.body.productId) : null;
+  const customName =
+    req.body?.customName != null ? cleanCustomItemName(req.body.customName) : null;
+
+  const storeIdRaw = req.body?.storeId;
+  const storeId =
+    storeIdRaw === undefined || storeIdRaw === null || String(storeIdRaw) === ""
+      ? null
+      : Number(storeIdRaw);
+
+  const quantity = toPositiveInt(req.body?.quantity, 1) ?? 1;
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(listId) || listId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or listId" });
+  }
+
+  if (!productId && !customName) {
+    return res.status(400).json({ message: "Provide productId or customName" });
+  }
+  if (productId && customName) {
+    return res
+      .status(400)
+      .json({ message: "Provide either productId OR customName, not both" });
+  }
+
+  try {
+    await assertUserOwnsList(userId, listId);
+    await assertStoreVisibleToUser(userId, storeId);
+
+    if (productId) {
+      await assertProductVisibleToUser(userId, productId);
+    }
+
+    const ins = await pool.query(
+      `
+      INSERT INTO shopping_list_items (list_id, product_id, custom_name, store_id, quantity)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
+      `,
+      [listId, productId, customName, storeId, quantity]
+    );
+
+    res.status(201).json({ item_id: Number(ins.rows[0].id) });
+  } catch (e) {
+    console.error("add shopping list item error:", e);
+    res.status(e.status || 500).json({ message: e.message || "Server error adding item" });
+  }
+});
+
+app.put("/user/:userId/shoppingLists/:listId/items/:itemId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const listId = Number(req.params.listId);
+  const itemId = Number(req.params.itemId);
+
+  const storeIdRaw = req.body?.storeId;
+  const storeId =
+    storeIdRaw === undefined || storeIdRaw === null || String(storeIdRaw) === ""
+      ? null
+      : Number(storeIdRaw);
+
+  const quantity = req.body?.quantity != null ? toPositiveInt(req.body.quantity, null) : null;
+
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(listId) ||
+    listId <= 0 ||
+    !Number.isInteger(itemId) ||
+    itemId <= 0
+  ) {
+    return res.status(400).json({ message: "Invalid ids" });
+  }
+
+  try {
+    await assertUserOwnsList(userId, listId);
+    await assertStoreVisibleToUser(userId, storeId);
+
+    const r = await pool.query(
+      `
+      SELECT id
+      FROM shopping_list_items
+      WHERE id = $1 AND list_id = $2
+      LIMIT 1
+      `,
+      [itemId, listId]
+    );
+    if (!r.rows.length) throw new HttpError(404, "Item not found");
+
+    const updates = [];
+    const params = [];
+    let i = 1;
+
+    if (req.body?.storeId !== undefined) {
+      updates.push(`store_id = $${i++}`);
+      params.push(storeId);
+    }
+    if (quantity !== null) {
+      updates.push(`quantity = $${i++}`);
+      params.push(quantity);
+    }
+
+    if (!updates.length) return res.json({ updated: true });
+
+    params.push(itemId, listId);
+
+    await pool.query(
+      `
+      UPDATE shopping_list_items
+      SET ${updates.join(", ")}
+      WHERE id = $${i++} AND list_id = $${i++}
+      `,
+      params
+    );
+
+    res.json({ updated: true });
+  } catch (e) {
+    console.error("update shopping list item error:", e);
+    res.status(e.status || 500).json({ message: e.message || "Server error updating item" });
+  }
+});
+
+app.delete("/user/:userId/shoppingLists/:listId/items/:itemId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const listId = Number(req.params.listId);
+  const itemId = Number(req.params.itemId);
+
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(listId) ||
+    listId <= 0 ||
+    !Number.isInteger(itemId) ||
+    itemId <= 0
+  ) {
+    return res.status(400).json({ message: "Invalid ids" });
+  }
+
+  try {
+    await assertUserOwnsList(userId, listId);
+
+    const del = await pool.query(
+      `DELETE FROM shopping_list_items WHERE id = $1 AND list_id = $2`,
+      [itemId, listId]
+    );
+
+    if (del.rowCount === 0) throw new HttpError(404, "Item not found");
+
+    res.json({ deleted: true });
+  } catch (e) {
+    console.error("delete shopping list item error:", e);
+    res.status(e.status || 500).json({ message: e.message || "Server error deleting item" });
+  }
+});
+
+app.get("/user/:userId/shoppingLists/:listId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const listId = Number(req.params.listId);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(listId) || listId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or listId" });
+  }
+
+  try {
+    const list = await assertUserOwnsList(userId, listId);
+
+    const r = await pool.query(
+      `
+      SELECT
+        sli.id AS item_id,
+        sli.product_id,
+        sli.custom_name,
+        sli.store_id,
+        sli.quantity,
+        p.name AS product_name,
+        s.name AS store_name,
+        upp.last_price AS unit_price
+      FROM shopping_list_items sli
+      LEFT JOIN products p ON p.id = sli.product_id
+      LEFT JOIN stores s ON s.id = sli.store_id
+      LEFT JOIN user_product_prices upp
+        ON upp.user_id = $1
+       AND upp.product_id = sli.product_id
+       AND upp.store_id IS NOT DISTINCT FROM sli.store_id
+      WHERE sli.list_id = $2
+      ORDER BY
+        sli.store_id NULLS LAST,
+        COALESCE(s.name, '') ASC,
+        COALESCE(p.name, sli.custom_name) ASC,
+        sli.id ASC
+      `,
+      [userId, listId]
+    );
+
+    const items = r.rows.map((row) => {
+      const name = row.product_id ? String(row.product_name ?? "") : String(row.custom_name ?? "");
+      const unitPrice = row.unit_price != null ? Number(row.unit_price) : null;
+      const qty = Number(row.quantity ?? 1);
+
+      const hasKnownPrice =
+        row.product_id != null &&
+        row.store_id != null &&
+        unitPrice != null &&
+        Number.isFinite(unitPrice);
+
+      const lineTotal = hasKnownPrice ? unitPrice * qty : null;
+
+      return {
+        id: Number(row.item_id),
+        product_id: row.product_id != null ? Number(row.product_id) : null,
+        custom_name: row.custom_name ?? null,
+        name,
+        store_id: row.store_id != null ? Number(row.store_id) : null,
+        store_name: row.store_id != null ? (row.store_name ?? null) : null,
+        quantity: qty,
+        unit_price: hasKnownPrice ? unitPrice : null,
+        line_total: lineTotal,
+      };
+    });
+
+    const groupsMap = new Map();
+
+    for (const it of items) {
+      const key = it.store_id === null ? "null" : String(it.store_id);
+      const storeName = it.store_id === null ? "No store" : (it.store_name ?? "Store");
+
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, {
+          store_id: it.store_id,
+          store_name: storeName,
+          items: [],
+          subtotal_known: 0,
+          unknown_count: 0,
+        });
+      }
+
+      const g = groupsMap.get(key);
+      g.items.push(it);
+
+      if (it.line_total != null && Number.isFinite(it.line_total)) {
+        g.subtotal_known += Number(it.line_total);
+      } else {
+        g.unknown_count += 1;
+      }
+    }
+
+    const groups = Array.from(groupsMap.values()).sort((a, b) => {
+      if (a.store_id === null && b.store_id !== null) return 1;
+      if (a.store_id !== null && b.store_id === null) return -1;
+      return String(a.store_name).localeCompare(String(b.store_name));
+    });
+
+    let total_known_price = 0;
+    let unknown_price_count = 0;
+
+    for (const g of groups) {
+      total_known_price += Number(g.subtotal_known || 0);
+      unknown_price_count += Number(g.unknown_count || 0);
+    }
+
+    res.json({
+      list: {
+        id: Number(list.id),
+        name: String(list.name),
+        created_at: list.created_at,
+        updated_at: list.updated_at,
+      },
+      groups,
+      total_known_price,
+      unknown_price_count,
+    });
+  } catch (e) {
+    console.error("get shopping list error:", e);
+    res.status(e.status || 500).json({ message: e.message || "Server error loading shopping list" });
+  }
+});
+
 /**
  * POST: Scan barcode
  */
@@ -1795,7 +2337,6 @@ app.post("/scan", async (req, res) => {
         [barcode, uid]
       );
     } else {
-      // system-only fallback if userId not provided
       localProduct = await pool.query(
         `
         SELECT id, name
@@ -1886,7 +2427,6 @@ app.post("/products/create", async (req, res) => {
   }
 
   try {
-    // Ensure the food type exists AND is visible to the user
     const ft = await pool.query(
       `
       SELECT id
@@ -1901,7 +2441,6 @@ app.post("/products/create", async (req, res) => {
       return res.status(400).json({ message: "Invalid food type for this user" });
     }
 
-    // Prevent accidental reuse: if barcode exists in user's scope (or system), require explicit confirmation
     if (barcode) {
       const existing = await pool.query(
         `
@@ -1954,7 +2493,6 @@ app.post("/products/create", async (req, res) => {
 
     const newProductId = insertProduct.rows[0].id;
 
-    // Attach store relationship only if a storeId was provided
     if (storeId) {
       const storeOk = await pool.query(
         `
@@ -2079,7 +2617,8 @@ app.post("/user/addProduct", async (req, res) => {
     }
 
     const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
-    const effective_period_days = expiry_period_days > 0 ? expiry_period_days : userPref;
+    const effective_period_days =
+      expiry_period_days > 0 ? expiry_period_days : userPref;
 
     if (price !== undefined && price !== null) {
       await pool.query(
@@ -2142,7 +2681,12 @@ app.get("/user/:userId/product/:productId/lastPriceAny", async (req, res) => {
   const userId = Number(req.params.userId);
   const productId = Number(req.params.productId);
 
-  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(productId) || productId <= 0) {
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(productId) ||
+    productId <= 0
+  ) {
     return res.status(400).json({ message: "Invalid userId or productId" });
   }
 
@@ -2183,81 +2727,89 @@ app.get("/user/:userId/product/:productId/lastPriceAny", async (req, res) => {
   }
 });
 
-app.post("/user/:userId/product/:productId/clearPersonalHistory", async (req, res) => {
-  const userId = Number(req.params.userId);
-  const productId = Number(req.params.productId);
-  const confirmDeleteInventory = req.body?.confirmDeleteInventory === true;
+app.post(
+  "/user/:userId/product/:productId/clearPersonalHistory",
+  async (req, res) => {
+    const userId = Number(req.params.userId);
+    const productId = Number(req.params.productId);
+    const confirmDeleteInventory = req.body?.confirmDeleteInventory === true;
 
-  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(productId) || productId <= 0) {
-    return res.status(400).json({ message: "Invalid userId or productId" });
-  }
+    if (
+      !Number.isInteger(userId) ||
+      userId <= 0 ||
+      !Number.isInteger(productId) ||
+      productId <= 0
+    ) {
+      return res.status(400).json({ message: "Invalid userId or productId" });
+    }
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const inv = await client.query(
-      `
+      const inv = await client.query(
+        `
       SELECT COUNT(*)::int AS n
       FROM user_products
       WHERE user_id = $1 AND product_id = $2
       `,
-      [userId, productId]
-    );
-    const inventoryCount = Number(inv.rows[0]?.n ?? 0);
+        [userId, productId]
+      );
+      const inventoryCount = Number(inv.rows[0]?.n ?? 0);
 
-    const hist = await client.query(
-      `
+      const hist = await client.query(
+        `
       SELECT COUNT(*)::int AS n
       FROM user_product_prices
       WHERE user_id = $1 AND product_id = $2
       `,
-      [userId, productId]
-    );
-    const historyCount = Number(hist.rows[0]?.n ?? 0);
+        [userId, productId]
+      );
+      const historyCount = Number(hist.rows[0]?.n ?? 0);
 
-    if (inventoryCount > 0 && !confirmDeleteInventory) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        message:
-          "This product exists in your inventory. Clearing history will also delete your current inventory for this product. Confirm to proceed.",
-        inventoryCount,
-        historyCount,
-        requiresConfirmation: true,
-      });
-    }
+      if (inventoryCount > 0 && !confirmDeleteInventory) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          message:
+            "This product exists in your inventory. Clearing history will also delete your current inventory for this product. Confirm to proceed.",
+          inventoryCount,
+          historyCount,
+          requiresConfirmation: true,
+        });
+      }
 
-    const delHist = await client.query(
-      `
+      const delHist = await client.query(
+        `
       DELETE FROM user_product_prices
       WHERE user_id = $1 AND product_id = $2
       `,
-      [userId, productId]
-    );
+        [userId, productId]
+      );
 
-    const delInv = await client.query(
-      `
+      const delInv = await client.query(
+        `
       DELETE FROM user_products
       WHERE user_id = $1 AND product_id = $2
       `,
-      [userId, productId]
-    );
+        [userId, productId]
+      );
 
-    await client.query("COMMIT");
+      await client.query("COMMIT");
 
-    return res.json({
-      cleared: true,
-      deleted_history_rows: delHist.rowCount,
-      deleted_inventory_rows: delInv.rowCount,
-    });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("clearPersonalHistory error:", e);
-    return res.status(500).json({ message: "Server error clearing history" });
-  } finally {
-    client.release();
+      return res.json({
+        cleared: true,
+        deleted_history_rows: delHist.rowCount,
+        deleted_inventory_rows: delInv.rowCount,
+      });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      console.error("clearPersonalHistory error:", e);
+      return res.status(500).json({ message: "Server error clearing history" });
+    } finally {
+      client.release();
+    }
   }
-});
+);
 
 /**
  * POST: Remove N items from user_products for a grouped product/store row
@@ -2427,7 +2979,9 @@ app.get("/user/:userId/settings", async (req, res) => {
     }
 
     res.json({
-      notification_period_preference: Number(r.rows[0].notification_period_preference ?? 0),
+      notification_period_preference: Number(
+        r.rows[0].notification_period_preference ?? 0
+      ),
     });
   } catch (err) {
     console.error("Get settings error:", err);
@@ -2444,7 +2998,9 @@ app.post("/user/:userId/settings/notificationPeriod", async (req, res) => {
 
   const pref = Number(notification_period_preference);
   if (!Number.isFinite(pref) || pref < 0) {
-    return res.status(400).json({ message: "Invalid notification_period_preference" });
+    return res
+      .status(400)
+      .json({ message: "Invalid notification_period_preference" });
   }
 
   const override = Boolean(overrideExisting);
@@ -2547,7 +3103,9 @@ app.get("/user/:userId/pendingNotifications", async (req, res) => {
     );
   } catch (err) {
     console.error("Pending notifications error:", err);
-    res.status(500).json({ message: "Server error loading pending notifications" });
+    res
+      .status(500)
+      .json({ message: "Server error loading pending notifications" });
   }
 });
 
@@ -2601,10 +3159,10 @@ app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    const r = await pool.query("SELECT * FROM users WHERE username = $1 AND password = $2", [
-      username,
-      password,
-    ]);
+    const r = await pool.query(
+      "SELECT * FROM users WHERE username = $1 AND password = $2",
+      [username, password]
+    );
 
     if (r.rows.length === 0) {
       return res.status(401).json({ message: "Invalid credentials" });

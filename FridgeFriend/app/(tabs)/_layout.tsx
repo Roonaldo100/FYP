@@ -50,6 +50,17 @@ export default function TabLayout() {
         }}
         initialParams={{ user_id }}
       />
+
+      <Tabs.Screen
+        name="shopping"
+        options={{
+          title: "Shopping",
+          tabBarIcon: ({ color, size }) => (
+            <IconSymbol name="cart.fill" color={color} size={size} />
+          ),
+        }}
+        initialParams={{ user_id }}
+      />
     </Tabs>
   );
 }
