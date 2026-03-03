@@ -2068,6 +2068,45 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
       await assertProductVisibleToUser(userId, productId);
     }
 
+    if (productId) {
+      const upd = await pool.query(
+        `
+        UPDATE shopping_list_items
+        SET quantity = quantity + $4
+        WHERE list_id = $1
+          AND product_id = $2
+          AND custom_name IS NULL
+          AND store_id IS NOT DISTINCT FROM $3
+        RETURNING id
+        `,
+        [listId, productId, storeId, quantity]
+      );
+
+      if (upd.rows.length) {
+        await pool.query(`UPDATE shopping_lists SET updated_at = now() WHERE id = $1`, [listId]);
+        return res.status(200).json({ item_id: Number(upd.rows[0].id), merged: true });
+      }
+    } else {
+      const upd = await pool.query(
+        `
+        UPDATE shopping_list_items
+        SET quantity = quantity + $4
+        WHERE list_id = $1
+          AND product_id IS NULL
+          AND lower(custom_name) = lower($2)
+          AND store_id IS NOT DISTINCT FROM $3
+        RETURNING id
+        `,
+        [listId, customName, storeId, quantity]
+      );
+
+      if (upd.rows.length) {
+        await pool.query(`UPDATE shopping_lists SET updated_at = now() WHERE id = $1`, [listId]);
+        return res.status(200).json({ item_id: Number(upd.rows[0].id), merged: true });
+      }
+    }
+
+    // No existing row -> insert new
     const ins = await pool.query(
       `
       INSERT INTO shopping_list_items (list_id, product_id, custom_name, store_id, quantity)
@@ -2077,7 +2116,9 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
       [listId, productId, customName, storeId, quantity]
     );
 
-    res.status(201).json({ item_id: Number(ins.rows[0].id) });
+    await pool.query(`UPDATE shopping_lists SET updated_at = now() WHERE id = $1`, [listId]);
+
+    res.status(201).json({ item_id: Number(ins.rows[0].id), merged: false });
   } catch (e) {
     console.error("add shopping list item error:", e);
     res.status(e.status || 500).json({ message: e.message || "Server error adding item" });
@@ -2235,7 +2276,6 @@ app.get("/user/:userId/shoppingLists/:listId", async (req, res) => {
 
       const hasKnownPrice =
         row.product_id != null &&
-        row.store_id != null &&
         unitPrice != null &&
         Number.isFinite(unitPrice);
 
