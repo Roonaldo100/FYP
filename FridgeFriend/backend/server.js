@@ -6,9 +6,9 @@ console.log("ENV loaded:", {
   hasSpoon: Boolean(process.env.SPOONACULAR_API_KEY),
 });
 
+import bcrypt from "bcrypt";
 import cors from "cors";
 import express from "express";
-import fetch from "node-fetch";
 import pool from "./db.js";
 
 const app = express();
@@ -22,6 +22,7 @@ app.use(express.json());
  */
 const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
 const SPOON_BASE = "https://api.spoonacular.com";
+const BCRYPT_ROUNDS = 12;
 
 /**
  * -------------------------
@@ -3356,25 +3357,89 @@ app.get("/user/:userId/foodtype/:foodTypeId", async (req, res) => {
 // GET /products/search?userId=1&q=coleslaw&limit=30&offset=0
 
 /**
- * LOGIN
+ * SIGNUP AND LOGIN
  */
-app.post("/login", async (req, res) => {
-  const { username, password } = req.body;
+
+app.post("/signup", async (req, res) => {
+  const username = String(req.body?.username ?? "").trim();
+  const password = String(req.body?.password ?? "");
+
+  if (!username) return res.status(400).json({ message: "Missing username" });
+  if (username.length > 30) return res.status(400).json({ message: "Username too long (max 30)" });
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({ message: "Password must be at least 6 characters" });
+  }
 
   try {
+    // prevent duplicates (you already have unique constraint on username)
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
     const r = await pool.query(
-      "SELECT * FROM users WHERE username = $1 AND password = $2",
-      [username, password]
+      `
+      INSERT INTO users (username, password_hash, notification_period_preference)
+      VALUES ($1, $2, 0)
+      RETURNING id, username
+      `,
+      [username, hash]
     );
 
-    if (r.rows.length === 0) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    res.json({
+    return res.status(201).json({
       user_id: r.rows[0].id,
       username: r.rows[0].username,
     });
+  } catch (e) {
+    if (e?.code === "23505") {
+      return res.status(409).json({ message: "Username already exists" });
+    }
+    console.error("Signup error:", e);
+    return res.status(500).json({ message: "Server error creating account" });
+  }
+});
+
+app.post("/login", async (req, res) => {
+  const username = String(req.body?.username ?? "").trim();
+  const password = String(req.body?.password ?? "");
+
+  if (!username || !password) {
+    return res.status(400).json({ message: "Missing username or password" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT id, username, password, password_hash
+      FROM users
+      WHERE username = $1
+      LIMIT 1
+      `,
+      [username]
+    );
+
+    if (!r.rows.length) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const row = r.rows[0];
+
+    // Preferred: bcrypt hash
+    if (row.password_hash) {
+      const ok = await bcrypt.compare(password, row.password_hash);
+      if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+
+      return res.json({ user_id: row.id, username: row.username });
+    }
+
+    // ⚠️ Temporary legacy fallback: plaintext password
+    if (row.password && String(row.password) === password) {
+      // Optional: auto-migrate on successful login
+      const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      await pool.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, row.id]);
+
+      return res.json({ user_id: row.id, username: row.username });
+    }
+
+    return res.status(401).json({ message: "Invalid credentials" });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Server error" });

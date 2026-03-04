@@ -1,14 +1,14 @@
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
+  View,
 } from "react-native";
-import { useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
 export default function LoginScreen() {
@@ -75,6 +75,15 @@ export default function LoginScreen() {
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
       </TouchableOpacity>
+      <TouchableOpacity
+        style={{ marginTop: 16 }}
+        onPress={() => router.push("../CreateAccount")}
+        disabled={loading}
+      >
+        <Text style={{ color: "white", fontWeight: "800", textDecorationLine: "underline" }}>
+          Create account
+        </Text>
+    </TouchableOpacity>
     </View>
   );
 }

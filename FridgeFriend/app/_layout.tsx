@@ -6,6 +6,7 @@ export default function Layout() {
       <Stack.Screen name="LoginScreen" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="BarcodeScanner" options={{ headerShown: false }} />
+      <Stack.Screen name="CreateAccount" options={{ headerShown: false }} />
     </Stack>
   );
 }
