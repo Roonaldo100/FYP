@@ -69,6 +69,14 @@ function normalizeExpiryForApi(v: string | null): string | null {
   return s;
 }
 
+function parseNonNegativeInt(s: string): number | null {
+  const t = s.trim();
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return null;
+  return n;
+}
+
 export default function ExpiryBuckets() {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -97,6 +105,13 @@ export default function ExpiryBuckets() {
   const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
   const [editingFromExpiry, setEditingFromExpiry] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
+
+  // Set-quantity modal state
+  const [qtyModalOpen, setQtyModalOpen] = useState(false);
+  const [qtyEditingExpiry, setQtyEditingExpiry] = useState<string | null>(null);
+  const [qtyCurrent, setQtyCurrent] = useState<number>(0);
+  const [qtyInput, setQtyInput] = useState<string>("");
+  const [qtySaving, setQtySaving] = useState(false);
 
   const dateOptions = useMemo(() => makeNextDaysOptions(60), []);
 
@@ -130,12 +145,7 @@ export default function ExpiryBuckets() {
     if (!userId || !productId) return;
 
     const t = overrideText.trim();
-    if (
-      t &&
-      (!Number.isFinite(Number(t)) ||
-        !Number.isInteger(Number(t)) ||
-        Number(t) < 0)
-    ) {
+    if (t && parseNonNegativeInt(t) === null) {
       Alert.alert("Invalid value", "Enter a whole number ≥ 0 (or leave blank).");
       return;
     }
@@ -190,7 +200,7 @@ export default function ExpiryBuckets() {
     }
   };
 
-  const removeFromBucket = async (expiryDate: string | null) => {
+  const removeFromBucket = async (expiryDate: string | null, qty: number = 1) => {
     if (!userId || !productId) return;
 
     try {
@@ -202,7 +212,7 @@ export default function ExpiryBuckets() {
           productId: Number(productId),
           storeId: storeId === "" ? null : Number(storeId),
           expiryDate,
-          quantity: 1,
+          quantity: qty,
         }),
       });
 
@@ -210,8 +220,27 @@ export default function ExpiryBuckets() {
       await fetchBuckets();
     } catch (e) {
       console.error("removeFromBucket error:", e);
-      Alert.alert("Error", "Could not remove item from this expiry bucket.");
+      Alert.alert("Error", "Could not remove item(s) from this expiry bucket.");
     }
+  };
+
+  const removeAllFromBucket = async (expiryDate: string | null, currentQty: number) => {
+    if (currentQty <= 0) return;
+
+    Alert.alert(
+      "Remove all?",
+      `Remove all ${currentQty} item(s) from this bucket?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove all",
+          style: "destructive",
+          onPress: async () => {
+            await removeFromBucket(expiryDate, currentQty);
+          },
+        },
+      ]
+    );
   };
 
   const openChangeExpiry = (fromExpiry: string | null) => {
@@ -266,6 +295,75 @@ export default function ExpiryBuckets() {
     }
   };
 
+  const openSetQuantity = (expiryDate: string | null, currentQty: number) => {
+    setQtyEditingExpiry(expiryDate);
+    setQtyCurrent(currentQty);
+    setQtyInput(String(currentQty));
+    setQtyModalOpen(true);
+  };
+
+  const saveSetQuantity = async () => {
+    if (!userId || !productId) return;
+
+    const desired = parseNonNegativeInt(qtyInput);
+    if (desired === null) {
+      Alert.alert("Invalid quantity", "Enter a whole number ≥ 0.");
+      return;
+    }
+
+    const expiry = normalizeExpiryForApi(qtyEditingExpiry);
+    const current = qtyCurrent;
+
+    if (desired === current) {
+      setQtyModalOpen(false);
+      setQtyEditingExpiry(null);
+      return;
+    }
+
+    try {
+      setQtySaving(true);
+
+      if (desired < current) {
+        const diff = current - desired;
+        await removeFromBucket(expiry, diff);
+      } else {
+        const diff = desired - current;
+
+        // Minimal-change approach: call addProduct diff times.
+        // This is safe and requires no new backend endpoint.
+        for (let i = 0; i < diff; i++) {
+          const resp = await fetch(`${API_BASE_URL}/user/addProduct`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              productId: Number(productId),
+              storeId: storeId === "" ? null : Number(storeId),
+              expiryDate: expiry,
+              price: null,
+            }),
+          });
+
+          if (!resp.ok) {
+            const txt = await resp.text().catch(() => "");
+            console.error("addProduct (set qty) failed:", resp.status, txt);
+            throw new Error("Add failed");
+          }
+        }
+
+        await fetchBuckets();
+      }
+
+      setQtyModalOpen(false);
+      setQtyEditingExpiry(null);
+    } catch (e) {
+      console.error("saveSetQuantity error:", e);
+      Alert.alert("Error", "Could not update quantity for this bucket.");
+    } finally {
+      setQtySaving(false);
+    }
+  };
+
   const headerText = useMemo(() => {
     const p = params.productName ?? "Product";
     return p;
@@ -307,43 +405,61 @@ export default function ExpiryBuckets() {
             </TouchableOpacity>
           </View>
 
-          {buckets.map((b, i) => (
-            <View key={`${String(b.expiry_date)}-${i}`} style={styles.bucketRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bucketTitle}>
-                  {normalizeExpiryForApi(b.expiry_date)
-                    ? `Expires: ${normalizeExpiryForApi(b.expiry_date)}`
-                    : "No expiry date"}
-                </Text>
-                <Text style={styles.bucketQty}>Qty: {b.quantity}</Text>
+          {buckets.map((b, i) => {
+            const expNorm = normalizeExpiryForApi(b.expiry_date);
+            return (
+              <View key={`${String(b.expiry_date)}-${i}`} style={styles.bucketRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bucketTitle}>
+                    {expNorm ? `Expires: ${expNorm}` : "No expiry date"}
+                  </Text>
+
+                  <TouchableOpacity
+                    onPress={() => openSetQuantity(expNorm, b.quantity)}
+                    style={styles.qtyTap}
+                  >
+                    <Text style={styles.bucketQty}>Qty: {b.quantity}</Text>
+                    <Text style={styles.qtyHint}>Tap to set</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.bucketActionsRow}>
+                    <TouchableOpacity
+                      style={styles.changeBtn}
+                      onPress={() => openChangeExpiry(expNorm)}
+                    >
+                      <Text style={styles.changeBtnText}>Change date</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.removeAllBtn}
+                      onPress={() => removeAllFromBucket(expNorm, b.quantity)}
+                    >
+                      <Text style={styles.removeAllBtnText}>Remove all</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
                 <TouchableOpacity
-                  style={styles.changeBtn}
-                  onPress={() => openChangeExpiry(normalizeExpiryForApi(b.expiry_date))}
+                  style={[styles.ctrlBtn, b.quantity <= 0 && styles.ctrlBtnDisabled]}
+                  onPress={() => removeFromBucket(expNorm, 1)}
+                  disabled={b.quantity <= 0}
                 >
-                  <Text style={styles.changeBtnText}>Change date</Text>
+                  <Text style={styles.ctrlBtnText}>−</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.ctrlBtn}
+                  onPress={() => addToBucket(expNorm)}
+                >
+                  <Text style={styles.ctrlBtnText}>+</Text>
                 </TouchableOpacity>
               </View>
-
-              <TouchableOpacity
-                style={[styles.ctrlBtn, b.quantity <= 0 && styles.ctrlBtnDisabled]}
-                onPress={() => removeFromBucket(normalizeExpiryForApi(b.expiry_date))}
-                disabled={b.quantity <= 0}
-              >
-                <Text style={styles.ctrlBtnText}>−</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.ctrlBtn}
-                onPress={() => addToBucket(normalizeExpiryForApi(b.expiry_date))}
-              >
-                <Text style={styles.ctrlBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       )}
 
+      {/* Change expiry modal */}
       <Modal
         visible={expiryMenuOpen}
         transparent
@@ -421,6 +537,62 @@ export default function ExpiryBuckets() {
           </View>
         </View>
       </Modal>
+
+      {/* Set quantity modal */}
+      <Modal
+        visible={qtyModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (qtySaving) return;
+          setQtyModalOpen(false);
+          setQtyEditingExpiry(null);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Set quantity</Text>
+            <Text style={styles.modalSub}>
+              Bucket: {normalizeExpiryForApi(qtyEditingExpiry) ? normalizeExpiryForApi(qtyEditingExpiry) : "No expiry date"}
+            </Text>
+
+            <Text style={styles.modalSub}>Current: {qtyCurrent}</Text>
+
+            <TextInput
+              value={qtyInput}
+              onChangeText={setQtyInput}
+              placeholder="Enter quantity"
+              keyboardType="number-pad"
+              style={styles.qtyInput}
+              editable={!qtySaving}
+            />
+
+            <TouchableOpacity
+              style={[styles.saveQtyBtn, qtySaving && { opacity: 0.6 }]}
+              onPress={saveSetQuantity}
+              disabled={qtySaving}
+            >
+              {qtySaving ? (
+                <ActivityIndicator />
+              ) : (
+                <Text style={styles.saveQtyBtnText}>Save</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalClose, qtySaving && { opacity: 0.6 }]}
+              onPress={() => {
+                if (qtySaving) return;
+                setQtyModalOpen(false);
+                setQtyEditingExpiry(null);
+              }}
+              disabled={qtySaving}
+            >
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -473,10 +645,21 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   bucketTitle: { color: "#333", fontWeight: "800" },
-  bucketQty: { color: "#555", marginTop: 4 },
+
+  qtyTap: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    backgroundColor: "#eee",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  bucketQty: { color: "#333", fontWeight: "900" },
+  qtyHint: { marginTop: 2, color: "#663399", fontWeight: "800", fontSize: 12 },
+
+  bucketActionsRow: { flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" },
 
   changeBtn: {
-    marginTop: 10,
     alignSelf: "flex-start",
     backgroundColor: "#eee",
     paddingVertical: 8,
@@ -484,6 +667,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   changeBtnText: { fontWeight: "900", color: "#333" },
+
+  removeAllBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: "#b00020",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  removeAllBtnText: { fontWeight: "900", color: "#fff" },
 
   ctrlBtn: {
     backgroundColor: "#eee",
@@ -522,6 +714,23 @@ const styles = StyleSheet.create({
     borderBottomColor: "#eee",
   },
   modalRowText: { color: "#333", fontWeight: "700" },
+
+  qtyInput: {
+    marginTop: 12,
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+
+  saveQtyBtn: {
+    marginTop: 12,
+    backgroundColor: "#ffcc00",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  saveQtyBtnText: { fontWeight: "900", color: "#333" },
 
   modalClose: {
     marginTop: 12,
