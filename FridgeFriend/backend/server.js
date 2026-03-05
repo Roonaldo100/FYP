@@ -3183,6 +3183,95 @@ app.post("/user_products/:id/markNotified", async (req, res) => {
 });
 
 /**
+ * POST: Change (move) ALL items from one expiry bucket to another
+ * Body: { userId, productId, storeId, fromExpiryDate, toExpiryDate }
+ * fromExpiryDate can be null (the "no expiry" bucket)
+ * toExpiryDate can be null (move into "no expiry" bucket)
+ */
+app.post("/user_products/changeBucketExpiry", async (req, res) => {
+  function normalizeExpiryDateInput(v) {
+    // Accept null/blank as null
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+
+    const s = String(v).trim();
+    if (!s) return null;
+
+    // If already YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    // If ISO string or timestamp-like: take first 10 chars if it starts with YYYY-MM-DD
+    // e.g. 2026-03-05T00:00:00.000Z or 2026-03-05 00:00:00
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+
+    // Otherwise keep as-is (will be rejected below)
+    return s;
+  }
+
+  const { userId, productId, storeId, fromExpiryDate, toExpiryDate } = req.body;
+
+  const uid = Number(userId);
+  const pid = Number(productId);
+
+  const sid =
+    storeId === undefined || storeId === null || String(storeId) === ""
+      ? null
+      : Number(storeId);
+
+  if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(pid) || pid <= 0) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+
+  if (sid !== null && (!Number.isFinite(sid) || sid <= 0)) {
+    return res.status(400).json({ message: "Invalid storeId" });
+  }
+
+  const fromExp = normalizeExpiryDateInput(fromExpiryDate);
+  const toExp = normalizeExpiryDateInput(toExpiryDate);
+
+  if (fromExp === undefined || toExp === undefined) {
+    return res.status(400).json({ message: "Missing fromExpiryDate or toExpiryDate" });
+  }
+
+  if (fromExp !== null) {
+    const okFormat = /^\d{4}-\d{2}-\d{2}$/.test(fromExp);
+    if (!okFormat) {
+      return res
+        .status(400)
+        .json({ message: "Invalid fromExpiryDate (YYYY-MM-DD or null)" });
+    }
+  }
+
+  if (toExp !== null) {
+    const okFormat = /^\d{4}-\d{2}-\d{2}$/.test(toExp);
+    if (!okFormat) {
+      return res
+        .status(400)
+        .json({ message: "Invalid toExpiryDate (YYYY-MM-DD or null)" });
+    }
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      UPDATE user_products
+      SET expiry_date = $1
+      WHERE user_id = $2
+        AND product_id = $3
+        AND store_id IS NOT DISTINCT FROM $4
+        AND expiry_date IS NOT DISTINCT FROM $5
+      `,
+      [toExp, uid, pid, sid, fromExp]
+    );
+
+    return res.json({ updated: true, moved_rows: r.rowCount });
+  } catch (err) {
+    console.error("changeBucketExpiry error:", err);
+    return res.status(500).json({ message: "Server error changing bucket expiry" });
+  }
+});
+
+/**
  * GET: Settings
  */
 app.get("/user/:userId/settings", async (req, res) => {

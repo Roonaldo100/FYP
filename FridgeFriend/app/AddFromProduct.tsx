@@ -8,11 +8,49 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Modal,
+  FlatList,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
 type Store = { id: number; name: string };
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function formatDateYYYYMMDD(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function addDays(base: Date, days: number) {
+  const d = new Date(base);
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function makeNextDaysOptions(count: number) {
+  const out: { key: string; label: string; value: string }[] = [];
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  for (let i = 0; i < count; i++) {
+    const d = addDays(today, i);
+    const v = formatDateYYYYMMDD(d);
+
+    const pretty = d.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    out.push({ key: v, label: `${pretty} (${v})`, value: v });
+  }
+  return out;
+}
 
 export default function AddFromProduct() {
   const router = useRouter();
@@ -25,10 +63,7 @@ export default function AddFromProduct() {
   const userId = params.user_id;
   const productId = params.productId;
 
-  const productName = useMemo(
-    () => params.productName ?? "Product",
-    [params.productName]
-  );
+  const productName = useMemo(() => params.productName ?? "Product", [params.productName]);
 
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
@@ -41,6 +76,10 @@ export default function AddFromProduct() {
   const [loadingStores, setLoadingStores] = useState(false);
 
   const [expiryPeriodText, setExpiryPeriodText] = useState<string>("");
+
+  // Date menu state (no native modules)
+  const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
+  const dateOptions = useMemo(() => makeNextDaysOptions(60), []);
 
   const validateExpiryPeriod = (s: string) => {
     if (!s.trim()) return true;
@@ -63,7 +102,9 @@ export default function AddFromProduct() {
     if (!userId) return;
     try {
       setLoadingStores(true);
-      const res = await fetch(`${API_BASE_URL}/stores?userId=${encodeURIComponent(String(userId))}`);
+      const res = await fetch(
+        `${API_BASE_URL}/stores?userId=${encodeURIComponent(String(userId))}`
+      );
       const data = await res.json();
       setStores(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -167,84 +208,20 @@ export default function AddFromProduct() {
     }
   }, [newStoreName, userId, loadStores]);
 
-  const clearPersonalHistory = useCallback(async () => {
-    if (!userId || !productId) return;
+  const setQuickExpiry = (daysFromNow: number) => {
+    setExpiryText(formatDateYYYYMMDD(addDays(new Date(), daysFromNow)));
+    setExpiryMenuOpen(false);
+  };
 
-    const run = async (confirmDeleteInventory: boolean) => {
-      const resp = await fetch(
-        `${API_BASE_URL}/user/${encodeURIComponent(String(userId))}/product/${encodeURIComponent(
-          String(productId)
-        )}/clearPersonalHistory`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirmDeleteInventory }),
-        }
-      );
+  const pickExpiry = (v: string) => {
+    setExpiryText(v);
+    setExpiryMenuOpen(false);
+  };
 
-      const text = await resp.text().catch(() => "");
-      let data: any = null;
-      try {
-        data = JSON.parse(text);
-      } catch {}
-
-      if (resp.status === 409 && data?.requiresConfirmation) {
-        Alert.alert(
-          "This will delete inventory",
-          `You currently have ${data.inventoryCount} item(s) of "${productName}" in your fridge.\n\nClearing history will also delete those inventory items.\n\nProceed?`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Delete history + inventory",
-              style: "destructive",
-              onPress: async () => {
-                try {
-                  setSaving(true);
-                  await run(true);
-                  Alert.alert("Cleared", "Your history (and inventory for this product) was removed.");
-                  router.back();
-                } catch (e) {
-                  Alert.alert("Error", "Failed to clear history.");
-                } finally {
-                  setSaving(false);
-                }
-              },
-            },
-          ]
-        );
-        return;
-      }
-
-      if (!resp.ok) {
-        console.error("clearPersonalHistory failed:", resp.status, text);
-        Alert.alert("Error", data?.message || "Failed to clear history.");
-        return;
-      }
-
-      Alert.alert("Cleared", "Your history for this product was removed.");
-      router.back();
-    };
-
-    Alert.alert(
-      "Clear history?",
-      `Remove "${productName}" from your historical data?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setSaving(true);
-              await run(false);
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [userId, productId, productName, router]);
+  const clearExpiry = () => {
+    setExpiryText("");
+    setExpiryMenuOpen(false);
+  };
 
   const onSave = useCallback(async () => {
     if (!userId || !productId) {
@@ -267,13 +244,13 @@ export default function AddFromProduct() {
 
     const expiryDate: string | null = expiryTrim.length > 0 ? expiryTrim : null;
     const price: number | null = priceTrim.length > 0 ? Number(priceTrim) : null;
+
     const periodTrim = expiryPeriodText.trim();
     if (!validateExpiryPeriod(periodTrim)) {
       Alert.alert("Invalid value", "Enter a whole number ≥ 0 (or leave blank).");
       return;
     }
     const expiryPeriodDays: number | null = periodTrim.length > 0 ? Number(periodTrim) : null;
-
 
     try {
       setSaving(true);
@@ -306,7 +283,16 @@ export default function AddFromProduct() {
     } finally {
       setSaving(false);
     }
-  }, [userId, productId, expiryText, priceText, productName, router, selectedStoreId]);
+  }, [
+    userId,
+    productId,
+    expiryText,
+    priceText,
+    productName,
+    router,
+    selectedStoreId,
+    expiryPeriodText,
+  ]);
 
   return (
     <View style={styles.container}>
@@ -326,10 +312,7 @@ export default function AddFromProduct() {
           ) : (
             <>
               <TouchableOpacity
-                style={[
-                  styles.storeButton,
-                  selectedStoreId === null && styles.storeButtonSelected,
-                ]}
+                style={[styles.storeButton, selectedStoreId === null && styles.storeButtonSelected]}
                 onPress={() => setSelectedStoreId(null)}
                 disabled={saving}
               >
@@ -341,10 +324,7 @@ export default function AddFromProduct() {
                   {stores.map((s) => (
                     <TouchableOpacity
                       key={s.id}
-                      style={[
-                        styles.storeButton,
-                        selectedStoreId === s.id && styles.storeButtonSelected,
-                      ]}
+                      style={[styles.storeButton, selectedStoreId === s.id && styles.storeButtonSelected]}
                       onPress={() => setSelectedStoreId(s.id)}
                       disabled={saving}
                     >
@@ -376,6 +356,29 @@ export default function AddFromProduct() {
           )}
 
           <Text style={styles.label}>Expiry date (optional)</Text>
+
+          <View style={styles.row}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setExpiryMenuOpen(true)} disabled={saving}>
+              <Text style={styles.secondaryBtnText}>
+                {expiryText.trim() ? `Picked: ${expiryText}` : "Pick a date"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.clearBtn} onPress={clearExpiry} disabled={saving}>
+              <Text style={styles.clearBtnText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.quickTitle}>Quick set</Text>
+          <View style={styles.quickRow}>
+            {[1, 2, 3, 5, 7, 14].map((d) => (
+              <TouchableOpacity key={String(d)} style={styles.quickBtn} onPress={() => setQuickExpiry(d)} disabled={saving}>
+                <Text style={styles.quickBtnText}>{d}d</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.helperText}>You can still type manually if you want:</Text>
           <TextInput
             value={expiryText}
             onChangeText={setExpiryText}
@@ -408,12 +411,41 @@ export default function AddFromProduct() {
           <TouchableOpacity style={styles.saveBtn} onPress={onSave} disabled={saving}>
             {saving ? <ActivityIndicator /> : <Text style={styles.saveBtnText}>Add to inventory</Text>}
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.dangerBtn} onPress={clearPersonalHistory} disabled={saving}>
-            <Text style={styles.dangerBtnText}>Clear my history for this product</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal visible={expiryMenuOpen} transparent animationType="fade" onRequestClose={() => setExpiryMenuOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select expiry date</Text>
+
+            <TouchableOpacity style={styles.modalTopAction} onPress={() => pickExpiry(formatDateYYYYMMDD(addDays(new Date(), 0)))}>
+              <Text style={styles.modalTopActionText}>Today</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modalTopAction} onPress={() => clearExpiry()}>
+              <Text style={[styles.modalTopActionText, { color: "#b00020" }]}>No expiry</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 12 }} />
+
+            <FlatList
+              data={dateOptions}
+              keyExtractor={(it) => it.key}
+              style={{ maxHeight: 360 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.modalRow} onPress={() => pickExpiry(item.value)}>
+                  <Text style={styles.modalRowText}>{item.label}</Text>
+                </TouchableOpacity>
+              )}
+            />
+
+            <TouchableOpacity style={styles.modalClose} onPress={() => setExpiryMenuOpen(false)}>
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -432,12 +464,7 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: "#663399", fontWeight: "800" },
 
-  card: {
-    marginTop: 14,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-  },
+  card: { marginTop: 14, backgroundColor: "#fff", borderRadius: 12, padding: 14 },
 
   label: { color: "#333", fontWeight: "800", marginTop: 10, marginBottom: 6 },
 
@@ -455,9 +482,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 6,
   },
-  storeButtonSelected: {
-    backgroundColor: "#ffcc00",
-  },
+  storeButtonSelected: { backgroundColor: "#ffcc00" },
 
   createBtn: {
     backgroundColor: "#663399",
@@ -468,6 +493,35 @@ const styles = StyleSheet.create({
   },
   createBtnText: { color: "#fff", fontWeight: "900" },
 
+  row: { flexDirection: "row", alignItems: "center", gap: 10 },
+  secondaryBtn: {
+    flex: 1,
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  secondaryBtnText: { fontWeight: "800", color: "#333" },
+  clearBtn: {
+    backgroundColor: "#b00020",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  clearBtnText: { color: "#fff", fontWeight: "900" },
+
+  quickTitle: { marginTop: 10, fontWeight: "800", color: "#333" },
+  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  quickBtn: {
+    backgroundColor: "#ffcc00",
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  quickBtnText: { fontWeight: "900", color: "#333" },
+
+  helperText: { marginTop: 10, marginBottom: 6, color: "#666", fontSize: 12 },
+
   saveBtn: {
     marginTop: 16,
     backgroundColor: "#ffcc00",
@@ -477,12 +531,38 @@ const styles = StyleSheet.create({
   },
   saveBtnText: { color: "#333", fontWeight: "900", fontSize: 16 },
 
-  dangerBtn: {
-    marginTop: 10,
-    backgroundColor: "#b00020",
-    borderRadius: 12,
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 16,
+  },
+  modalCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14 },
+  modalTitle: { fontWeight: "900", fontSize: 16, color: "#333", marginBottom: 10 },
+
+  modalTopAction: {
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  modalTopActionText: { fontWeight: "900", color: "#333" },
+
+  modalRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalRowText: { color: "#333", fontWeight: "700" },
+
+  modalClose: {
+    marginTop: 12,
+    backgroundColor: "#663399",
+    borderRadius: 10,
     paddingVertical: 12,
     alignItems: "center",
   },
-  dangerBtnText: { color: "#fff", fontWeight: "900" },
+  modalCloseText: { color: "#fff", fontWeight: "900" },
 });

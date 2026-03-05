@@ -7,14 +7,67 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Modal,
+  FlatList,
+  ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { API_BASE_URL } from "../config/apiConfig"; 
+import { API_BASE_URL } from "../config/apiConfig";
 
 type Bucket = {
   expiry_date: string | null;
   quantity: number;
 };
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function formatDateYYYYMMDD(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function addDays(base: Date, days: number) {
+  const d = new Date(base);
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function makeNextDaysOptions(count: number) {
+  const out: { key: string; label: string; value: string | null }[] = [];
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+
+  // Include "no expiry" option at the top
+  out.push({ key: "__none__", label: "No expiry date", value: null });
+
+  for (let i = 0; i < count; i++) {
+    const d = addDays(today, i);
+    const v = formatDateYYYYMMDD(d);
+
+    const pretty = d.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    out.push({ key: v, label: `${pretty} (${v})`, value: v });
+  }
+  return out;
+}
+
+function normalizeExpiryForApi(v: string | null): string | null {
+  if (v === null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+
+  // If backend returned ISO/timestamp-like, slice date part
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+
+  return s;
+}
 
 export default function ExpiryBuckets() {
   const router = useRouter();
@@ -33,11 +86,19 @@ export default function ExpiryBuckets() {
 
   const [loading, setLoading] = useState(false);
   const [buckets, setBuckets] = useState<Bucket[]>([]);
-  const [newExpiry, setNewExpiry] = useState<string>(""); // YYYY-MM-DD or blank for no-expiry
-
-  const storeLabel = useMemo(() => params.storeName ?? "No store", [params.storeName]);
+  const storeLabel = useMemo(
+    () => params.storeName ?? "No store",
+    [params.storeName]
+  );
 
   const [overrideText, setOverrideText] = useState<string>("");
+
+  // Change-expiry modal state
+  const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
+  const [editingFromExpiry, setEditingFromExpiry] = useState<string | null>(null);
+  const [changing, setChanging] = useState(false);
+
+  const dateOptions = useMemo(() => makeNextDaysOptions(60), []);
 
   const fetchBuckets = useCallback(async () => {
     if (!userId || !productId) return;
@@ -69,7 +130,12 @@ export default function ExpiryBuckets() {
     if (!userId || !productId) return;
 
     const t = overrideText.trim();
-    if (t && (!Number.isFinite(Number(t)) || !Number.isInteger(Number(t)) || Number(t) < 0)) {
+    if (
+      t &&
+      (!Number.isFinite(Number(t)) ||
+        !Number.isInteger(Number(t)) ||
+        Number(t) < 0)
+    ) {
       Alert.alert("Invalid value", "Enter a whole number ≥ 0 (or leave blank).");
       return;
     }
@@ -111,7 +177,7 @@ export default function ExpiryBuckets() {
           userId,
           productId: Number(productId),
           storeId: storeId === "" ? null : Number(storeId),
-          expiryDate, // <— key: ties the new row to the chosen bucket
+          expiryDate,
           price: null,
         }),
       });
@@ -148,27 +214,66 @@ export default function ExpiryBuckets() {
     }
   };
 
-  const addNewExpiryBucket = async () => {
-    const trimmed = newExpiry.trim();
-
-    if (trimmed.length === 0) {
-      await addToBucket(null);
-      setNewExpiry("");
-      return;
-    }
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      Alert.alert("Invalid date", "Use YYYY-MM-DD (e.g. 2026-02-27).");
-      return;
-    }
-
-    await addToBucket(trimmed);
-    setNewExpiry("");
+  const openChangeExpiry = (fromExpiry: string | null) => {
+    setEditingFromExpiry(fromExpiry);
+    setExpiryMenuOpen(true);
   };
+
+  const changeBucketExpiryTo = async (toExpiry: string | null) => {
+    if (!userId || !productId) return;
+    if (!expiryMenuOpen) return;
+
+    const fromExpiryNorm = normalizeExpiryForApi(editingFromExpiry);
+    const toExpiryNorm = normalizeExpiryForApi(toExpiry);
+
+    // If user picked the same value, do nothing
+    if ((fromExpiryNorm ?? null) === (toExpiryNorm ?? null)) {
+      setExpiryMenuOpen(false);
+      setEditingFromExpiry(null);
+      return;
+    }
+
+    try {
+      setChanging(true);
+
+      const resp = await fetch(`${API_BASE_URL}/user_products/changeBucketExpiry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          productId: Number(productId),
+          storeId: storeId === "" ? null : Number(storeId),
+          fromExpiryDate: fromExpiryNorm,
+          toExpiryDate: toExpiryNorm,
+        }),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("changeBucketExpiry failed:", resp.status, txt);
+        Alert.alert("Error", "Could not change expiry for this bucket.");
+        return;
+      }
+
+      setExpiryMenuOpen(false);
+      setEditingFromExpiry(null);
+      await fetchBuckets();
+    } catch (e) {
+      console.error("changeBucketExpiry error:", e);
+      Alert.alert("Error", "Could not change expiry for this bucket.");
+    } finally {
+      setChanging(false);
+    }
+  };
+
+  const headerText = useMemo(() => {
+    const p = params.productName ?? "Product";
+    return p;
+  }, [params.productName]);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{params.productName ?? "Product"}</Text>
+      <Text style={styles.title}>{headerText}</Text>
       <Text style={styles.subtitle}>Store: {storeLabel}</Text>
 
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -178,7 +283,11 @@ export default function ExpiryBuckets() {
       {loading ? (
         <ActivityIndicator size="large" />
       ) : (
-        <View style={{ width: "100%", marginTop: 12 }}>
+        <ScrollView
+          style={{ width: "100%", marginTop: 12 }}
+          contentContainerStyle={{ paddingBottom: 30 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.overrideCard}>
             <Text style={styles.overrideTitle}>Expiry notification override</Text>
             <Text style={styles.overrideHint}>
@@ -202,38 +311,116 @@ export default function ExpiryBuckets() {
             <View key={`${String(b.expiry_date)}-${i}`} style={styles.bucketRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.bucketTitle}>
-                  {b.expiry_date ? `Expires: ${b.expiry_date}` : "No expiry date"}
+                  {normalizeExpiryForApi(b.expiry_date)
+                    ? `Expires: ${normalizeExpiryForApi(b.expiry_date)}`
+                    : "No expiry date"}
                 </Text>
                 <Text style={styles.bucketQty}>Qty: {b.quantity}</Text>
+
+                <TouchableOpacity
+                  style={styles.changeBtn}
+                  onPress={() => openChangeExpiry(normalizeExpiryForApi(b.expiry_date))}
+                >
+                  <Text style={styles.changeBtnText}>Change date</Text>
+                </TouchableOpacity>
               </View>
 
               <TouchableOpacity
                 style={[styles.ctrlBtn, b.quantity <= 0 && styles.ctrlBtnDisabled]}
-                onPress={() => removeFromBucket(b.expiry_date)}
+                onPress={() => removeFromBucket(normalizeExpiryForApi(b.expiry_date))}
                 disabled={b.quantity <= 0}
               >
                 <Text style={styles.ctrlBtnText}>−</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.ctrlBtn} onPress={() => addToBucket(b.expiry_date)}>
+              <TouchableOpacity
+                style={styles.ctrlBtn}
+                onPress={() => addToBucket(normalizeExpiryForApi(b.expiry_date))}
+              >
                 <Text style={styles.ctrlBtnText}>+</Text>
               </TouchableOpacity>
             </View>
           ))}
+        </ScrollView>
+      )}
 
-          <View style={styles.addNewRow}>
-            <TextInput
-              value={newExpiry}
-              onChangeText={setNewExpiry}
-              placeholder="New expiry YYYY-MM-DD (blank = no expiry)"
-              style={styles.input}
+      <Modal
+        visible={expiryMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (changing) return;
+          setExpiryMenuOpen(false);
+          setEditingFromExpiry(null);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Change expiry for this bucket</Text>
+            <Text style={styles.modalSub}>
+              Current: {normalizeExpiryForApi(editingFromExpiry) ? normalizeExpiryForApi(editingFromExpiry) : "No expiry date"}
+            </Text>
+
+            <Text style={styles.quickTitle}>Quick set</Text>
+            <View style={styles.quickRow}>
+              {[1, 2, 3, 5, 7, 14].map((d) => (
+                <TouchableOpacity
+                  key={String(d)}
+                  style={styles.quickBtn}
+                  onPress={() =>
+                    changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))
+                  }
+                  disabled={changing}
+                >
+                  <Text style={styles.quickBtnText}>{d}d</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={[styles.quickBtn, { backgroundColor: "#eee" }]}
+                onPress={() => changeBucketExpiryTo(null)}
+                disabled={changing}
+              >
+                <Text style={[styles.quickBtnText, { color: "#b00020" }]}>No expiry</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ height: 12 }} />
+
+            <FlatList
+              data={dateOptions}
+              keyExtractor={(it) => it.key}
+              style={{ maxHeight: 320 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalRow}
+                  onPress={() => changeBucketExpiryTo(item.value)}
+                  disabled={changing}
+                >
+                  <Text style={styles.modalRowText}>{item.label}</Text>
+                </TouchableOpacity>
+              )}
             />
-            <TouchableOpacity style={styles.addBtn} onPress={addNewExpiryBucket}>
-              <Text style={styles.addBtnText}>Add</Text>
+
+            <TouchableOpacity
+              style={[styles.modalClose, changing && { opacity: 0.6 }]}
+              onPress={() => {
+                if (changing) return;
+                setExpiryMenuOpen(false);
+                setEditingFromExpiry(null);
+              }}
+              disabled={changing}
+            >
+              <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
+
+            {changing && (
+              <View style={{ marginTop: 10 }}>
+                <ActivityIndicator />
+              </View>
+            )}
           </View>
         </View>
-      )}
+      </Modal>
     </View>
   );
 }
@@ -288,6 +475,16 @@ const styles = StyleSheet.create({
   bucketTitle: { color: "#333", fontWeight: "800" },
   bucketQty: { color: "#555", marginTop: 4 },
 
+  changeBtn: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    backgroundColor: "#eee",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  changeBtnText: { fontWeight: "900", color: "#333" },
+
   ctrlBtn: {
     backgroundColor: "#eee",
     borderRadius: 10,
@@ -298,20 +495,40 @@ const styles = StyleSheet.create({
   ctrlBtnDisabled: { opacity: 0.5 },
   ctrlBtnText: { fontSize: 18, fontWeight: "900", color: "#333" },
 
-  addNewRow: { flexDirection: "row", marginTop: 8 },
-  input: {
+  modalBackdrop: {
     flex: 1,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  addBtn: {
-    marginLeft: 10,
-    backgroundColor: "#ffcc00",
-    borderRadius: 10,
-    paddingHorizontal: 14,
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
+    padding: 16,
   },
-  addBtnText: { fontWeight: "900", color: "#333" },
+  modalCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14 },
+  modalTitle: { fontWeight: "900", fontSize: 16, color: "#333" },
+  modalSub: { marginTop: 6, color: "#666", fontWeight: "700" },
+
+  quickTitle: { marginTop: 12, fontWeight: "800", color: "#333" },
+  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  quickBtn: {
+    backgroundColor: "#ffcc00",
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  quickBtnText: { fontWeight: "900", color: "#333" },
+
+  modalRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalRowText: { color: "#333", fontWeight: "700" },
+
+  modalClose: {
+    marginTop: 12,
+    backgroundColor: "#663399",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  modalCloseText: { color: "#fff", fontWeight: "900" },
 });
