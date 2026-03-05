@@ -235,6 +235,17 @@ export default function ShoppingListDetail() {
           ))}
         </ScrollView>
       )}
+      <TouchableOpacity
+        style={styles.addBtn}
+        onPress={() =>
+          router.push({
+            pathname: "/ShoppingListAddKnownToFridge",
+            params: { user_id: String(userId), listId: String(listId) },
+          })
+        }
+      >
+        <Text style={styles.addText}>Add to fridge</Text>
+      </TouchableOpacity>
     </View>
   );
 }

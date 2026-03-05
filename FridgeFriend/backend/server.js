@@ -2126,6 +2126,115 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
   }
 });
 
+app.post("/user/:userId/shoppingLists/:listId/addToInventory", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const listId = Number(req.params.listId);
+  const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+
+  const cleanIds = itemIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(listId) || listId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or listId" });
+  }
+
+  if (!cleanIds.length) {
+    return res.json({ added_inventory_rows: 0 });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Load selected items (only those belonging to this list + user)
+    const itemsRes = await client.query(
+      `
+      SELECT id, product_id, store_id, quantity
+      FROM shopping_list_items
+      WHERE list_id = $1
+        AND id = ANY($2::int[])
+        AND product_id IS NOT NULL
+      `,
+      [listId, cleanIds]
+    );
+
+    let added = 0;
+
+    for (const row of itemsRes.rows) {
+      const productId = Number(row.product_id);
+      const storeId = row.store_id == null ? null : Number(row.store_id);
+      const qty = Math.max(1, Number(row.quantity || 1));
+
+      for (let i = 0; i < qty; i++) {
+        // if your /user/addProduct already handles "No store" fallback, you could call that route instead.
+        await client.query(
+          `
+          INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
+          VALUES ($1, $2, $3, NULL, 0, false)
+          `,
+          [userId, productId, storeId]
+        );
+        added++;
+      }
+    }
+
+    await client.query("COMMIT");
+    return res.json({ added_inventory_rows: added });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("addToInventory error:", e);
+    return res.status(500).json({ message: "Server error adding to inventory" });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/user/:userId/shoppingLists/:listId/items/:itemId/attachProduct", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const listId = Number(req.params.listId);
+  const itemId = Number(req.params.itemId);
+
+  const productId = Number(req.body?.productId);
+  const storeIdRaw = req.body?.storeId;
+  const storeId =
+    storeIdRaw === undefined || storeIdRaw === null || String(storeIdRaw).trim() === ""
+      ? null
+      : Number(storeIdRaw);
+
+  if (
+    !Number.isInteger(userId) || userId <= 0 ||
+    !Number.isInteger(listId) || listId <= 0 ||
+    !Number.isInteger(itemId) || itemId <= 0 ||
+    !Number.isInteger(productId) || productId <= 0
+  ) {
+    return res.status(400).json({ message: "Invalid ids" });
+  }
+
+  try {
+    // Ensure item belongs to list
+    const updated = await pool.query(
+      `
+      UPDATE shopping_list_items
+      SET
+        product_id = $1,
+        custom_name = NULL,
+        store_id = COALESCE($2, store_id)
+      WHERE id = $3 AND list_id = $4
+      RETURNING id
+      `,
+      [productId, storeId, itemId, listId]
+    );
+
+    if (!updated.rowCount) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    return res.json({ attached: true });
+  } catch (e) {
+    console.error("attachProduct error:", e);
+    return res.status(500).json({ message: "Server error attaching product" });
+  }
+});
+
 app.put("/user/:userId/shoppingLists/:listId/items/:itemId", async (req, res) => {
   const userId = Number(req.params.userId);
   const listId = Number(req.params.listId);
