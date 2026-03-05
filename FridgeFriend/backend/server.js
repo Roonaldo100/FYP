@@ -3272,6 +3272,164 @@ app.post("/user_products/changeBucketExpiry", async (req, res) => {
 });
 
 /**
+ * POST: Update store for a grouped user product (moves all rows), and optionally set last price
+ * Body: { userId, productId, fromStoreId, toStoreId, lastPrice }
+ *
+ * Notes:
+ * - fromStoreId and toStoreId can be null (represents "No store" grouping)
+ * - Changing store will automatically regroup because the rows are moved
+ * - lastPrice is optional; if provided it is upserted into user_product_prices for the NEW store
+ */
+app.post("/user_products/updateStoreAndPrice", async (req, res) => {
+  const { userId, productId, fromStoreId, toStoreId, lastPrice } = req.body;
+
+  const uid = Number(userId);
+  const pid = Number(productId);
+
+  const fromSid =
+    fromStoreId === undefined || fromStoreId === null || String(fromStoreId) === ""
+      ? null
+      : Number(fromStoreId);
+
+  const toSid =
+    toStoreId === undefined || toStoreId === null || String(toStoreId) === ""
+      ? null
+      : Number(toStoreId);
+
+  if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(pid) || pid <= 0) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+
+  if (fromSid !== null && (!Number.isFinite(fromSid) || fromSid <= 0)) {
+    return res.status(400).json({ message: "Invalid fromStoreId" });
+  }
+  if (toSid !== null && (!Number.isFinite(toSid) || toSid <= 0)) {
+    return res.status(400).json({ message: "Invalid toStoreId" });
+  }
+
+  let priceToSet = null;
+  let hasPrice = false;
+
+  if (lastPrice !== undefined && lastPrice !== null && String(lastPrice).trim() !== "") {
+    const n = Number(lastPrice);
+    if (!Number.isFinite(n) || n < 0) {
+      return res.status(400).json({ message: "Invalid lastPrice" });
+    }
+    priceToSet = n;
+    hasPrice = true;
+  }
+
+  // Validate destination store belongs to user or is system, if not null
+  if (toSid !== null) {
+    try {
+      const storeOk = await pool.query(
+        `
+        SELECT id
+        FROM stores
+        WHERE id = $1 AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [toSid, uid]
+      );
+      if (!storeOk.rows.length) {
+        return res.status(400).json({ message: "Invalid store for this user" });
+      }
+    } catch (e) {
+      console.error("updateStoreAndPrice store validation error:", e);
+      return res.status(500).json({ message: "Server error validating store" });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Ensure (product_id, store_id) exists in product_store to satisfy FK on user_products
+    // If it's missing, the UPDATE below will fail with a FK violation.
+    if (toSid !== null) {
+      await client.query(
+        `
+        INSERT INTO product_store (product_id, store_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        `,
+        [pid, toSid]
+      );
+    }
+
+    // Move ALL inventory rows for this product+fromStore to new store
+    const moved = await client.query(
+      `
+      UPDATE user_products
+      SET store_id = $1
+      WHERE user_id = $2
+        AND product_id = $3
+        AND store_id IS NOT DISTINCT FROM $4
+      `,
+      [toSid, uid, pid, fromSid]
+    );
+
+    // Upsert price for the NEW store (if provided)
+    if (hasPrice) {
+      const upd = await client.query(
+        `
+        UPDATE user_product_prices
+        SET last_price = $4,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = $1
+          AND product_id = $2
+          AND store_id IS NOT DISTINCT FROM $3
+        `,
+        [uid, pid, toSid, priceToSet]
+      );
+
+      if (upd.rowCount === 0) {
+        await client.query(
+          `
+          INSERT INTO user_product_prices (user_id, product_id, store_id, last_price, updated_at)
+          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+          `,
+          [uid, pid, toSid, priceToSet]
+        );
+      }
+    }
+
+    let storeName = null;
+    if (toSid !== null) {
+      const sn = await client.query(`SELECT name FROM stores WHERE id = $1 LIMIT 1`, [toSid]);
+      storeName = sn.rows[0]?.name ?? null;
+    }
+
+    await client.query("COMMIT");
+
+    return res.json({
+      updated: true,
+      moved_rows: moved.rowCount,
+      store_id: toSid,
+      store_name: storeName,
+      price_updated: hasPrice,
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+
+    // Provide a clearer message for FK issues (common cause here is product_store missing)
+    const msg = String(e?.message || "");
+    if (msg.includes("fk_user_product_store") || msg.includes("violates foreign key constraint")) {
+      console.error("updateStoreAndPrice FK error:", e);
+      return res.status(400).json({
+        message:
+          "Cannot move to that store for this product (missing product-store link).",
+      });
+    }
+
+    console.error("updateStoreAndPrice error:", e);
+    return res.status(500).json({ message: "Server error updating store/price" });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * GET: Settings
  */
 app.get("/user/:userId/settings", async (req, res) => {

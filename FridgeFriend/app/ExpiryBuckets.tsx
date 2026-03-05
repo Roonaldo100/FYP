@@ -19,6 +19,8 @@ type Bucket = {
   quantity: number;
 };
 
+type Store = { id: number; name: string };
+
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -63,9 +65,7 @@ function normalizeExpiryForApi(v: string | null): string | null {
   const s = String(v).trim();
   if (!s) return null;
 
-  // If backend returned ISO/timestamp-like, slice date part
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-
   return s;
 }
 
@@ -74,6 +74,14 @@ function parseNonNegativeInt(s: string): number | null {
   if (!t) return null;
   const n = Number(t);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return null;
+  return n;
+}
+
+function parseNonNegativeMoney(s: string): number | null {
+  const t = s.trim();
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
   return n;
 }
 
@@ -94,6 +102,7 @@ export default function ExpiryBuckets() {
 
   const [loading, setLoading] = useState(false);
   const [buckets, setBuckets] = useState<Bucket[]>([]);
+
   const storeLabel = useMemo(
     () => params.storeName ?? "No store",
     [params.storeName]
@@ -112,6 +121,16 @@ export default function ExpiryBuckets() {
   const [qtyCurrent, setQtyCurrent] = useState<number>(0);
   const [qtyInput, setQtyInput] = useState<string>("");
   const [qtySaving, setQtySaving] = useState(false);
+
+  // Edit store/price modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(
+    storeId === "" ? null : Number(storeId)
+  );
+  const [priceText, setPriceText] = useState<string>("");
+  const [savingMeta, setSavingMeta] = useState(false);
 
   const dateOptions = useMemo(() => makeNextDaysOptions(60), []);
 
@@ -255,7 +274,6 @@ export default function ExpiryBuckets() {
     const fromExpiryNorm = normalizeExpiryForApi(editingFromExpiry);
     const toExpiryNorm = normalizeExpiryForApi(toExpiry);
 
-    // If user picked the same value, do nothing
     if ((fromExpiryNorm ?? null) === (toExpiryNorm ?? null)) {
       setExpiryMenuOpen(false);
       setEditingFromExpiry(null);
@@ -328,9 +346,6 @@ export default function ExpiryBuckets() {
         await removeFromBucket(expiry, diff);
       } else {
         const diff = desired - current;
-
-        // Minimal-change approach: call addProduct diff times.
-        // This is safe and requires no new backend endpoint.
         for (let i = 0; i < diff; i++) {
           const resp = await fetch(`${API_BASE_URL}/user/addProduct`, {
             method: "POST",
@@ -350,7 +365,6 @@ export default function ExpiryBuckets() {
             throw new Error("Add failed");
           }
         }
-
         await fetchBuckets();
       }
 
@@ -364,6 +378,121 @@ export default function ExpiryBuckets() {
     }
   };
 
+  const loadStores = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      setStoresLoading(true);
+      const res = await fetch(`${API_BASE_URL}/stores?userId=${encodeURIComponent(userId)}`);
+      const data = await res.json();
+      setStores(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Stores fetch error:", e);
+      setStores([]);
+    } finally {
+      setStoresLoading(false);
+    }
+  }, [userId]);
+
+  const loadCurrentPrice = useCallback(async (sid: number | null) => {
+    if (!userId || !productId) return;
+
+    try {
+      const url =
+        `${API_BASE_URL}/user/${encodeURIComponent(userId)}/product/${encodeURIComponent(
+          productId
+        )}/lastPrice?storeId=${sid ?? ""}`;
+
+      const res = await fetch(url);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (data.last_price !== null && data.last_price !== undefined) {
+        setPriceText(String(data.last_price));
+      } else {
+        setPriceText("");
+      }
+    } catch (e) {
+      console.error("Fetch last price error:", e);
+    }
+  }, [userId, productId]);
+
+  const openEditMeta = async () => {
+    const currentSid = storeId === "" ? null : Number(storeId);
+    setSelectedStoreId(currentSid);
+
+    await loadStores();
+    await loadCurrentPrice(currentSid);
+
+    setEditModalOpen(true);
+  };
+
+  const saveEditMeta = async () => {
+    if (!userId || !productId) return;
+
+    const fromSid = storeId === "" ? null : Number(storeId);
+    const toSid = selectedStoreId;
+
+    const priceMaybe = priceText.trim() ? parseNonNegativeMoney(priceText) : null;
+    if (priceText.trim() && priceMaybe === null) {
+      Alert.alert("Invalid price", "Enter a valid number ≥ 0 (or leave blank).");
+      return;
+    }
+
+    // If nothing changed, just close
+    if ((fromSid ?? null) === (toSid ?? null) && priceText.trim() === "") {
+      setEditModalOpen(false);
+      return;
+    }
+
+    try {
+      setSavingMeta(true);
+
+      const resp = await fetch(`${API_BASE_URL}/user_products/updateStoreAndPrice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          productId: Number(productId),
+          fromStoreId: fromSid,
+          toStoreId: toSid,
+          lastPrice: priceText.trim() ? priceMaybe : null,
+        }),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("updateStoreAndPrice failed:", resp.status, txt);
+        Alert.alert("Error", "Could not update store/price.");
+        return;
+      }
+
+      const data = await resp.json();
+
+      setEditModalOpen(false);
+
+      // Refresh the new group, and update route params so the grouping view matches new store
+      const newStoreIdStr = data.store_id === null ? "" : String(data.store_id);
+      const newStoreName = data.store_id === null ? "No store" : (data.store_name ?? "Store");
+
+      router.replace({
+        pathname: "/ExpiryBuckets",
+        params: {
+          user_id: String(userId),
+          productId: String(productId),
+          productName: params.productName ?? "Product",
+          storeId: newStoreIdStr,
+          storeName: newStoreName,
+        },
+      });
+    } catch (e) {
+      console.error("saveEditMeta error:", e);
+      Alert.alert("Error", "Could not update store/price.");
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
   const headerText = useMemo(() => {
     const p = params.productName ?? "Product";
     return p;
@@ -374,9 +503,15 @@ export default function ExpiryBuckets() {
       <Text style={styles.title}>{headerText}</Text>
       <Text style={styles.subtitle}>Store: {storeLabel}</Text>
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backBtnText}>← Back</Text>
-      </TouchableOpacity>
+      <View style={styles.headerButtonsRow}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backBtnText}>← Back</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.editBtn} onPress={openEditMeta}>
+          <Text style={styles.editBtnText}>Edit store/price</Text>
+        </TouchableOpacity>
+      </View>
 
       {loading ? (
         <ActivityIndicator size="large" />
@@ -447,10 +582,7 @@ export default function ExpiryBuckets() {
                   <Text style={styles.ctrlBtnText}>−</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.ctrlBtn}
-                  onPress={() => addToBucket(expNorm)}
-                >
+                <TouchableOpacity style={styles.ctrlBtn} onPress={() => addToBucket(expNorm)}>
                   <Text style={styles.ctrlBtnText}>+</Text>
                 </TouchableOpacity>
               </View>
@@ -483,9 +615,7 @@ export default function ExpiryBuckets() {
                 <TouchableOpacity
                   key={String(d)}
                   style={styles.quickBtn}
-                  onPress={() =>
-                    changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))
-                  }
+                  onPress={() => changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))}
                   disabled={changing}
                 >
                   <Text style={styles.quickBtnText}>{d}d</Text>
@@ -572,11 +702,7 @@ export default function ExpiryBuckets() {
               onPress={saveSetQuantity}
               disabled={qtySaving}
             >
-              {qtySaving ? (
-                <ActivityIndicator />
-              ) : (
-                <Text style={styles.saveQtyBtnText}>Save</Text>
-              )}
+              {qtySaving ? <ActivityIndicator /> : <Text style={styles.saveQtyBtnText}>Save</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -593,6 +719,89 @@ export default function ExpiryBuckets() {
           </View>
         </View>
       </Modal>
+
+      {/* Edit store/price modal */}
+      <Modal
+        visible={editModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (savingMeta) return;
+          setEditModalOpen(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit store and last price</Text>
+
+            <Text style={styles.modalSub}>Store</Text>
+
+            {storesLoading ? (
+              <ActivityIndicator />
+            ) : (
+              <View style={{ marginTop: 8 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.storeChoice,
+                    selectedStoreId === null && styles.storeChoiceSelected,
+                  ]}
+                  onPress={() => setSelectedStoreId(null)}
+                  disabled={savingMeta}
+                >
+                  <Text style={styles.storeChoiceText}>No store</Text>
+                </TouchableOpacity>
+
+                <FlatList
+                  data={stores}
+                  keyExtractor={(s) => String(s.id)}
+                  style={{ maxHeight: 220 }}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={[
+                        styles.storeChoice,
+                        selectedStoreId === item.id && styles.storeChoiceSelected,
+                      ]}
+                      onPress={() => setSelectedStoreId(item.id)}
+                      disabled={savingMeta}
+                    >
+                      <Text style={styles.storeChoiceText}>{item.name}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            )}
+
+            <Text style={[styles.modalSub, { marginTop: 12 }]}>Last price (optional)</Text>
+            <TextInput
+              value={priceText}
+              onChangeText={setPriceText}
+              placeholder="e.g. 2.49"
+              keyboardType="decimal-pad"
+              style={styles.priceInput}
+              editable={!savingMeta}
+            />
+
+            <TouchableOpacity
+              style={[styles.saveQtyBtn, savingMeta && { opacity: 0.6 }]}
+              onPress={saveEditMeta}
+              disabled={savingMeta}
+            >
+              {savingMeta ? <ActivityIndicator /> : <Text style={styles.saveQtyBtnText}>Save</Text>}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalClose, savingMeta && { opacity: 0.6 }]}
+              onPress={() => {
+                if (savingMeta) return;
+                setEditModalOpen(false);
+              }}
+              disabled={savingMeta}
+            >
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -602,14 +811,23 @@ const styles = StyleSheet.create({
   title: { color: "white", fontSize: 22, fontWeight: "800" },
   subtitle: { color: "white", marginTop: 6, opacity: 0.9 },
 
+  headerButtonsRow: { flexDirection: "row", gap: 10, marginTop: 10, alignItems: "center" },
+
   backBtn: {
-    marginTop: 10,
     alignSelf: "flex-start",
     backgroundColor: "#fff",
     padding: 10,
     borderRadius: 10,
   },
   backBtnText: { color: "#663399", fontWeight: "800" },
+
+  editBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: "#ffcc00",
+    padding: 10,
+    borderRadius: 10,
+  },
+  editBtnText: { color: "#333", fontWeight: "900" },
 
   overrideCard: {
     backgroundColor: "#fff",
@@ -723,6 +941,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
+  priceInput: {
+    marginTop: 10,
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+
   saveQtyBtn: {
     marginTop: 12,
     backgroundColor: "#ffcc00",
@@ -740,4 +966,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalCloseText: { color: "#fff", fontWeight: "900" },
+
+  storeChoice: {
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  storeChoiceSelected: {
+    borderWidth: 2,
+    borderColor: "#663399",
+  },
+  storeChoiceText: { fontWeight: "900", color: "#333" },
 });
