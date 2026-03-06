@@ -1,4 +1,8 @@
-import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
+import {
+  BarcodeScanningResult,
+  CameraView,
+  useCameraPermissions,
+} from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -11,9 +15,7 @@ import {
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { 
-  registerForLocalNotificationsAsync
-} from "../lib/notifications";
+import { registerForLocalNotificationsAsync } from "../lib/notifications";
 
 export default function BarcodeScanner() {
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
@@ -54,7 +56,7 @@ export default function BarcodeScanner() {
       const response = await fetch(`${API_BASE_URL}/scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ barcode }),
+        body: JSON.stringify({ barcode, userId: Number(user_id) }),
       });
 
       const data = await response.json();
@@ -80,26 +82,22 @@ export default function BarcodeScanner() {
         return;
       }
 
-      Alert.alert(
-        "Product Found",
-        `Product: ${data.product_name}`,
-        [
-          { text: "Cancel", onPress: () => setScanned(false), style: "cancel" },
-          {
-            text: "Continue",
-            onPress: () => {
-              router.push({
-                pathname: "/AddItemToFridge",
-                params: {
-                  user_id: String(user_id),
-                  product_id: String(data.product_id),
-                  product_name: String(data.product_name ?? "Unnamed Product"),
-                },
-              });
-            },
+      Alert.alert("Product Found", `Product: ${data.product_name}`, [
+        { text: "Cancel", onPress: () => setScanned(false), style: "cancel" },
+        {
+          text: "Continue",
+          onPress: () => {
+            router.push({
+              pathname: "/AddItemToFridge",
+              params: {
+                user_id: String(user_id),
+                product_id: String(data.product_id),
+                product_name: String(data.product_name ?? "Unnamed Product"),
+              },
+            });
           },
-        ]
-      );
+        },
+      ]);
     } catch (err) {
       console.error(err);
       Alert.alert("Error", "Unable to process barcode.");

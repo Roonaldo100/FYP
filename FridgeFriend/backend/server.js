@@ -51,6 +51,20 @@ function parseOptionalUserId(raw) {
   return n;
 }
 
+function parseOptionalStoreId(raw) {
+  if (raw === undefined || raw === null) return null;
+  if (Array.isArray(raw)) raw = raw[0];
+
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  const n = Number(s);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    throw new HttpError(400, "Invalid storeId");
+  }
+  return n;
+}
+
 function cleanListName(name) {
   const s = String(name || "").trim();
   if (!s) return null;
@@ -2753,95 +2767,123 @@ app.post("/scan", async (req, res) => {
   const { barcode, userId } = req.body;
   const uid = parseOptionalUserId(userId);
 
-  if (!barcode) {
+  const cleanBarcode = String(barcode ?? "").trim();
+  if (!cleanBarcode) {
     return res.status(400).json({ found: false, message: "Missing barcode" });
   }
 
   try {
-    let localProduct;
-
-    if (uid) {
-      localProduct = await pool.query(
-        `
-        SELECT id, name
-        FROM products
-        WHERE barcode = $1
-          AND (is_system = true OR owner_user_id = $2)
-        LIMIT 1
-        `,
-        [barcode, uid],
-      );
-    } else {
-      localProduct = await pool.query(
-        `
-        SELECT id, name
-        FROM products
-        WHERE barcode = $1
-          AND is_system = true
-        LIMIT 1
-        `,
-        [barcode],
-      );
-    }
+    // ----------------------------
+    // 1) Check local DB (scoped to user if provided)
+    // ----------------------------
+    const localProduct = uid
+      ? await pool.query(
+          `
+          SELECT id, name
+          FROM products
+          WHERE barcode = $1
+            AND (is_system = true OR owner_user_id = $2)
+          LIMIT 1
+          `,
+          [cleanBarcode, uid],
+        )
+      : await pool.query(
+          `
+          SELECT id, name
+          FROM products
+          WHERE barcode = $1
+            AND is_system = true
+          LIMIT 1
+          `,
+          [cleanBarcode],
+        );
 
     if (localProduct.rows.length > 0) {
       const product = localProduct.rows[0];
 
-      const storeJoin = await pool.query(
-        `
-        SELECT s.id AS store_id, s.name AS store_name
-        FROM product_store ps
-        JOIN stores s ON s.id = ps.store_id
-        WHERE ps.product_id = $1
-        ORDER BY s.name ASC
-        LIMIT 1
-        `,
-        [product.id],
-      );
+      // Prefer returning a "best" store for convenience, but ONLY stores visible to user
+      const storeJoin = uid
+        ? await pool.query(
+            `
+            SELECT s.id AS store_id, s.name AS store_name
+            FROM product_store ps
+            JOIN stores s ON s.id = ps.store_id
+            WHERE ps.product_id = $1
+              AND (s.is_system = true OR s.owner_user_id = $2)
+            ORDER BY s.is_system DESC, s.name ASC
+            LIMIT 1
+            `,
+            [product.id, uid],
+          )
+        : await pool.query(
+            `
+            SELECT s.id AS store_id, s.name AS store_name
+            FROM product_store ps
+            JOIN stores s ON s.id = ps.store_id
+            WHERE ps.product_id = $1
+              AND s.is_system = true
+            ORDER BY s.name ASC
+            LIMIT 1
+            `,
+            [product.id],
+          );
 
-      if (storeJoin.rows.length > 0) {
-        return res.json({
-          found: true,
-          product_id: product.id,
-          product_name: product.name,
-          store_id: storeJoin.rows[0].store_id,
-          store_name: storeJoin.rows[0].store_name,
-        });
-      }
+      const storeRow = storeJoin.rows[0] || null;
 
       return res.json({
         found: true,
-        product_id: product.id,
-        product_name: product.name,
-        store_id: null,
-        store_name: null,
+        product_id: Number(product.id),
+        product_name: String(product.name),
+        store_id: storeRow ? Number(storeRow.store_id) : null,
+        store_name: storeRow ? String(storeRow.store_name) : null,
+        needs_classification: false, // critical: never route to classification for existing products
+        barcode: cleanBarcode,
       });
     }
 
+    // ----------------------------
+    // 2) Not in DB -> OpenFoodFacts
+    // ----------------------------
     const offRes = await fetch(
-      `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`,
+      `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(
+        cleanBarcode,
+      )}.json`,
     );
+
+    if (!offRes.ok) {
+      const txt = await offRes.text().catch(() => "");
+      console.warn("OpenFoodFacts non-OK:", offRes.status, txt);
+      return res.json({
+        found: false,
+        message: "Barcode lookup failed",
+        barcode: cleanBarcode,
+      });
+    }
+
     const offData = await offRes.json();
 
-    if (!offData || offData.status === 0) return res.json({ found: false });
+    if (!offData || offData.status === 0) {
+      return res.json({ found: false, barcode: cleanBarcode });
+    }
 
-    const name =
+    const name = String(
       offData.product?.product_name ||
-      offData.product?.generic_name ||
-      "Unnamed Product";
+        offData.product?.generic_name ||
+        "Unnamed Product",
+    ).trim();
 
     return res.json({
       found: true,
       product_id: null,
-      product_name: name,
+      product_name: name || "Unnamed Product",
       store_id: null,
       store_name: null,
-      needs_classification: true,
-      barcode,
+      needs_classification: true, // only true for unknown products
+      barcode: cleanBarcode,
     });
   } catch (err) {
     console.error("Scan error:", err);
-    res
+    return res
       .status(500)
       .json({ found: false, message: "Server error while scanning" });
   }
@@ -3193,8 +3235,26 @@ app.post("/user_products/setExpiryPeriod", async (req, res) => {
  */
 
 app.get("/user/:userId/product/:productId/lastPrice", async (req, res) => {
-  const { userId, productId } = req.params;
-  const { storeId } = req.query;
+  const userId = Number(req.params.userId);
+  const productId = Number(req.params.productId);
+
+  if (
+    !Number.isInteger(userId) ||
+    userId <= 0 ||
+    !Number.isInteger(productId) ||
+    productId <= 0
+  ) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+
+  let storeId = null;
+  try {
+    storeId = parseOptionalStoreId(req.query.storeId);
+  } catch (e) {
+    return res
+      .status(e.status || 400)
+      .json({ message: e.message || "Invalid storeId" });
+  }
 
   try {
     const r = await pool.query(
@@ -3206,12 +3266,10 @@ app.get("/user/:userId/product/:productId/lastPrice", async (req, res) => {
         AND store_id IS NOT DISTINCT FROM $3
       LIMIT 1
       `,
-      [userId, productId, storeId ?? null],
+      [userId, productId, storeId],
     );
 
-    res.json({
-      last_price: r.rows.length ? r.rows[0].last_price : null,
-    });
+    res.json({ last_price: r.rows.length ? r.rows[0].last_price : null });
   } catch (err) {
     console.error("Get last price error:", err);
     res.status(500).json({ message: "Server error fetching last price" });
