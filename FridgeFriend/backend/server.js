@@ -857,6 +857,49 @@ async function upsertAndSaveRecipeForUser({
   }
 }
 
+async function bumpProductUsage(clientOrPool, userId, productId, source) {
+  // source: "shopping" | "inventory"
+  const shoppingDelta = source === "shopping" ? 1 : 0;
+  const inventoryDelta = source === "inventory" ? 1 : 0;
+
+  await clientOrPool.query(
+    `
+    INSERT INTO user_product_usage (
+      user_id,
+      product_id,
+      shopping_adds,
+      inventory_adds,
+      last_shopping_at,
+      last_inventory_at,
+      last_used_at
+    )
+    VALUES (
+      $1,
+      $2,
+      $3,
+      $4,
+      CASE WHEN $3 = 1 THEN now() ELSE NULL END,
+      CASE WHEN $4 = 1 THEN now() ELSE NULL END,
+      now()
+    )
+    ON CONFLICT (user_id, product_id)
+    DO UPDATE SET
+      shopping_adds = user_product_usage.shopping_adds + EXCLUDED.shopping_adds,
+      inventory_adds = user_product_usage.inventory_adds + EXCLUDED.inventory_adds,
+      last_shopping_at = CASE
+        WHEN EXCLUDED.shopping_adds = 1 THEN now()
+        ELSE user_product_usage.last_shopping_at
+      END,
+      last_inventory_at = CASE
+        WHEN EXCLUDED.inventory_adds = 1 THEN now()
+        ELSE user_product_usage.last_inventory_at
+      END,
+      last_used_at = now()
+    `,
+    [userId, productId, shoppingDelta, inventoryDelta],
+  );
+}
+
 /**
  * -------------------------
  * RECIPES ROUTES
@@ -945,6 +988,121 @@ app.get("/products/search", async (req, res) => {
   } catch (e) {
     console.error("Product search error:", e);
     res.status(500).json({ message: "Server error searching products" });
+  }
+});
+
+/**
+ * GET: Frequently used items for a user
+ * GET /user/:userId/frequentItems?limit=40
+ *
+ * Returns products ranked by "usage" across:
+ * - user_products (inventory adds)
+ * - shopping_list_items (adds to shopping list)
+ *
+ * Notes:
+ * - Only returns products visible to the user (system or owner_user_id=user)
+ * - Only returns stores visible to the user (system or owner)
+ */
+app.get("/user/:userId/frequentItems", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const limitRaw = req.query.limit;
+  const limit = Math.min(Math.max(Number(limitRaw ?? 40), 1), 100);
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: "Invalid userId" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      WITH inv AS (
+        SELECT up.product_id, COUNT(*)::int AS inv_count
+        FROM user_products up
+        WHERE up.user_id = $1
+        GROUP BY up.product_id
+      ),
+      sli AS (
+        SELECT sli.product_id, SUM(sli.quantity)::int AS list_count
+        FROM shopping_list_items sli
+        JOIN shopping_lists sl ON sl.id = sli.list_id
+        WHERE sl.user_id = $1
+          AND sli.product_id IS NOT NULL
+        GROUP BY sli.product_id
+      ),
+      combined AS (
+        SELECT
+          COALESCE(inv.product_id, sli.product_id) AS product_id,
+          COALESCE(inv.inv_count, 0) AS inv_count,
+          COALESCE(sli.list_count, 0) AS list_count,
+          (COALESCE(inv.inv_count, 0) + COALESCE(sli.list_count, 0)) AS total_count
+        FROM inv
+        FULL OUTER JOIN sli ON sli.product_id = inv.product_id
+      )
+      SELECT
+        c.product_id,
+        p.name AS product_name,
+        p.food_type,
+        c.inv_count,
+        c.list_count,
+        c.total_count,
+
+        -- Suggest a "most common store" (visible to user) from inventory
+        (
+          SELECT up2.store_id
+          FROM user_products up2
+          LEFT JOIN stores s ON s.id = up2.store_id
+          WHERE up2.user_id = $1
+            AND up2.product_id = c.product_id
+            AND (
+              up2.store_id IS NULL
+              OR s.is_system = true
+              OR s.owner_user_id = $1
+            )
+          GROUP BY up2.store_id
+          ORDER BY COUNT(*) DESC NULLS LAST, up2.store_id NULLS LAST
+          LIMIT 1
+        ) AS suggested_store_id,
+
+        (
+          SELECT s2.name
+          FROM user_products up3
+          JOIN stores s2 ON s2.id = up3.store_id
+          WHERE up3.user_id = $1
+            AND up3.product_id = c.product_id
+            AND (
+              s2.is_system = true
+              OR s2.owner_user_id = $1
+            )
+          GROUP BY s2.name
+          ORDER BY COUNT(*) DESC, s2.name ASC
+          LIMIT 1
+        ) AS suggested_store_name
+
+      FROM combined c
+      JOIN products p ON p.id = c.product_id
+      WHERE (p.is_system = true OR p.owner_user_id = $1)
+      ORDER BY c.total_count DESC, p.name ASC
+      LIMIT $2
+      `,
+      [userId, limit]
+    );
+
+    return res.json(
+      r.rows.map((row) => ({
+        product_id: Number(row.product_id),
+        product_name: String(row.product_name),
+        food_type: row.food_type != null ? Number(row.food_type) : null,
+        inv_count: Number(row.inv_count ?? 0),
+        list_count: Number(row.list_count ?? 0),
+        total_count: Number(row.total_count ?? 0),
+        suggested_store_id:
+          row.suggested_store_id === null ? null : Number(row.suggested_store_id),
+        suggested_store_name: row.suggested_store_name ?? null,
+      }))
+    );
+  } catch (e) {
+    console.error("frequentItems error:", e);
+    return res.status(500).json({ message: "Server error loading frequent items" });
   }
 });
 
@@ -2092,11 +2250,12 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
   const listId = Number(req.params.listId);
 
   const productId =
-    req.body?.productId != null ? Number(req.body.productId) : null;
-  const customName =
-    req.body?.customName != null
-      ? cleanCustomItemName(req.body.customName)
+    req.body?.productId != null && String(req.body.productId).trim() !== ""
+      ? Number(req.body.productId)
       : null;
+
+  const customName =
+    req.body?.customName != null ? cleanCustomItemName(req.body.customName) : null;
 
   const storeIdRaw = req.body?.storeId;
   const storeId =
@@ -2119,9 +2278,16 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
     return res.status(400).json({ message: "Provide productId or customName" });
   }
   if (productId && customName) {
-    return res
-      .status(400)
-      .json({ message: "Provide either productId OR customName, not both" });
+    return res.status(400).json({
+      message: "Provide either productId OR customName, not both",
+    });
+  }
+
+  if (productId !== null && (!Number.isInteger(productId) || productId <= 0)) {
+    return res.status(400).json({ message: "Invalid productId" });
+  }
+  if (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0)) {
+    return res.status(400).json({ message: "Invalid storeId" });
   }
 
   try {
@@ -2132,6 +2298,9 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
       await assertProductVisibleToUser(userId, productId);
     }
 
+    // ----------------------------
+    // 1) Try merge update (product)
+    // ----------------------------
     if (productId) {
       const upd = await pool.query(
         `
@@ -2147,15 +2316,26 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
       );
 
       if (upd.rows.length) {
-        await pool.query(
-          `UPDATE shopping_lists SET updated_at = now() WHERE id = $1`,
-          [listId],
-        );
-        return res
-          .status(200)
-          .json({ item_id: Number(upd.rows[0].id), merged: true });
+        await pool.query(`UPDATE shopping_lists SET updated_at = now() WHERE id = $1`, [
+          listId,
+        ]);
+
+        // Bump frequently used (shopping) for product items only
+        await bumpProductUsage(pool, userId, productId, "shopping");
+        // If you want bump by quantity instead, replace the line above with:
+        // for (let i = 0; i < quantity; i++) await bumpProductUsage(pool, userId, productId, "shopping");
+
+        return res.status(200).json({
+          item_id: Number(upd.rows[0].id),
+          merged: true,
+        });
       }
-    } else {
+    }
+
+    // ----------------------------
+    // 2) Try merge update (custom)
+    // ----------------------------
+    if (!productId) {
       const upd = await pool.query(
         `
         UPDATE shopping_list_items
@@ -2170,17 +2350,20 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
       );
 
       if (upd.rows.length) {
-        await pool.query(
-          `UPDATE shopping_lists SET updated_at = now() WHERE id = $1`,
-          [listId],
-        );
-        return res
-          .status(200)
-          .json({ item_id: Number(upd.rows[0].id), merged: true });
+        await pool.query(`UPDATE shopping_lists SET updated_at = now() WHERE id = $1`, [
+          listId,
+        ]);
+
+        return res.status(200).json({
+          item_id: Number(upd.rows[0].id),
+          merged: true,
+        });
       }
     }
 
-    // No existing row -> insert new
+    // ----------------------------
+    // 3) Insert new row
+    // ----------------------------
     const ins = await pool.query(
       `
       INSERT INTO shopping_list_items (list_id, product_id, custom_name, store_id, quantity)
@@ -2190,15 +2373,24 @@ app.post("/user/:userId/shoppingLists/:listId/items", async (req, res) => {
       [listId, productId, customName, storeId, quantity],
     );
 
-    await pool.query(
-      `UPDATE shopping_lists SET updated_at = now() WHERE id = $1`,
-      [listId],
-    );
+    await pool.query(`UPDATE shopping_lists SET updated_at = now() WHERE id = $1`, [
+      listId,
+    ]);
 
-    res.status(201).json({ item_id: Number(ins.rows[0].id), merged: false });
+    // Bump frequently used (shopping) for product items only
+    if (productId) {
+      await bumpProductUsage(pool, userId, productId, "shopping");
+      // quantity version:
+      // for (let i = 0; i < quantity; i++) await bumpProductUsage(pool, userId, productId, "shopping");
+    }
+
+    return res.status(201).json({
+      item_id: Number(ins.rows[0].id),
+      merged: false,
+    });
   } catch (e) {
     console.error("add shopping list item error:", e);
-    res
+    return res
       .status(e.status || 500)
       .json({ message: e.message || "Server error adding item" });
   }
@@ -3027,26 +3219,27 @@ app.post("/user/addProduct", async (req, res) => {
   const { userId, productId, storeId, expiryDate, price, expiryPeriodDays } =
     req.body;
 
-  if (!userId || !productId) {
+  const uid = parseOptionalUserId(userId);
+  const pid = Number(productId);
+
+  if (!uid || !Number.isInteger(pid) || pid <= 0) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
   try {
+    // ----------------------------
+    // Determine effective store id
+    // ----------------------------
     let effectiveStoreId = null;
 
-    if (
-      storeId === undefined ||
-      storeId === null ||
-      String(storeId).trim() === ""
-    ) {
+    if (storeId === undefined || storeId === null || String(storeId).trim() === "") {
       effectiveStoreId = await getNoStoreId();
     } else {
       const sid = Number(storeId);
-      if (!Number.isFinite(sid) || sid <= 0) {
+      if (!Number.isFinite(sid) || !Number.isInteger(sid) || sid <= 0) {
         return res.status(400).json({ message: "Invalid storeId" });
       }
 
-      const uid = parseOptionalUserId(userId);
       const storeOk = await pool.query(
         `
         SELECT id
@@ -3064,6 +3257,9 @@ app.post("/user/addProduct", async (req, res) => {
       effectiveStoreId = sid;
     }
 
+    // ----------------------------
+    // Expiry override validation
+    // ----------------------------
     let expiryPeriodToStore = 0;
     if (
       expiryPeriodDays !== undefined &&
@@ -3077,35 +3273,67 @@ app.post("/user/addProduct", async (req, res) => {
       expiryPeriodToStore = n;
     }
 
+    // ----------------------------
+    // Expiry date normalization
+    // ----------------------------
+    const exp =
+      expiryDate === undefined || expiryDate === null || String(expiryDate).trim() === ""
+        ? null
+        : String(expiryDate).trim();
+
+    if (exp !== null && !/^\d{4}-\d{2}-\d{2}$/.test(exp)) {
+      return res.status(400).json({ message: "Invalid expiryDate (YYYY-MM-DD or null)" });
+    }
+
+    // ----------------------------
+    // Price normalization
+    // ----------------------------
+    let priceToStore = null;
+    if (price !== undefined && price !== null && String(price).trim() !== "") {
+      const p = Number(price);
+      if (!Number.isFinite(p) || p < 0) {
+        return res.status(400).json({ message: "Invalid price" });
+      }
+      priceToStore = p;
+    }
+
+    // ----------------------------
+    // Ensure product_store link (FK safety)
+    // ----------------------------
     await pool.query(
       `
       INSERT INTO product_store (product_id, store_id)
       VALUES ($1, $2)
       ON CONFLICT (product_id, store_id) DO NOTHING
       `,
-      [productId, effectiveStoreId],
+      [pid, effectiveStoreId],
     );
 
+    // ----------------------------
+    // Insert inventory row
+    // ----------------------------
     const inserted = await pool.query(
       `
       INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
       VALUES ($1, $2, $3, $4, $5, false)
       RETURNING id, expiry_period_days, expiry_date
       `,
-      [
-        userId,
-        productId,
-        effectiveStoreId,
-        expiryDate ?? null,
-        expiryPeriodToStore,
-      ],
+      [uid, pid, effectiveStoreId, exp, expiryPeriodToStore],
     );
 
     const upRow = inserted.rows[0];
 
+    // ----------------------------
+    // Bump frequently-used usage (inventory)
+    // ----------------------------
+    await bumpProductUsage(pool, uid, pid, "inventory");
+
+    // ----------------------------
+    // Effective notification period
+    // ----------------------------
     const userPrefRes = await pool.query(
       `SELECT notification_period_preference FROM users WHERE id = $1 LIMIT 1`,
-      [userId],
+      [uid],
     );
 
     const userPref = userPrefRes.rows.length
@@ -3125,7 +3353,10 @@ app.post("/user/addProduct", async (req, res) => {
     const effective_period_days =
       expiry_period_days > 0 ? expiry_period_days : userPref;
 
-    if (price !== undefined && price !== null) {
+    // ----------------------------
+    // Upsert last price (optional)
+    // ----------------------------
+    if (priceToStore !== null) {
       await pool.query(
         `
         INSERT INTO user_product_prices (user_id, product_id, store_id, last_price, updated_at)
@@ -3135,20 +3366,20 @@ app.post("/user/addProduct", async (req, res) => {
           last_price = EXCLUDED.last_price,
           updated_at = CURRENT_TIMESTAMP
         `,
-        [userId, productId, effectiveStoreId, price],
+        [uid, pid, effectiveStoreId, priceToStore],
       );
     }
 
-    res.json({
+    return res.json({
       message: "Product added successfully",
-      user_product_id: upRow.id,
+      user_product_id: Number(upRow.id),
       expiry_period_days,
       effective_period_days,
       days_left,
     });
   } catch (err) {
     console.error("Add product error:", err);
-    res.status(500).json({ message: "Server error adding product" });
+    return res.status(500).json({ message: "Server error adding product" });
   }
 });
 

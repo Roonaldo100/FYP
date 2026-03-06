@@ -39,8 +39,6 @@ type ExpiringSoonRow = {
   effective_period_days: number;
 };
 
-
-
 export default function Home() {
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
   const router = useRouter();
@@ -88,9 +86,7 @@ export default function Home() {
     if (!ok) return;
 
     try {
-      const resp = await fetch(
-        `${API_BASE_URL}/user/${user_id}/pendingNotifications`
-      );
+      const resp = await fetch(`${API_BASE_URL}/user/${user_id}/pendingNotifications`);
       if (!resp.ok) return;
 
       const rows: {
@@ -103,20 +99,16 @@ export default function Home() {
       for (const row of rows) {
         await sendExpiryNotification(row.product_name, Number(row.days_left));
 
-        await fetch(
-          `${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-          }
-        );
+        await fetch(`${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
       }
     } catch (e) {
       console.error("Pending notification poll error:", e);
     }
   }, [user_id]);
 
-  // Run when Home gains focus
   useFocusEffect(
     useCallback(() => {
       pollPendingNotifications();
@@ -149,9 +141,7 @@ export default function Home() {
     setUserProducts([]);
 
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/categories/${category.id}/food?userId=${user_id}`
-      );
+      const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food?userId=${user_id}`);
       const data = await res.json();
       setFoodTypes(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -174,9 +164,7 @@ export default function Home() {
       setSelectedFoodType(foodType);
 
       try {
-        const res = await fetch(
-          `${API_BASE_URL}/user/${user_id}/foodtype/${foodType.id}`
-        );
+        const res = await fetch(`${API_BASE_URL}/user/${user_id}/foodtype/${foodType.id}`);
         const data = await res.json();
         setUserProducts(Array.isArray(data) ? data : []);
 
@@ -193,8 +181,6 @@ export default function Home() {
 
   useFocusEffect(
     useCallback(() => {
-      // When returning from ExpiryBuckets (or any child screen),
-      // refresh the grouped list if we're currently inside a food type.
       if (selectedFoodType) {
         handleFoodTypePress(selectedFoodType);
       }
@@ -221,7 +207,7 @@ export default function Home() {
     }
 
     router.push({
-      pathname: "/BarcodeScanner",
+      pathname: "../BarcodeScanner",
       params: { user_id: String(user_id) },
     });
   };
@@ -234,7 +220,7 @@ export default function Home() {
     }
 
     router.push({
-      pathname: "/ProductPicker",
+      pathname: "../ProductPicker",
       params: { user_id: String(user_id) },
     });
   };
@@ -247,14 +233,26 @@ export default function Home() {
     }
 
     router.push({
-      pathname: "/ManageCategoriesFoodTypes",
+      pathname: "../ManageCategoriesFoodTypes",
       params: { user_id: String(user_id) },
     });
   };
 
-  // -------------------------------
-  // Expiry buckets navigation (tap a grouped card)
-  // -------------------------------
+  //Frequently used items navigation
+  const handleFrequentlyUsedPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    router.push({
+      // If your file is app/(tabs)/FrequentlyUsed.tsx use "/(tabs)/FrequentlyUsed"
+      pathname: "../FrequentlyUsed",
+      params: { user_id: String(user_id) },
+    });
+  };
+
   const openBuckets = (prod: UserProduct) => {
     if (!user_id) return;
 
@@ -292,9 +290,6 @@ export default function Home() {
     }, [loadExpiringSoon])
   );
 
-  // -------------------------------
-  // Render helpers
-  // -------------------------------
   const title = useMemo(() => {
     if (selectedFoodType) return `${selectedFoodType.name} (Your Items)`;
     if (selectedCategory) return `${selectedCategory.name} Types`;
@@ -328,9 +323,7 @@ export default function Home() {
           activeOpacity={0.8}
         >
           <Text style={styles.productName}>{prod.product_name}</Text>
-          <Text style={styles.productDetails}>
-            Store: {prod.store_name ?? "None"}
-          </Text>
+          <Text style={styles.productDetails}>Store: {prod.store_name ?? "None"}</Text>
           <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
           <Text style={styles.productDetails}>
             Nearest expiry: {prod.nearest_expiry ?? "None"}
@@ -348,25 +341,16 @@ export default function Home() {
     </View>
   );
 
-  // -------------------------------
-  // Main render
-  // -------------------------------
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
       <View style={styles.topRow}>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={handleSettingsPress}
-        >
+        <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
           <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.manageButton}
-          onPress={handleManageTypesPress}
-        >
+        <TouchableOpacity style={styles.manageButton} onPress={handleManageTypesPress}>
           <Text style={styles.manageButtonText}>Manage Types</Text>
         </TouchableOpacity>
       </View>
@@ -404,6 +388,11 @@ export default function Home() {
         <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
       </TouchableOpacity>
 
+      {/* ✅ NEW BUTTON */}
+      <TouchableOpacity style={styles.scanButton} onPress={handleFrequentlyUsedPress}>
+        <Text style={styles.scanButtonText}>⭐ Frequently Used</Text>
+      </TouchableOpacity>
+
       {loading && <ActivityIndicator size="large" color="#fff" />}
 
       {!loading && (
@@ -420,10 +409,7 @@ export default function Home() {
             )
           ) : (
             renderButtons(
-              categories.map((cat) => ({
-                key: String(cat.id),
-                label: cat.name,
-              })),
+              categories.map((cat) => ({ key: String(cat.id), label: cat.name })),
               (idStr) => {
                 const cat = categories.find((c) => String(c.id) === idStr);
                 if (cat) handleCategoryPress(cat);
@@ -546,18 +532,18 @@ const styles = StyleSheet.create({
   backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
 
   soonCard: {
-  width: "100%",
-  maxWidth: 360,
-  backgroundColor: "#fff",
-  borderRadius: 12,
-  padding: 14,
-  marginTop: 10,
-  marginBottom: 10,
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 10,
+    marginBottom: 10,
   },
   soonHeaderRow: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   soonTitle: { fontWeight: "900", color: "#333", fontSize: 16 },
   soonCount: {
