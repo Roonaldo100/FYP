@@ -87,13 +87,10 @@ export default function Settings() {
           for (const row of data.pending) {
             await sendExpiryNotification(String(row.product_name), Number(row.days_left));
 
-            await fetch(
-              `${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-              }
-            );
+            await fetch(`${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
           }
         }
       }
@@ -114,31 +111,61 @@ export default function Settings() {
       "Some items may have custom expiry notification rules.\n\nOverride those rules for a one-time sweep?",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "No (respect custom rules)", onPress: () => save(false) },
-        { text: "Yes (override for sweep)", onPress: () => save(true) },
+        { text: "Save only", onPress: () => save(false) },
+        { text: "Override existing", style: "destructive", onPress: () => save(true) },
       ]
     );
+  };
+
+  const goManageStores = () => {
+    if (!user_id) return;
+    router.push({
+      pathname: "/ManageStores",
+      params: { user_id: String(user_id) },
+    });
+  };
+
+  const logout = () => {
+    Alert.alert("Log out?", "Return to the login screen?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: () => {
+          router.replace("/LoginScreen");
+        },
+      },
+    ]);
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Settings</Text>
 
-      {loading && <ActivityIndicator size="large" color="#fff" />}
-
-      {!loading && (
+      {loading ? (
+        <ActivityIndicator size="large" color="#fff" />
+      ) : (
         <View style={styles.card}>
-          <Text style={styles.label}>Notify me when an item expires within (days)</Text>
+          <Text style={styles.label}>Notify me this many days before expiry</Text>
+
           <TextInput
-            style={styles.input}
-            keyboardType="number-pad"
             value={periodText}
             onChangeText={setPeriodText}
-            placeholder="e.g. 5"
+            placeholder="0"
+            keyboardType="number-pad"
+            style={styles.input}
           />
 
           <TouchableOpacity style={styles.saveButton} onPress={onPressSave}>
             <Text style={styles.saveText}>Save</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.secondaryButton} onPress={goManageStores}>
+            <Text style={styles.secondaryText}>Manage stores</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+            <Text style={styles.logoutText}>Log out</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -158,10 +185,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
-  title: { color: "white", fontSize: 22, marginBottom: 16 },
-  card: { width: "100%", maxWidth: 360, backgroundColor: "#fff", borderRadius: 12, padding: 16 },
+  title: { color: "white", fontSize: 22, marginBottom: 16, fontWeight: "900" },
+  card: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+  },
   label: { fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 8 },
   input: { backgroundColor: "#eee", borderRadius: 8, padding: 10, marginBottom: 12 },
+
   saveButton: {
     backgroundColor: "#663399",
     borderRadius: 10,
@@ -170,6 +204,30 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   saveText: { color: "#fff", fontWeight: "800" },
-  backButton: { backgroundColor: "#eee", borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+
+  secondaryButton: {
+    backgroundColor: "#ffcc00",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  secondaryText: { color: "#333", fontWeight: "900" },
+
+  logoutButton: {
+    backgroundColor: "#b00020",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  logoutText: { color: "#fff", fontWeight: "900" },
+
+  backButton: {
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
   backText: { color: "#333", fontWeight: "800" },
 });
