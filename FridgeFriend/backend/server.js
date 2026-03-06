@@ -2539,14 +2539,12 @@ app.put(
     const storeId =
       storeIdRaw === undefined ||
       storeIdRaw === null ||
-      String(storeIdRaw) === ""
+      String(storeIdRaw).trim() === ""
         ? null
         : Number(storeIdRaw);
 
     const quantity =
-      req.body?.quantity != null
-        ? toPositiveInt(req.body.quantity, null)
-        : null;
+      req.body?.quantity != null ? toPositiveInt(req.body.quantity, null) : null;
 
     if (
       !Number.isInteger(userId) ||
@@ -2559,29 +2557,41 @@ app.put(
       return res.status(400).json({ message: "Invalid ids" });
     }
 
+    if (storeId !== null && (!Number.isFinite(storeId) || storeId <= 0)) {
+      return res.status(400).json({ message: "Invalid storeId" });
+    }
+
     try {
       await assertUserOwnsList(userId, listId);
       await assertStoreVisibleToUser(userId, storeId);
 
-      const r = await pool.query(
+      // Load the item (we need product_id for product_store upsert)
+      const itemRes = await pool.query(
         `
-      SELECT id
-      FROM shopping_list_items
-      WHERE id = $1 AND list_id = $2
-      LIMIT 1
-      `,
+        SELECT id, product_id
+        FROM shopping_list_items
+        WHERE id = $1 AND list_id = $2
+        LIMIT 1
+        `,
         [itemId, listId],
       );
-      if (!r.rows.length) throw new HttpError(404, "Item not found");
+      if (!itemRes.rows.length) throw new HttpError(404, "Item not found");
+
+      const productId =
+        itemRes.rows[0].product_id != null
+          ? Number(itemRes.rows[0].product_id)
+          : null;
 
       const updates = [];
       const params = [];
       let i = 1;
 
-      if (req.body?.storeId !== undefined) {
+      const storeProvided = req.body?.storeId !== undefined;
+      if (storeProvided) {
         updates.push(`store_id = $${i++}`);
         params.push(storeId);
       }
+
       if (quantity !== null) {
         updates.push(`quantity = $${i++}`);
         params.push(quantity);
@@ -2589,21 +2599,37 @@ app.put(
 
       if (!updates.length) return res.json({ updated: true });
 
+      // If we are setting a store for a *product* item, ensure product_store has it too
+      // (this keeps the "product belongs to store" mapping consistent)
+      if (storeProvided && productId && storeId !== null) {
+        await pool.query(
+          `
+          INSERT INTO product_store (product_id, store_id)
+          VALUES ($1, $2)
+          ON CONFLICT (product_id, store_id) DO NOTHING
+          `,
+          [productId, storeId],
+        );
+      }
+
       params.push(itemId, listId);
 
       await pool.query(
         `
-      UPDATE shopping_list_items
-      SET ${updates.join(", ")}
-      WHERE id = $${i++} AND list_id = $${i++}
-      `,
+        UPDATE shopping_list_items
+        SET ${updates.join(", ")}
+        WHERE id = $${i++} AND list_id = $${i++}
+        `,
         params,
       );
 
-      res.json({ updated: true });
+      // Touch list timestamp if you want it to reorder by updated_at
+      await pool.query(`UPDATE shopping_lists SET updated_at = now() WHERE id = $1`, [listId]);
+
+      return res.json({ updated: true });
     } catch (e) {
       console.error("update shopping list item error:", e);
-      res
+      return res
         .status(e.status || 500)
         .json({ message: e.message || "Server error updating item" });
     }
