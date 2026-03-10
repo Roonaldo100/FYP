@@ -8,7 +8,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Platform,
   Modal,
   FlatList,
 } from "react-native";
@@ -70,14 +69,13 @@ export default function AddItemToFridge() {
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
 
   const [newStoreName, setNewStoreName] = useState("");
-  const [expiryDate, setExpiryDate] = useState(""); // YYYY-MM-DD or blank
+  const [expiryDate, setExpiryDate] = useState("");
   const [price, setPrice] = useState<string>("");
+  const [quantityText, setQuantityText] = useState<string>("1");
 
   const [loading, setLoading] = useState(false);
-
   const [expiryPeriodText, setExpiryPeriodText] = useState<string>("");
 
-  // Date menu state (no native modules)
   const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
   const dateOptions = useMemo(() => makeNextDaysOptions(60), []);
 
@@ -89,6 +87,12 @@ export default function AddItemToFridge() {
     if (!s.trim()) return true;
     const n = Number(s);
     return Number.isFinite(n) && Number.isInteger(n) && n >= 0;
+  };
+
+  const validateQuantity = (s: string) => {
+    if (!s.trim()) return false;
+    const n = Number(s);
+    return Number.isFinite(n) && Number.isInteger(n) && n > 0;
   };
 
   const loadStores = async () => {
@@ -190,6 +194,14 @@ export default function AddItemToFridge() {
     setExpiryMenuOpen(false);
   };
 
+  const changeQuantityBy = (delta: number) => {
+    const current = Number(quantityText);
+    const safeCurrent =
+      Number.isFinite(current) && Number.isInteger(current) && current > 0 ? current : 1;
+    const next = Math.max(1, safeCurrent + delta);
+    setQuantityText(String(next));
+  };
+
   const confirmAdd = async () => {
     if (!user_id || !product_id) {
       Alert.alert("Error", "Missing required information.");
@@ -214,6 +226,29 @@ export default function AddItemToFridge() {
     }
     const expiryPeriodDaysToSend = periodTrim.length ? Number(periodTrim) : null;
 
+    const qtyTrim = quantityText.trim();
+    if (!validateQuantity(qtyTrim)) {
+      Alert.alert("Invalid quantity", "Enter a whole number greater than 0.");
+      return;
+    }
+    const quantityToSend = Number(qtyTrim);
+
+    const priceTrim = price.trim();
+
+    let priceToSend: number | null;
+    if (priceTrim.length === 0) {
+      priceToSend = null;
+    } else {
+      const parsedPrice = Number(priceTrim);
+
+      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+        Alert.alert("Invalid price", "Enter a valid price or leave it blank.");
+        return;
+      }
+
+      priceToSend = parsedPrice;
+    }
+
     try {
       setLoading(true);
 
@@ -225,8 +260,9 @@ export default function AddItemToFridge() {
           productId: Number(product_id),
           storeId: selectedStoreId,
           expiryDate: expiryToSend,
-          price: price ? Number(price) : null,
+          price: priceToSend,
           expiryPeriodDays: expiryPeriodDaysToSend,
+          quantity: quantityToSend,
         }),
       });
 
@@ -268,7 +304,13 @@ export default function AddItemToFridge() {
         }
       }
 
-      Alert.alert("Added!", "Item added to your fridge.");
+      Alert.alert(
+        "Added!",
+        quantityToSend === 1
+          ? "Item added to your fridge."
+          : `${quantityToSend} items added to your fridge.`
+      );
+
       router.replace({
         pathname: "/(tabs)",
         params: { user_id: String(user_id) },
@@ -289,6 +331,27 @@ export default function AddItemToFridge() {
 
       {!loading && (
         <ScrollView contentContainerStyle={{ paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quantity</Text>
+            <View style={styles.qtyRow}>
+              <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQuantityBy(-1)}>
+                <Text style={styles.qtyBtnText}>-</Text>
+              </TouchableOpacity>
+
+              <TextInput
+                style={styles.qtyInput}
+                placeholder="1"
+                keyboardType="number-pad"
+                value={quantityText}
+                onChangeText={(v) => setQuantityText(v.replace(/[^0-9]/g, ""))}
+              />
+
+              <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQuantityBy(1)}>
+                <Text style={styles.qtyBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Store (optional)</Text>
 
@@ -397,21 +460,31 @@ export default function AddItemToFridge() {
           </View>
 
           <TouchableOpacity style={styles.confirmButton} onPress={confirmAdd}>
-            <Text style={styles.confirmButtonText}>Confirm and Add</Text>
+            <Text style={styles.confirmButtonText}>
+              Confirm and Add {validateQuantity(quantityText) ? Number(quantityText) : 1}
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       )}
 
-      <Modal visible={expiryMenuOpen} transparent animationType="fade" onRequestClose={() => setExpiryMenuOpen(false)}>
+      <Modal
+        visible={expiryMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExpiryMenuOpen(false)}
+      >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Select expiry date</Text>
 
-            <TouchableOpacity style={styles.modalTopAction} onPress={() => pickExpiry(formatDateYYYYMMDD(addDays(new Date(), 0)))}>
+            <TouchableOpacity
+              style={styles.modalTopAction}
+              onPress={() => pickExpiry(formatDateYYYYMMDD(addDays(new Date(), 0)))}
+            >
               <Text style={styles.modalTopActionText}>Today</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modalTopAction} onPress={() => clearExpiry()}>
+            <TouchableOpacity style={styles.modalTopAction} onPress={clearExpiry}>
               <Text style={[styles.modalTopActionText, { color: "#b00020" }]}>No expiry</Text>
             </TouchableOpacity>
 
@@ -454,6 +527,33 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     marginBottom: 8,
+  },
+
+  qtyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  qtyBtn: {
+    width: 40,
+    height: 40,
+    backgroundColor: "#eee",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyBtnText: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#333",
+  },
+  qtyInput: {
+    minWidth: 72,
+    backgroundColor: "#eee",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    textAlign: "center",
   },
 
   storeButton: {

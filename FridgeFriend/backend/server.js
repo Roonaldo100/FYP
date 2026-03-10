@@ -3263,14 +3263,32 @@ app.post("/products/create", async (req, res) => {
  * POST: Add product to user inventory
  */
 app.post("/user/addProduct", async (req, res) => {
-  const { userId, productId, storeId, expiryDate, price, expiryPeriodDays } =
-    req.body;
+  const {
+    userId,
+    productId,
+    storeId,
+    expiryDate,
+    price,
+    expiryPeriodDays,
+    quantity,
+  } = req.body;
 
   const uid = parseOptionalUserId(userId);
   const pid = Number(productId);
 
-  if (!uid || !Number.isInteger(pid) || pid <= 0) {
-    return res.status(400).json({ message: "Missing required fields" });
+  const qtyRaw =
+    quantity === undefined || quantity === null || String(quantity).trim() === ""
+      ? 1
+      : Number(quantity);
+
+  if (
+    !uid ||
+    !Number.isInteger(pid) ||
+    pid <= 0 ||
+    !Number.isInteger(qtyRaw) ||
+    qtyRaw <= 0
+  ) {
+    return res.status(400).json({ message: "Missing or invalid required fields" });
   }
 
   try {
@@ -3357,23 +3375,42 @@ app.post("/user/addProduct", async (req, res) => {
     );
 
     // ----------------------------
-    // Insert inventory row
+    // Insert inventory rows
     // ----------------------------
-    const inserted = await pool.query(
-      `
-      INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
-      VALUES ($1, $2, $3, $4, $5, false)
-      RETURNING id, expiry_period_days, expiry_date
-      `,
-      [uid, pid, effectiveStoreId, exp, expiryPeriodToStore],
-    );
+    const client = await pool.connect();
 
-    const upRow = inserted.rows[0];
+    let upRow = null;
+
+    try {
+      await client.query("BEGIN");
+
+      for (let i = 0; i < qtyRaw; i++) {
+        const inserted = await client.query(
+          `
+          INSERT INTO user_products (user_id, product_id, store_id, expiry_date, expiry_period_days, notified)
+          VALUES ($1, $2, $3, $4, $5, false)
+          RETURNING id, expiry_period_days, expiry_date
+          `,
+          [uid, pid, effectiveStoreId, exp, expiryPeriodToStore],
+        );
+
+        upRow = inserted.rows[0];
+      }
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
+    }
 
     // ----------------------------
     // Bump frequently-used usage (inventory)
     // ----------------------------
-    await bumpProductUsage(pool, uid, pid, "inventory");
+    for (let i = 0; i < qtyRaw; i++) {
+      await bumpProductUsage(pool, uid, pid, "inventory");
+    }
 
     // ----------------------------
     // Effective notification period
@@ -3388,7 +3425,7 @@ app.post("/user/addProduct", async (req, res) => {
       : 0;
 
     let days_left = null;
-    if (upRow.expiry_date) {
+    if (upRow?.expiry_date) {
       const daysLeftRes = await pool.query(
         `SELECT ($1::date - CURRENT_DATE) AS days_left`,
         [upRow.expiry_date],
@@ -3396,7 +3433,7 @@ app.post("/user/addProduct", async (req, res) => {
       days_left = Number(daysLeftRes.rows[0].days_left);
     }
 
-    const expiry_period_days = Number(upRow.expiry_period_days ?? 0);
+    const expiry_period_days = Number(upRow?.expiry_period_days ?? 0);
     const effective_period_days =
       expiry_period_days > 0 ? expiry_period_days : userPref;
 
@@ -3418,8 +3455,9 @@ app.post("/user/addProduct", async (req, res) => {
     }
 
     return res.json({
-      message: "Product added successfully",
-      user_product_id: Number(upRow.id),
+      message: qtyRaw === 1 ? "Product added successfully" : "Products added successfully",
+      added_count: qtyRaw,
+      user_product_id: upRow ? Number(upRow.id) : null,
       expiry_period_days,
       effective_period_days,
       days_left,

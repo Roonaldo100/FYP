@@ -30,7 +30,6 @@ export default function ProductPicker() {
 
   const PAGE = 30;
 
-  // Refs to avoid dependency loops
   const offsetRef = useRef(0);
   const hasMoreRef = useRef(true);
   const loadingMoreRef = useRef(false);
@@ -40,7 +39,6 @@ export default function ProductPicker() {
     async (reset: boolean) => {
       if (!user_id) return;
 
-      // Prevent overlapping "load more" calls
       if (!reset) {
         if (!hasMoreRef.current) return;
         if (loadingMoreRef.current) return;
@@ -92,7 +90,6 @@ export default function ProductPicker() {
     [user_id]
   );
 
-  // Debounced query -> reset fetch
   useEffect(() => {
     queryRef.current = q;
 
@@ -110,8 +107,8 @@ export default function ProductPicker() {
       pathname: "/AddItemToFridge",
       params: {
         user_id: String(user_id),
-        productId: String(p.id),
-        productName: p.name,
+        product_id: String(p.id),
+        product_name: p.name,
       },
     });
   };
