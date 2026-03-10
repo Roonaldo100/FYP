@@ -5,6 +5,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -343,98 +344,110 @@ export default function Home() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <StatusBar style="light" />
 
-      <View style={styles.topRow}>
-        <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
-          <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
+        <View style={styles.topRow}>
+          <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
+            <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.manageButton} onPress={handleManageTypesPress}>
+            <Text style={styles.manageButtonText}>Manage Types</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!selectedCategory && !selectedFoodType && (
+          <TouchableOpacity
+            style={styles.soonCard}
+            activeOpacity={0.85}
+            disabled={!user_id}
+            onPress={() =>
+              router.push({
+                pathname: "/ExpiringSoon",
+                params: { user_id: String(user_id) },
+              })
+            }
+          >
+            <View style={styles.soonHeaderRow}>
+              <Text style={styles.soonTitle}>Expiring soon</Text>
+              <Text style={styles.soonCount}>{expiringSoon.length}</Text>
+            </View>
+
+            <Text style={styles.soonHint}>
+              Tap to view items expiring within your notification windows
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <Text style={styles.title}>{title}</Text>
+
+        <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
+          <Text style={styles.scanButtonText}>📷 Scan Item</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.manageButton} onPress={handleManageTypesPress}>
-          <Text style={styles.manageButtonText}>Manage Types</Text>
+        <TouchableOpacity style={styles.scanButton} onPress={handleManualAddPress}>
+          <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
         </TouchableOpacity>
-      </View>
 
-      {!selectedCategory && !selectedFoodType && (
-        <TouchableOpacity
-          style={styles.soonCard}
-          activeOpacity={0.85}
-          disabled={!user_id}
-          onPress={() =>
-            router.push({
-              pathname: "/ExpiringSoon",
-              params: { user_id: String(user_id) },
-            })
-          }
-        >
-          <View style={styles.soonHeaderRow}>
-            <Text style={styles.soonTitle}>Expiring soon</Text>
-            <Text style={styles.soonCount}>{expiringSoon.length}</Text>
-          </View>
-
-          <Text style={styles.soonHint}>
-            Tap to view items expiring within your notification windows
-          </Text>
+        <TouchableOpacity style={styles.scanButton} onPress={handleFrequentlyUsedPress}>
+          <Text style={styles.scanButtonText}>⭐ Frequently Used</Text>
         </TouchableOpacity>
-      )}
 
-      <Text style={styles.title}>{title}</Text>
+        {loading && <ActivityIndicator size="large" color="#fff" />}
 
-      <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
-        <Text style={styles.scanButtonText}>📷 Scan Item</Text>
-      </TouchableOpacity>
+        {!loading && (
+          <>
+            {selectedFoodType ? (
+              renderUserProducts()
+            ) : selectedCategory ? (
+              renderButtons(
+                foodTypes.map((ft) => ({ key: String(ft.id), label: ft.name })),
+                (idStr) => {
+                  const ft = foodTypes.find((f) => String(f.id) === idStr);
+                  if (ft) handleFoodTypePress(ft);
+                }
+              )
+            ) : (
+              renderButtons(
+                categories.map((cat) => ({ key: String(cat.id), label: cat.name })),
+                (idStr) => {
+                  const cat = categories.find((c) => String(c.id) === idStr);
+                  if (cat) handleCategoryPress(cat);
+                }
+              )
+            )}
+          </>
+        )}
 
-      <TouchableOpacity style={styles.scanButton} onPress={handleManualAddPress}>
-        <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
-      </TouchableOpacity>
-
-      {/* ✅ NEW BUTTON */}
-      <TouchableOpacity style={styles.scanButton} onPress={handleFrequentlyUsedPress}>
-        <Text style={styles.scanButtonText}>⭐ Frequently Used</Text>
-      </TouchableOpacity>
-
-      {loading && <ActivityIndicator size="large" color="#fff" />}
-
-      {!loading && (
-        <>
-          {selectedFoodType ? (
-            renderUserProducts()
-          ) : selectedCategory ? (
-            renderButtons(
-              foodTypes.map((ft) => ({ key: String(ft.id), label: ft.name })),
-              (idStr) => {
-                const ft = foodTypes.find((f) => String(f.id) === idStr);
-                if (ft) handleFoodTypePress(ft);
-              }
-            )
-          ) : (
-            renderButtons(
-              categories.map((cat) => ({ key: String(cat.id), label: cat.name })),
-              (idStr) => {
-                const cat = categories.find((c) => String(c.id) === idStr);
-                if (cat) handleCategoryPress(cat);
-              }
-            )
-          )}
-        </>
-      )}
-
-      {(selectedCategory || selectedFoodType) && (
-        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-          <Text style={styles.backButtonText}>← Back</Text>
-        </TouchableOpacity>
-      )}
+        {(selectedCategory || selectedFoodType) && (
+          <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+  flex: 1,
+  backgroundColor: "#663399",
+  },
+  scroll: {
     flex: 1,
-    backgroundColor: "#663399",
+    width: "100%",
+  },
+  scrollContent: {
     alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
   },
 
   topRow: {
@@ -471,7 +484,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  title: { color: "white", fontSize: 22, marginBottom: 20 },
+  title: { color: "white", fontSize: 22, marginBottom: 20,  textAlign: "center"},
 
   scanButton: {
     backgroundColor: "#ffffff",

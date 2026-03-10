@@ -28,7 +28,7 @@ type ProductRow = {
 
 const PAGE = 30;
 
-// ✅ Merge where NEW data wins by id
+// Merge where NEW data wins by id
 function mergeByIdNewWins(prev: ProductRow[], next: ProductRow[]) {
   const m = new Map<number, ProductRow>();
 
@@ -147,7 +147,7 @@ export default function EditProducts() {
         const data = await r.json();
         const arrRaw: ProductRow[] = Array.isArray(data) ? data : [];
 
-        // ✅ Only show user-owned, non-system products
+        // Only show user-owned, non-system products
         const arr = arrRaw.filter((p) => {
           const isSystem = p.is_system === true;
           const owner = p.owner_user_id == null ? null : Number(p.owner_user_id);
@@ -155,7 +155,7 @@ export default function EditProducts() {
         });
 
         if (reset) {
-          setItems(arr); // ✅ replace list completely on reset
+          setItems(arr); // replace list completely on reset
           offsetRef.current = arrRaw.length; // keep paging aligned with server
         } else {
           setItems((prev) => mergeByIdNewWins(prev, arr));
@@ -202,7 +202,7 @@ export default function EditProducts() {
     return () => clearTimeout(t);
   }, [q, userIdNum, fetchPage]);
 
-  // ✅ Guaranteed refresh when coming back (router.replace adds refresh param)
+  // Guaranteed refresh when coming back (router.replace adds refresh param)
   useEffect(() => {
     if (!userIdNum) return;
     if (!refreshToken) return;

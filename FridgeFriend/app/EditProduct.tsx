@@ -286,7 +286,7 @@ export default function EditProduct() {
       setSaving(true);
       await saveProduct(trimmed, selectedFoodTypeId ?? null);
 
-      // ✅ Force EditProducts to refresh by replacing route with a refresh token
+      // Force EditProducts to refresh by replacing route with a refresh token
       router.replace({
         pathname: "/EditProducts",
         params: {

@@ -15,10 +15,11 @@ import { API_BASE_URL } from "../config/apiConfig";
 type FrequentRow = {
   product_id: number;
   product_name: string;
-  store_id: number | null;
-  store_name: string | null;
-  used_count: number;
-  last_used_at: string | null;
+  suggested_store_id: number | null;
+  suggested_store_name: string | null;
+  total_count: number;
+  inv_count: number;
+  list_count: number;
 };
 
 function toValidId(v: unknown): number | null {
@@ -33,6 +34,11 @@ export default function FrequentlyUsed() {
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<FrequentRow[]>([]);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+
+  const getRowKey = useCallback((it: FrequentRow) => {
+    return `${it.product_id}:${it.suggested_store_id ?? "ns"}`;
+  }, []);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -72,12 +78,63 @@ export default function FrequentlyUsed() {
         user_id: String(userId),
         product_id: String(row.product_id),
         product_name: row.product_name,
-        // optional: you can also pass a suggested store
-        store_id: row.store_id === null ? "" : String(row.store_id),
-        store_name: row.store_name ?? "",
+        store_id:
+          row.suggested_store_id === null ? "" : String(row.suggested_store_id),
+        store_name: row.suggested_store_name ?? "",
       },
     });
   };
+
+  const deleteItem = useCallback(
+    (row: FrequentRow) => {
+      if (!userId) return;
+
+      const rowKey = getRowKey(row);
+
+      Alert.alert(
+        "Delete frequently used item?",
+        `Remove "${row.product_name}" from Frequently Used?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                setDeletingKey(rowKey);
+
+                const url = `${API_BASE_URL}/user_product_usage?userId=${encodeURIComponent(
+                  String(userId)
+                )}&productId=${encodeURIComponent(String(row.product_id))}`;
+
+                const res = await fetch(url, {
+                  method: "DELETE",
+                });
+
+                const data = await res.json().catch(() => null);
+
+                if (!res.ok) {
+                  console.error("Delete frequent item failed:", res.status, data);
+                  throw new Error(data?.message || "Delete failed");
+                }
+
+                await load();
+              } catch (e: any) {
+                console.error(e);
+                Alert.alert(
+                  "Error",
+                  e?.message || "Could not delete frequently used item."
+                );
+              } finally {
+                setDeletingKey(null);
+              }
+            },
+          },
+        ]
+      );
+    },
+    [userId, getRowKey, load]
+  );
 
   return (
     <View style={styles.container}>
@@ -88,21 +145,56 @@ export default function FrequentlyUsed() {
       ) : (
         <FlatList
           data={items}
-          keyExtractor={(it) => String(it.product_id) + ":" + String(it.store_id ?? "ns")}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.row} onPress={() => onPick(item)}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.product_name}</Text>
-                <Text style={styles.meta}>
-                  {item.store_name ? `Store: ${item.store_name}` : "No store"}
-                  {"  •  "}
-                  Used: {item.used_count}
-                </Text>
-              </View>
+          keyExtractor={(it) => getRowKey(it)}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => {
+            const rowKey = getRowKey(item);
+            const isDeleting = deletingKey === rowKey;
 
-              <Text style={styles.cta}>Add →</Text>
-            </TouchableOpacity>
-          )}
+            return (
+              <View style={styles.row}>
+                <TouchableOpacity
+                  style={styles.rowMain}
+                  onPress={() => onPick(item)}
+                  disabled={isDeleting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.name}>{item.product_name}</Text>
+                  <Text style={styles.meta}>
+                    {item.suggested_store_name
+                      ? `Store: ${item.suggested_store_name}`
+                      : "No store"}
+                    {"  •  "}
+                    Used: {item.total_count}
+                  </Text>
+                  <Text style={styles.subMeta}>
+                    Inventory adds: {item.inv_count} {"  •  "}Shopping adds:{" "}
+                    {item.list_count}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={[styles.addBtn, isDeleting && styles.disabledBtn]}
+                    onPress={() => onPick(item)}
+                    disabled={isDeleting}
+                  >
+                    <Text style={styles.addText}>Add →</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.deleteBtn, isDeleting && styles.disabledDeleteBtn]}
+                    onPress={() => deleteItem(item)}
+                    disabled={isDeleting}
+                  >
+                    <Text style={styles.deleteText}>
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          }}
           ListEmptyComponent={
             <Text style={styles.empty}>No frequently used items yet.</Text>
           }
@@ -117,8 +209,21 @@ export default function FrequentlyUsed() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#663399", padding: 16 },
-  title: { color: "#fff", fontSize: 18, fontWeight: "900", marginBottom: 12 },
+  container: {
+    flex: 1,
+    backgroundColor: "#663399",
+    padding: 16,
+    paddingTop: 40,
+  },
+  title: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 12,
+  },
+  listContent: {
+    paddingBottom: 20,
+  },
 
   row: {
     backgroundColor: "#fff",
@@ -129,12 +234,69 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  name: { fontWeight: "900", color: "#333" },
-  meta: { marginTop: 4, color: "#666", fontWeight: "700", fontSize: 12 },
-  cta: { fontWeight: "900", color: "#663399" },
+  rowMain: {
+    flex: 1,
+  },
+  name: {
+    fontWeight: "900",
+    color: "#333",
+  },
+  meta: {
+    marginTop: 4,
+    color: "#666",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  subMeta: {
+    marginTop: 4,
+    color: "#777",
+    fontWeight: "600",
+    fontSize: 11,
+  },
 
-  empty: { color: "#fff", opacity: 0.9, marginTop: 10, fontWeight: "800" },
+  actions: {
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  addBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  addText: {
+    fontWeight: "900",
+    color: "#663399",
+  },
+  deleteBtn: {
+    backgroundColor: "#b00020",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  deleteText: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 12,
+  },
+  disabledBtn: {
+    opacity: 0.5,
+  },
+  disabledDeleteBtn: {
+    opacity: 0.6,
+  },
 
-  backBtn: { marginTop: 10, alignSelf: "flex-start" },
-  backText: { color: "#fff", fontWeight: "900" },
+  empty: {
+    color: "#fff",
+    opacity: 0.9,
+    marginTop: 10,
+    fontWeight: "800",
+  },
+
+  backBtn: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+  },
+  backText: {
+    color: "#fff",
+    fontWeight: "900",
+  },
 });

@@ -1015,44 +1015,19 @@ app.get("/user/:userId/frequentItems", async (req, res) => {
   try {
     const r = await pool.query(
       `
-      WITH inv AS (
-        SELECT up.product_id, COUNT(*)::int AS inv_count
-        FROM user_products up
-        WHERE up.user_id = $1
-        GROUP BY up.product_id
-      ),
-      sli AS (
-        SELECT sli.product_id, SUM(sli.quantity)::int AS list_count
-        FROM shopping_list_items sli
-        JOIN shopping_lists sl ON sl.id = sli.list_id
-        WHERE sl.user_id = $1
-          AND sli.product_id IS NOT NULL
-        GROUP BY sli.product_id
-      ),
-      combined AS (
-        SELECT
-          COALESCE(inv.product_id, sli.product_id) AS product_id,
-          COALESCE(inv.inv_count, 0) AS inv_count,
-          COALESCE(sli.list_count, 0) AS list_count,
-          (COALESCE(inv.inv_count, 0) + COALESCE(sli.list_count, 0)) AS total_count
-        FROM inv
-        FULL OUTER JOIN sli ON sli.product_id = inv.product_id
-      )
       SELECT
-        c.product_id,
+        upu.product_id,
         p.name AS product_name,
-        p.food_type,
-        c.inv_count,
-        c.list_count,
-        c.total_count,
+        upu.inventory_adds AS inv_count,
+        upu.shopping_adds AS list_count,
+        (COALESCE(upu.inventory_adds, 0) + COALESCE(upu.shopping_adds, 0))::int AS total_count,
 
-        -- Suggest a "most common store" (visible to user) from inventory
         (
           SELECT up2.store_id
           FROM user_products up2
           LEFT JOIN stores s ON s.id = up2.store_id
           WHERE up2.user_id = $1
-            AND up2.product_id = c.product_id
+            AND up2.product_id = upu.product_id
             AND (
               up2.store_id IS NULL
               OR s.is_system = true
@@ -1068,7 +1043,7 @@ app.get("/user/:userId/frequentItems", async (req, res) => {
           FROM user_products up3
           JOIN stores s2 ON s2.id = up3.store_id
           WHERE up3.user_id = $1
-            AND up3.product_id = c.product_id
+            AND up3.product_id = upu.product_id
             AND (
               s2.is_system = true
               OR s2.owner_user_id = $1
@@ -1078,10 +1053,13 @@ app.get("/user/:userId/frequentItems", async (req, res) => {
           LIMIT 1
         ) AS suggested_store_name
 
-      FROM combined c
-      JOIN products p ON p.id = c.product_id
-      WHERE (p.is_system = true OR p.owner_user_id = $1)
-      ORDER BY c.total_count DESC, p.name ASC
+      FROM user_product_usage upu
+      JOIN products p ON p.id = upu.product_id
+      WHERE upu.user_id = $1
+        AND (p.is_system = true OR p.owner_user_id = $1)
+      ORDER BY
+        (COALESCE(upu.inventory_adds, 0) + COALESCE(upu.shopping_adds, 0)) DESC,
+        p.name ASC
       LIMIT $2
       `,
       [userId, limit]
@@ -1091,17 +1069,16 @@ app.get("/user/:userId/frequentItems", async (req, res) => {
       r.rows.map((row) => ({
         product_id: Number(row.product_id),
         product_name: String(row.product_name),
-        food_type: row.food_type != null ? Number(row.food_type) : null,
+        suggested_store_id:
+          row.suggested_store_id != null ? Number(row.suggested_store_id) : null,
+        suggested_store_name: row.suggested_store_name ?? null,
+        total_count: Number(row.total_count ?? 0),
         inv_count: Number(row.inv_count ?? 0),
         list_count: Number(row.list_count ?? 0),
-        total_count: Number(row.total_count ?? 0),
-        suggested_store_id:
-          row.suggested_store_id === null ? null : Number(row.suggested_store_id),
-        suggested_store_name: row.suggested_store_name ?? null,
       }))
     );
-  } catch (e) {
-    console.error("frequentItems error:", e);
+  } catch (err) {
+    console.error("frequentItems error:", err);
     return res.status(500).json({ message: "Server error loading frequent items" });
   }
 });
@@ -2847,6 +2824,40 @@ app.delete("/user/:userId/stores/:storeId/safe", async (req, res) => {
   }
 });
 
+app.delete("/user_product_usage", async (req, res) => {
+  const userId = Number(req.query.userId);
+  const productId = Number(req.query.productId);
+
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ message: "Invalid userId" });
+  }
+
+  if (!Number.isInteger(productId) || productId <= 0) {
+    return res.status(400).json({ message: "Invalid productId" });
+  }
+
+  try {
+    const del = await pool.query(
+      `
+      DELETE FROM user_product_usage
+      WHERE user_id = $1
+        AND product_id = $2
+      RETURNING user_id, product_id
+      `,
+      [userId, productId]
+    );
+
+    if (!del.rows.length) {
+      return res.status(404).json({ message: "Frequently used row not found" });
+    }
+
+    return res.json({ message: "Frequently used item deleted" });
+  } catch (err) {
+    console.error("Delete user_product_usage error:", err);
+    return res.status(500).json({ message: "Server error deleting frequently used item" });
+  }
+});
+
 app.get("/user/:userId/shoppingLists/:listId", async (req, res) => {
   const userId = Number(req.params.userId);
   const listId = Number(req.params.listId);
@@ -3883,6 +3894,8 @@ app.post("/user_products/removeByExpiry", async (req, res) => {
     res.status(500).json({ message: "Server error removing items" });
   }
 });
+
+
 
 /**
  * POST: Mark notified
