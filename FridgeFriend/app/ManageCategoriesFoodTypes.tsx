@@ -10,6 +10,7 @@ import {
   View,
   ScrollView,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
@@ -28,6 +29,21 @@ type FoodType = {
   owner_user_id?: number | null;
 };
 
+type Product = {
+  id: number;
+  name: string;
+  food_type: number | null;
+  is_system?: boolean;
+  owner_user_id?: number | null;
+};
+
+type FoodTypeIndexRow = {
+  id: number;
+  name: string;
+  categoryId: number;
+  categoryName: string;
+};
+
 export default function ManageCategoriesFoodTypes() {
   const router = useRouter();
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
@@ -37,12 +53,18 @@ export default function ManageCategoriesFoodTypes() {
   const [loading, setLoading] = useState(false);
 
   // View state
-  const [mode, setMode] = useState<"categories" | "foodTypes">("categories");
+  const [mode, setMode] = useState<"categories" | "foodTypes" | "products">("categories");
 
   // Data
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
+
+  // Product data
+  const [productQuery, setProductQuery] = useState("");
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [foodTypeNameById, setFoodTypeNameById] = useState<Map<number, string>>(new Map());
 
   // Inputs
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -94,21 +116,132 @@ export default function ManageCategoriesFoodTypes() {
     [requireUser, userIdNum]
   );
 
+  const loadFoodTypesIndex = useCallback(async () => {
+    if (!requireUser()) return;
+
+    try {
+      const catRes = await fetch(`${API_BASE_URL}/categories?userId=${userIdNum}`);
+      if (!catRes.ok) {
+        setFoodTypeNameById(new Map());
+        return;
+      }
+
+      const catData = await catRes.json();
+      const cats = Array.isArray(catData) ? catData : [];
+      const map = new Map<number, string>();
+
+      await Promise.all(
+        cats.map(async (cat: Category) => {
+          const ftRes = await fetch(
+            `${API_BASE_URL}/categories/${cat.id}/food?userId=${userIdNum}`
+          );
+          if (!ftRes.ok) return;
+
+          const ftData = await ftRes.json();
+          const rows = Array.isArray(ftData) ? ftData : [];
+          for (const row of rows) {
+            map.set(Number(row.id), String(row.name));
+          }
+        })
+      );
+
+      setFoodTypeNameById(map);
+    } catch (e) {
+      console.error("foodTypes index fetch error:", e);
+      setFoodTypeNameById(new Map());
+    }
+  }, [requireUser, userIdNum]);
+
+  const loadProducts = useCallback(
+    async (queryOverride?: string) => {
+      if (!requireUser()) return;
+
+      const q = (queryOverride ?? productQuery).trim();
+
+      try {
+        setProductsLoading(true);
+        const res = await fetch(
+          `${API_BASE_URL}/products/search?q=${encodeURIComponent(
+            q
+          )}&userId=${encodeURIComponent(String(userIdNum))}&limit=100&offset=0`
+        );
+
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          console.error("Load products failed:", res.status, txt);
+          setProducts([]);
+          return;
+        }
+
+        const data = await res.json();
+        setProducts(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error("Load products error:", e);
+        setProducts([]);
+      } finally {
+        setProductsLoading(false);
+      }
+    },
+    [requireUser, productQuery, userIdNum]
+  );
+
   useEffect(() => {
     loadCategories();
   }, [loadCategories]);
 
+  useEffect(() => {
+    if (mode !== "products") return;
+    loadFoodTypesIndex();
+    loadProducts();
+  }, [mode, loadFoodTypesIndex, loadProducts]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!requireUser()) return;
+
+      loadCategories();
+
+      if (mode === "foodTypes" && selectedCategory) {
+        loadFoodTypes(selectedCategory.id);
+      }
+
+      if (mode === "products") {
+        loadFoodTypesIndex();
+        loadProducts();
+      }
+    }, [
+      requireUser,
+      loadCategories,
+      mode,
+      selectedCategory,
+      loadFoodTypes,
+      loadFoodTypesIndex,
+      loadProducts,
+    ])
+  );
+
   // -------------------------
-  // Edit products navigation
+  // Edit products in-page mode
   // -------------------------
   const handleEditProductsPress = useCallback(() => {
     if (!requireUser()) return;
+    setMode("products");
+  }, [requireUser]);
 
-    router.push({
-      pathname: "../EditProducts",
-      params: { user_id: String(userIdNum) },
-    });
-  }, [requireUser, router, userIdNum]);
+  const openEditProduct = useCallback(
+    (product: Product) => {
+      if (!requireUser()) return;
+
+      router.push({
+        pathname: "../EditProduct",
+        params: {
+          user_id: String(userIdNum),
+          product_id: String(product.id),
+        },
+      });
+    },
+    [requireUser, router, userIdNum]
+  );
 
   // -------------------------
   // Create / delete category
@@ -186,7 +319,6 @@ export default function ManageCategoriesFoodTypes() {
               return;
             }
 
-            // if we deleted the selected category, clear it
             if (selectedCategory?.id === cat.id) {
               setSelectedCategory(null);
               setFoodTypes([]);
@@ -247,6 +379,7 @@ export default function ManageCategoriesFoodTypes() {
 
       setNewFoodTypeName("");
       await loadFoodTypes(selectedCategory.id);
+      await loadFoodTypesIndex();
       Alert.alert("Created", `"${name}" added.`);
     } catch (e) {
       console.error("Create food type error:", e);
@@ -290,6 +423,7 @@ export default function ManageCategoriesFoodTypes() {
             }
 
             if (selectedCategory) await loadFoodTypes(selectedCategory.id);
+            await loadFoodTypesIndex();
             Alert.alert("Deleted", `"${ft.name}" deleted.`);
           } catch (e) {
             console.error("Delete food type error:", e);
@@ -334,8 +468,13 @@ export default function ManageCategoriesFoodTypes() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.primaryBtn} onPress={handleEditProductsPress}>
-          <Text style={styles.primaryBtnText}>Edit Products</Text>
+        <TouchableOpacity
+          style={[styles.toggleBtn, mode === "products" && styles.toggleBtnActive]}
+          onPress={handleEditProductsPress}
+        >
+          <Text style={[styles.toggleText, mode === "products" && styles.toggleTextActive]}>
+            Edit Products
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -360,7 +499,8 @@ export default function ManageCategoriesFoodTypes() {
             {categoryList.map((cat) => (
               <View key={String(cat.id)} style={styles.row}>
                 <Text style={styles.rowText}>
-                  {cat.name} {cat.is_system ? " (system)" : ""}
+                  {cat.name}
+                  {cat.is_system ? " (system)" : ""}
                 </Text>
 
                 {!cat.is_system && (
@@ -417,7 +557,8 @@ export default function ManageCategoriesFoodTypes() {
             {foodTypes.map((ft) => (
               <View key={String(ft.id)} style={styles.row}>
                 <Text style={styles.rowText}>
-                  {ft.name} {ft.is_system ? " (system)" : ""}
+                  {ft.name}
+                  {ft.is_system ? " (system)" : ""}
                 </Text>
 
                 {!ft.is_system && (
@@ -430,6 +571,63 @@ export default function ManageCategoriesFoodTypes() {
           </ScrollView>
         </>
       )}
+
+      {mode === "products" && (
+        <>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Search products</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Search products..."
+              value={productQuery}
+              onChangeText={setProductQuery}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => {
+                loadFoodTypesIndex();
+                loadProducts();
+              }}
+            >
+              <Text style={styles.primaryBtnText}>Load Products</Text>
+            </TouchableOpacity>
+          </View>
+
+          {productsLoading ? (
+            <ActivityIndicator size="large" style={{ marginTop: 16 }} />
+          ) : (
+            <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 20 }}>
+              {products.length ? (
+                products.map((item) => {
+                  const ftName =
+                    item.food_type != null
+                      ? foodTypeNameById.get(Number(item.food_type)) ?? "Unknown"
+                      : "None";
+
+                  return (
+                    <TouchableOpacity
+                      key={String(item.id)}
+                      style={styles.productCard}
+                      activeOpacity={0.85}
+                      onPress={() => openEditProduct(item)}
+                    >
+                      <Text style={styles.productName}>
+                        {item.name}
+                        {item.is_system ? " (system)" : ""}
+                      </Text>
+                      <Text style={styles.productMeta}>Food type: {ftName}</Text>
+                      <Text style={styles.productHint}>Tap to edit →</Text>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={styles.emptyText}>No products found.</Text>
+              )}
+            </ScrollView>
+          )}
+        </>
+      )}
     </View>
   );
 }
@@ -438,29 +636,94 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, paddingTop: 18, backgroundColor: "#fafafa" },
   title: { fontSize: 22, fontWeight: "900", marginBottom: 10 },
 
-  toggleRow: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" },
-  toggleBtn: { backgroundColor: "#eee", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
+  toggleRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    marginBottom: 10,
+    flexWrap: "wrap",
+  },
+  toggleBtn: {
+    backgroundColor: "#eee",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
   toggleBtnActive: { backgroundColor: "#111" },
   toggleText: { fontWeight: "900", color: "#111" },
   toggleTextActive: { color: "#fff" },
 
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#eee", marginTop: 10 },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#eee",
+    marginTop: 10,
+  },
   cardTitle: { fontWeight: "900", marginBottom: 8 },
 
-  input: { backgroundColor: "#eee", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  input: {
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
 
-  primaryBtn: { backgroundColor: "#111", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, marginTop: 10 },
+  primaryBtn: {
+    backgroundColor: "#111",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 10,
+  },
   primaryBtnText: { color: "#fff", fontWeight: "900", textAlign: "center" },
 
   list: { marginTop: 10 },
-  row: { backgroundColor: "#fff", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#eee", marginBottom: 8, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  row: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#eee",
+    marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
   rowText: { fontWeight: "800", flex: 1 },
 
-  dangerBtn: { backgroundColor: "#b00020", borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
+  dangerBtn: {
+    backgroundColor: "#b00020",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
   dangerBtnText: { color: "#fff", fontWeight: "900" },
 
-  chip: { backgroundColor: "#eee", borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, marginRight: 8 },
+  chip: {
+    backgroundColor: "#eee",
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 8,
+  },
   chipSelected: { backgroundColor: "#111" },
   chipText: { fontWeight: "900", color: "#111" },
   chipTextSelected: { color: "#fff" },
+
+  productCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#eee",
+    marginBottom: 8,
+  },
+  productName: { fontWeight: "900", color: "#111", fontSize: 15 },
+  productMeta: { marginTop: 4, color: "#666", fontSize: 12 },
+  productHint: { marginTop: 8, color: "#663399", fontWeight: "900", fontSize: 12 },
+
+  emptyText: { marginTop: 12, color: "#666" },
 });
