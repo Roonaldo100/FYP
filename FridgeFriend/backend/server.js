@@ -2058,13 +2058,21 @@ app.get("/user/:userId/shopping/candidates/inventory", async (req, res) => {
       SELECT
         p.id AS product_id,
         p.name AS product_name,
+        up.store_id,
+        s.name AS store_name,
         COUNT(*)::int AS qty_in_inventory
       FROM user_products up
       JOIN products p ON p.id = up.product_id
+      LEFT JOIN stores s ON s.id = up.store_id
       WHERE up.user_id = $1
         AND (p.is_system = true OR p.owner_user_id = $1)
-      GROUP BY p.id, p.name
-      ORDER BY qty_in_inventory DESC, p.name ASC
+        AND (
+          up.store_id IS NULL
+          OR s.is_system = true
+          OR s.owner_user_id = $1
+        )
+      GROUP BY p.id, p.name, up.store_id, s.name
+      ORDER BY qty_in_inventory DESC, p.name ASC, s.name ASC NULLS LAST
       LIMIT 300
       `,
       [userId],
@@ -2074,6 +2082,8 @@ app.get("/user/:userId/shopping/candidates/inventory", async (req, res) => {
       r.rows.map((row) => ({
         product_id: Number(row.product_id),
         product_name: String(row.product_name),
+        suggested_store_id: row.store_id != null ? Number(row.store_id) : null,
+        suggested_store_name: row.store_name ?? null,
         qty_in_inventory: Number(row.qty_in_inventory),
       })),
     );
