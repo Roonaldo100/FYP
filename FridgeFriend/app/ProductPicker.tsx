@@ -107,7 +107,7 @@ export default function ProductPicker() {
 
   const onPick = (p: ProductRow) => {
     router.push({
-      pathname: "/AddFromProduct",
+      pathname: "/AddItemToFridge",
       params: {
         user_id: String(user_id),
         productId: String(p.id),
