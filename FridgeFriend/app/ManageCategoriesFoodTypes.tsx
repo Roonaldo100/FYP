@@ -1,3 +1,4 @@
+// app/ManageCategoriesFoodTypes.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,8 +13,20 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-type Category = { id: number; name: string; is_system?: boolean; owner_user_id?: number | null };
-type FoodType = { id: number; name: string; category: number; is_system?: boolean; owner_user_id?: number | null };
+type Category = {
+  id: number;
+  name: string;
+  is_system?: boolean;
+  owner_user_id?: number | null;
+};
+
+type FoodType = {
+  id: number;
+  name: string;
+  category: number;
+  is_system?: boolean;
+  owner_user_id?: number | null;
+};
 
 export default function ManageCategoriesFoodTypes() {
   const router = useRouter();
@@ -38,7 +51,7 @@ export default function ManageCategoriesFoodTypes() {
   const requireUser = useCallback(() => {
     if (!Number.isInteger(userIdNum) || userIdNum <= 0) {
       Alert.alert("Not logged in", "Please log in again.");
-      router.replace("/LoginScreen");
+      router.replace("../LoginScreen");
       return false;
     }
     return true;
@@ -84,6 +97,18 @@ export default function ManageCategoriesFoodTypes() {
   useEffect(() => {
     loadCategories();
   }, [loadCategories]);
+
+  // -------------------------
+  // Edit products navigation
+  // -------------------------
+  const handleEditProductsPress = useCallback(() => {
+    if (!requireUser()) return;
+
+    router.push({
+      pathname: "../EditProducts",
+      params: { user_id: String(userIdNum) },
+    });
+  }, [requireUser, router, userIdNum]);
 
   // -------------------------
   // Create / delete category
@@ -136,52 +161,48 @@ export default function ManageCategoriesFoodTypes() {
       return;
     }
 
-    Alert.alert(
-      "Delete category?",
-      `Delete "${cat.name}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
+    Alert.alert("Delete category?", `Delete "${cat.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setLoading(true);
+
+            const resp = await fetch(
+              `${API_BASE_URL}/user/${userIdNum}/categories/${cat.id}`,
+              { method: "DELETE" }
+            );
+
+            const text = await resp.text().catch(() => "");
+            let data: any = null;
             try {
-              setLoading(true);
+              data = JSON.parse(text);
+            } catch {}
 
-              const resp = await fetch(
-                `${API_BASE_URL}/user/${userIdNum}/categories/${cat.id}`,
-                { method: "DELETE" }
-              );
-
-              const text = await resp.text().catch(() => "");
-              let data: any = null;
-              try {
-                data = JSON.parse(text);
-              } catch {}
-
-              if (!resp.ok) {
-                Alert.alert("Error", data?.message || "Failed to delete category.");
-                return;
-              }
-
-              // If the deleted category was selected in food type mode, reset
-              if (selectedCategory?.id === cat.id) {
-                setSelectedCategory(null);
-                setFoodTypes([]);
-              }
-
-              await loadCategories();
-              Alert.alert("Deleted", `"${cat.name}" deleted.`);
-            } catch (e) {
-              console.error("Delete category error:", e);
-              Alert.alert("Error", "Failed to delete category.");
-            } finally {
-              setLoading(false);
+            if (!resp.ok) {
+              Alert.alert("Error", data?.message || "Failed to delete category.");
+              return;
             }
-          },
+
+            // if we deleted the selected category, clear it
+            if (selectedCategory?.id === cat.id) {
+              setSelectedCategory(null);
+              setFoodTypes([]);
+            }
+
+            await loadCategories();
+            Alert.alert("Deleted", `"${cat.name}" deleted.`);
+          } catch (e) {
+            console.error("Delete category error:", e);
+            Alert.alert("Error", "Failed to delete category.");
+          } finally {
+            setLoading(false);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   // -------------------------
@@ -243,53 +264,48 @@ export default function ManageCategoriesFoodTypes() {
       return;
     }
 
-    Alert.alert(
-      "Delete food type?",
-      `Delete "${ft.name}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
+    Alert.alert("Delete food type?", `Delete "${ft.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setLoading(true);
+
+            const resp = await fetch(
+              `${API_BASE_URL}/user/${userIdNum}/foodtypes/${ft.id}`,
+              { method: "DELETE" }
+            );
+
+            const text = await resp.text().catch(() => "");
+            let data: any = null;
             try {
-              setLoading(true);
+              data = JSON.parse(text);
+            } catch {}
 
-              const resp = await fetch(
-                `${API_BASE_URL}/user/${userIdNum}/foodtypes/${ft.id}`,
-                { method: "DELETE" }
-              );
-
-              const text = await resp.text().catch(() => "");
-              let data: any = null;
-              try {
-                data = JSON.parse(text);
-              } catch {}
-
-              if (!resp.ok) {
-                Alert.alert("Error", data?.message || "Failed to delete food type.");
-                return;
-              }
-
-              if (selectedCategory) await loadFoodTypes(selectedCategory.id);
-              Alert.alert("Deleted", `"${ft.name}" deleted.`);
-            } catch (e) {
-              console.error("Delete food type error:", e);
-              Alert.alert("Error", "Failed to delete food type.");
-            } finally {
-              setLoading(false);
+            if (!resp.ok) {
+              Alert.alert("Error", data?.message || "Failed to delete food type.");
+              return;
             }
-          },
+
+            if (selectedCategory) await loadFoodTypes(selectedCategory.id);
+            Alert.alert("Deleted", `"${ft.name}" deleted.`);
+          } catch (e) {
+            console.error("Delete food type error:", e);
+            Alert.alert("Error", "Failed to delete food type.");
+          } finally {
+            setLoading(false);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   // -------------------------
   // UI helpers
   // -------------------------
   const categoryList = useMemo(() => {
-    // System first, then user categories
     const sys = categories.filter((c) => c.is_system);
     const user = categories.filter((c) => !c.is_system);
     return [...sys, ...user];
@@ -317,9 +333,13 @@ export default function ManageCategoriesFoodTypes() {
             Food Types
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.primaryBtn} onPress={handleEditProductsPress}>
+          <Text style={styles.primaryBtnText}>Edit Products</Text>
+        </TouchableOpacity>
       </View>
 
-      {loading && <ActivityIndicator size="large" color="#fff" />}
+      {loading && <ActivityIndicator size="large" />}
 
       {!loading && mode === "categories" && (
         <>
@@ -344,10 +364,7 @@ export default function ManageCategoriesFoodTypes() {
                 </Text>
 
                 {!cat.is_system && (
-                  <TouchableOpacity
-                    style={styles.dangerBtn}
-                    onPress={() => deleteCategory(cat)}
-                  >
+                  <TouchableOpacity style={styles.dangerBtn} onPress={() => deleteCategory(cat)}>
                     <Text style={styles.dangerBtnText}>Delete</Text>
                   </TouchableOpacity>
                 )}
@@ -381,134 +398,69 @@ export default function ManageCategoriesFoodTypes() {
                 );
               })}
             </ScrollView>
+          </View>
 
-            <Text style={[styles.cardTitle, { marginTop: 10 }]}>Create food type</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Create food type</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Protein bars"
+              placeholder="e.g. Yogurt"
               value={newFoodTypeName}
               onChangeText={setNewFoodTypeName}
             />
             <TouchableOpacity style={styles.primaryBtn} onPress={createFoodType}>
               <Text style={styles.primaryBtnText}>Add Food Type</Text>
             </TouchableOpacity>
-
-            <Text style={styles.hint}>
-              Note: you can only delete your own (non-system) food types.
-            </Text>
           </View>
 
           <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 20 }}>
-            {!selectedCategory ? (
-              <Text style={styles.empty}>Select a category above to view its food types.</Text>
-            ) : foodTypes.length === 0 ? (
-              <Text style={styles.empty}>No food types found for {selectedCategory.name}.</Text>
-            ) : (
-              foodTypes.map((ft) => (
-                <View key={String(ft.id)} style={styles.row}>
-                  <Text style={styles.rowText}>
-                    {ft.name} {ft.is_system ? " (system)" : ""}
-                  </Text>
+            {foodTypes.map((ft) => (
+              <View key={String(ft.id)} style={styles.row}>
+                <Text style={styles.rowText}>
+                  {ft.name} {ft.is_system ? " (system)" : ""}
+                </Text>
 
-                  {!ft.is_system && (
-                    <TouchableOpacity
-                      style={styles.dangerBtn}
-                      onPress={() => deleteFoodType(ft)}
-                    >
-                      <Text style={styles.dangerBtnText}>Delete</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))
-            )}
+                {!ft.is_system && (
+                  <TouchableOpacity style={styles.dangerBtn} onPress={() => deleteFoodType(ft)}>
+                    <Text style={styles.dangerBtnText}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
           </ScrollView>
         </>
       )}
-
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backBtnText}>← Back</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#663399", padding: 20, paddingTop: 50 },
-  title: { color: "white", fontSize: 20, fontWeight: "800", marginBottom: 10 },
+  container: { flex: 1, padding: 16, paddingTop: 18, backgroundColor: "#fafafa" },
+  title: { fontSize: 22, fontWeight: "900", marginBottom: 10 },
 
-  toggleRow: { flexDirection: "row", marginBottom: 12 },
-  toggleBtn: {
-    flex: 1,
-    backgroundColor: "#eee",
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginRight: 8,
-    alignItems: "center",
-  },
-  toggleBtnActive: { backgroundColor: "#ffcc00" },
-  toggleText: { color: "#333", fontWeight: "700" },
-  toggleTextActive: { color: "#333" },
+  toggleRow: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" },
+  toggleBtn: { backgroundColor: "#eee", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
+  toggleBtnActive: { backgroundColor: "#111" },
+  toggleText: { fontWeight: "900", color: "#111" },
+  toggleTextActive: { color: "#fff" },
 
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 12 },
-  cardTitle: { fontSize: 14, fontWeight: "800", color: "#333", marginBottom: 8 },
-  hint: { fontSize: 12, color: "#666", marginTop: 8 },
+  card: { backgroundColor: "#fff", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#eee", marginTop: 10 },
+  cardTitle: { fontWeight: "900", marginBottom: 8 },
 
-  input: {
-    backgroundColor: "#eee",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
-  },
+  input: { backgroundColor: "#eee", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
 
-  primaryBtn: {
-    backgroundColor: "#663399",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  primaryBtnText: { color: "#fff", fontWeight: "800" },
+  primaryBtn: { backgroundColor: "#111", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, marginTop: 10 },
+  primaryBtnText: { color: "#fff", fontWeight: "900", textAlign: "center" },
 
-  list: { flex: 1 },
+  list: { marginTop: 10 },
+  row: { backgroundColor: "#fff", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "#eee", marginBottom: 8, flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  rowText: { fontWeight: "800", flex: 1 },
 
-  row: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  rowText: { color: "#333", fontWeight: "700", flex: 1, paddingRight: 10 },
+  dangerBtn: { backgroundColor: "#b00020", borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10 },
+  dangerBtnText: { color: "#fff", fontWeight: "900" },
 
-  dangerBtn: {
-    backgroundColor: "#eee",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-  },
-  dangerBtnText: { color: "#b00020", fontWeight: "800" },
-
-  chip: {
-    backgroundColor: "#eee",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    marginRight: 8,
-  },
-  chipSelected: { backgroundColor: "#ffcc00" },
-  chipText: { color: "#333", fontWeight: "700" },
-  chipTextSelected: { color: "#333" },
-
-  empty: { color: "white", fontSize: 14, marginTop: 10, textAlign: "center" },
-
-  backBtn: {
-    marginTop: 10,
-    alignSelf: "center",
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  backBtnText: { color: "#663399", fontWeight: "800" },
+  chip: { backgroundColor: "#eee", borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, marginRight: 8 },
+  chipSelected: { backgroundColor: "#111" },
+  chipText: { fontWeight: "900", color: "#111" },
+  chipTextSelected: { color: "#fff" },
 });

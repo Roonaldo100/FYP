@@ -3583,6 +3583,38 @@ app.get("/user/:userId/product/:productId/lastPriceAny", async (req, res) => {
   }
 });
 
+app.get("/user/:userId/products/:productId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const productId = Number(req.params.productId);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(productId) || productId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+
+  try {
+    const r = await pool.query(
+      `
+      SELECT id, name, food_type, is_system, owner_user_id
+      FROM products
+      WHERE id = $1
+        AND is_system = false
+        AND owner_user_id = $2
+      LIMIT 1
+      `,
+      [productId, userId]
+    );
+
+    if (!r.rows.length) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error("get product error:", e);
+    return res.status(500).json({ message: "Server error loading product" });
+  }
+});
+
 app.post(
   "/user/:userId/product/:productId/clearPersonalHistory",
   async (req, res) => {
@@ -3666,6 +3698,73 @@ app.post(
     }
   },
 );
+
+app.put("/user/:userId/products/:productId", async (req, res) => {
+  const userId = Number(req.params.userId);
+  const productId = Number(req.params.productId);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(productId) || productId <= 0) {
+    return res.status(400).json({ message: "Invalid userId or productId" });
+  }
+
+  const nameRaw = req.body?.name;
+  const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
+
+  const foodTypeRaw = req.body?.food_type;
+  const foodType =
+    foodTypeRaw === undefined || foodTypeRaw === null || String(foodTypeRaw).trim() === ""
+      ? null
+      : Number(foodTypeRaw);
+
+  if (!name) {
+    return res.status(400).json({ message: "Missing name" });
+  }
+  if (foodType !== null && (!Number.isInteger(foodType) || foodType <= 0)) {
+    return res.status(400).json({ message: "Invalid food_type" });
+  }
+
+  try {
+    // (optional but recommended) validate category belongs to user or is system category
+    if (foodType !== null) {
+      const ftOk = await pool.query(
+        `
+        SELECT id
+        FROM food_types
+        WHERE id = $1
+          AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [foodType, userId]
+      );
+
+      if (!ftOk.rows.length) {
+        return res.status(400).json({ message: "Invalid food_type for this user" });
+      }
+    }
+
+    const upd = await pool.query(
+      `
+      UPDATE products
+      SET name = $1,
+          food_type = $2
+      WHERE id = $3
+        AND is_system = false
+        AND owner_user_id = $4
+      RETURNING id, name, food_type, is_system, owner_user_id
+      `,
+      [name, foodType, productId, userId]
+    );
+
+    if (!upd.rows.length) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    return res.json({ message: "Updated", product: upd.rows[0] });
+  } catch (e) {
+    console.error("update product error:", e);
+    return res.status(500).json({ message: "Server error updating product" });
+  }
+});
 
 /**
  * POST: Remove N items from user_products for a grouped product/store row
