@@ -79,6 +79,12 @@ function cleanCustomItemName(name) {
   return s;
 }
 
+function normalizeProductName(name) {
+  const s = String(name || "").trim();
+  if (!s) return null;
+  return s.slice(0, 30);
+}
+
 function toPositiveInt(v, fallback = null) {
   const n = Number(v);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return fallback;
@@ -3134,13 +3140,14 @@ app.post("/scan", async (req, res) => {
 app.post("/products/create", async (req, res) => {
   const { userId, name, barcode, foodTypeId, storeId } = req.body;
   const uid = parseOptionalUserId(userId);
+  const normalizedName = normalizeProductName(name);
 
   if (!uid) {
     return res.status(400).json({
       message: "Missing userId (required after scoped products update)",
     });
   }
-  if (!name || !foodTypeId) {
+  if (!normalizedName || !foodTypeId) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
@@ -3208,7 +3215,7 @@ app.post("/products/create", async (req, res) => {
       VALUES ($1, $2, $3, false, $4)
       RETURNING id
       `,
-      [String(name).trim(), barcode ?? null, foodTypeId, uid],
+      [normalizedName, barcode ?? null, foodTypeId, uid],
     );
 
     const newProductId = insertProduct.rows[0].id;
@@ -3249,7 +3256,7 @@ app.post("/products/create", async (req, res) => {
 
     return res.json({
       product_id: newProductId,
-      product_name: String(name).trim(),
+      product_name: normalizedName,
       store_id: storeId ?? null,
       store_name: storeName,
     });
@@ -3766,8 +3773,7 @@ app.put("/user/:userId/products/:productId", async (req, res) => {
     return res.status(400).json({ message: "Invalid userId or productId" });
   }
 
-  const nameRaw = req.body?.name;
-  const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
+  const name = normalizeProductName(req.body?.name);
 
   const foodTypeRaw = req.body?.food_type;
   const foodType =
