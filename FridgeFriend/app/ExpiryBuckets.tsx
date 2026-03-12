@@ -14,6 +14,12 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { modalStyles } from "../styles/modals";
+import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+
 type Bucket = {
   expiry_date: string | null;
   quantity: number;
@@ -41,7 +47,6 @@ function makeNextDaysOptions(count: number) {
   const today = new Date();
   today.setHours(12, 0, 0, 0);
 
-  // Include "no expiry" option at the top
   out.push({ key: "__none__", label: "No expiry date", value: null });
 
   for (let i = 0; i < count; i++) {
@@ -64,7 +69,6 @@ function normalizeExpiryForApi(v: string | null): string | null {
   if (v === null) return null;
   const s = String(v).trim();
   if (!s) return null;
-
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   return s;
 }
@@ -91,14 +95,14 @@ export default function ExpiryBuckets() {
     user_id?: string;
     productId?: string;
     productName?: string;
-    storeId?: string; // "" means null
+    storeId?: string;
     storeName?: string;
-    foodTypeId?: string; // optional
+    foodTypeId?: string;
   }>();
 
   const userId = params.user_id;
   const productId = params.productId;
-  const storeId = params.storeId ? params.storeId : ""; // "" => null
+  const storeId = params.storeId ? params.storeId : "";
 
   const [loading, setLoading] = useState(false);
   const [buckets, setBuckets] = useState<Bucket[]>([]);
@@ -110,19 +114,16 @@ export default function ExpiryBuckets() {
 
   const [overrideText, setOverrideText] = useState<string>("");
 
-  // Change-expiry modal state
   const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
   const [editingFromExpiry, setEditingFromExpiry] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
 
-  // Set-quantity modal state
   const [qtyModalOpen, setQtyModalOpen] = useState(false);
   const [qtyEditingExpiry, setQtyEditingExpiry] = useState<string | null>(null);
   const [qtyCurrent, setQtyCurrent] = useState<number>(0);
   const [qtyInput, setQtyInput] = useState<string>("");
   const [qtySaving, setQtySaving] = useState(false);
 
-  // Edit store/price modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [stores, setStores] = useState<Store[]>([]);
   const [storesLoading, setStoresLoading] = useState(false);
@@ -439,7 +440,6 @@ export default function ExpiryBuckets() {
       return;
     }
 
-    // If nothing changed, just close
     if ((fromSid ?? null) === (toSid ?? null) && priceText.trim() === "") {
       setEditModalOpen(false);
       return;
@@ -471,7 +471,6 @@ export default function ExpiryBuckets() {
 
       setEditModalOpen(false);
 
-      // Refresh the new group, and update route params so the grouping view matches new store
       const newStoreIdStr = data.store_id === null ? "" : String(data.store_id);
       const newStoreName = data.store_id === null ? "No store" : (data.store_name ?? "Store");
 
@@ -499,17 +498,23 @@ export default function ExpiryBuckets() {
   }, [params.productName]);
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <Text style={styles.title}>{headerText}</Text>
       <Text style={styles.subtitle}>Store: {storeLabel}</Text>
 
       <View style={styles.headerButtonsRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light]}
+          onPress={() => router.back()}
+        >
           <Text style={styles.backBtnText}>← Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.editBtn} onPress={openEditMeta}>
-          <Text style={styles.editBtnText}>Edit store/price</Text>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.accent]}
+          onPress={openEditMeta}
+        >
+          <Text style={buttonStyles.accentText}>Edit store/price</Text>
         </TouchableOpacity>
       </View>
 
@@ -517,11 +522,11 @@ export default function ExpiryBuckets() {
         <ActivityIndicator size="large" />
       ) : (
         <ScrollView
-          style={{ width: "100%", marginTop: 12 }}
-          contentContainerStyle={{ paddingBottom: 30 }}
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.overrideCard}>
+          <View style={[commonStyles.card, styles.overrideCard]}>
             <Text style={styles.overrideTitle}>Expiry notification override</Text>
             <Text style={styles.overrideHint}>
               Set days-before-expiry for this product + store. Use 0 (or blank) to follow Settings.
@@ -532,19 +537,22 @@ export default function ExpiryBuckets() {
               onChangeText={setOverrideText}
               placeholder="e.g. 3"
               keyboardType="number-pad"
-              style={styles.overrideInput}
+              style={[formStyles.inputAlt, styles.overrideInput]}
             />
 
-            <TouchableOpacity style={styles.saveOverrideBtn} onPress={saveOverride}>
-              <Text style={styles.saveOverrideText}>Save override</Text>
+            <TouchableOpacity
+              style={[buttonStyles.base, buttonStyles.accent]}
+              onPress={saveOverride}
+            >
+              <Text style={buttonStyles.accentText}>Save override</Text>
             </TouchableOpacity>
           </View>
 
           {buckets.map((b, i) => {
             const expNorm = normalizeExpiryForApi(b.expiry_date);
             return (
-              <View key={`${String(b.expiry_date)}-${i}`} style={styles.bucketRow}>
-                <View style={{ flex: 1 }}>
+              <View key={`${String(b.expiry_date)}-${i}`} style={[commonStyles.card, styles.bucketRow]}>
+                <View style={styles.bucketMain}>
                   <Text style={styles.bucketTitle}>
                     {expNorm ? `Expires: ${expNorm}` : "No expiry date"}
                   </Text>
@@ -559,17 +567,17 @@ export default function ExpiryBuckets() {
 
                   <View style={styles.bucketActionsRow}>
                     <TouchableOpacity
-                      style={styles.changeBtn}
+                      style={[buttonStyles.base, buttonStyles.secondary]}
                       onPress={() => openChangeExpiry(expNorm)}
                     >
-                      <Text style={styles.changeBtnText}>Change date</Text>
+                      <Text style={buttonStyles.secondaryText}>Change date</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.removeAllBtn}
+                      style={[buttonStyles.base, buttonStyles.danger]}
                       onPress={() => removeAllFromBucket(expNorm, b.quantity)}
                     >
-                      <Text style={styles.removeAllBtnText}>Remove all</Text>
+                      <Text style={buttonStyles.dangerText}>Remove all</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -591,7 +599,6 @@ export default function ExpiryBuckets() {
         </ScrollView>
       )}
 
-      {/* Change expiry modal */}
       <Modal
         visible={expiryMenuOpen}
         transparent
@@ -602,9 +609,9 @@ export default function ExpiryBuckets() {
           setEditingFromExpiry(null);
         }}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Change expiry for this bucket</Text>
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Change expiry for this bucket</Text>
             <Text style={styles.modalSub}>
               Current: {normalizeExpiryForApi(editingFromExpiry) ? normalizeExpiryForApi(editingFromExpiry) : "No expiry date"}
             </Text>
@@ -614,41 +621,41 @@ export default function ExpiryBuckets() {
               {[1, 2, 3, 5, 7, 14].map((d) => (
                 <TouchableOpacity
                   key={String(d)}
-                  style={styles.quickBtn}
+                  style={[buttonStyles.accent, buttonStyles.pill, styles.quickBtn]}
                   onPress={() => changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))}
                   disabled={changing}
                 >
-                  <Text style={styles.quickBtnText}>{d}d</Text>
+                  <Text style={buttonStyles.accentText}>{d}d</Text>
                 </TouchableOpacity>
               ))}
               <TouchableOpacity
-                style={[styles.quickBtn, { backgroundColor: "#eee" }]}
+                style={[buttonStyles.secondary, buttonStyles.pill, styles.quickBtn]}
                 onPress={() => changeBucketExpiryTo(null)}
                 disabled={changing}
               >
-                <Text style={[styles.quickBtnText, { color: "#b00020" }]}>No expiry</Text>
+                <Text style={styles.noExpiryText}>No expiry</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={{ height: 12 }} />
+            <View style={styles.modalSpacer} />
 
             <FlatList
               data={dateOptions}
               keyExtractor={(it) => it.key}
-              style={{ maxHeight: 320 }}
+              style={styles.modalList}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.modalRow}
+                  style={modalStyles.row}
                   onPress={() => changeBucketExpiryTo(item.value)}
                   disabled={changing}
                 >
-                  <Text style={styles.modalRowText}>{item.label}</Text>
+                  <Text style={modalStyles.rowText}>{item.label}</Text>
                 </TouchableOpacity>
               )}
             />
 
             <TouchableOpacity
-              style={[styles.modalClose, changing && { opacity: 0.6 }]}
+              style={[buttonStyles.base, buttonStyles.primary, changing && styles.dimmed]}
               onPress={() => {
                 if (changing) return;
                 setExpiryMenuOpen(false);
@@ -656,11 +663,11 @@ export default function ExpiryBuckets() {
               }}
               disabled={changing}
             >
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
 
             {changing && (
-              <View style={{ marginTop: 10 }}>
+              <View style={styles.modalLoader}>
                 <ActivityIndicator />
               </View>
             )}
@@ -668,7 +675,6 @@ export default function ExpiryBuckets() {
         </View>
       </Modal>
 
-      {/* Set quantity modal */}
       <Modal
         visible={qtyModalOpen}
         transparent
@@ -679,9 +685,9 @@ export default function ExpiryBuckets() {
           setQtyEditingExpiry(null);
         }}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Set quantity</Text>
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Set quantity</Text>
             <Text style={styles.modalSub}>
               Bucket: {normalizeExpiryForApi(qtyEditingExpiry) ? normalizeExpiryForApi(qtyEditingExpiry) : "No expiry date"}
             </Text>
@@ -693,20 +699,20 @@ export default function ExpiryBuckets() {
               onChangeText={setQtyInput}
               placeholder="Enter quantity"
               keyboardType="number-pad"
-              style={styles.qtyInput}
+              style={[formStyles.inputAlt, styles.modalInput]}
               editable={!qtySaving}
             />
 
             <TouchableOpacity
-              style={[styles.saveQtyBtn, qtySaving && { opacity: 0.6 }]}
+              style={[buttonStyles.base, buttonStyles.accent, qtySaving && styles.dimmed]}
               onPress={saveSetQuantity}
               disabled={qtySaving}
             >
-              {qtySaving ? <ActivityIndicator /> : <Text style={styles.saveQtyBtnText}>Save</Text>}
+              {qtySaving ? <ActivityIndicator /> : <Text style={buttonStyles.accentText}>Save</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modalClose, qtySaving && { opacity: 0.6 }]}
+              style={[buttonStyles.base, buttonStyles.primary, qtySaving && styles.dimmed, styles.modalCloseBtn]}
               onPress={() => {
                 if (qtySaving) return;
                 setQtyModalOpen(false);
@@ -714,13 +720,12 @@ export default function ExpiryBuckets() {
               }}
               disabled={qtySaving}
             >
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Edit store/price modal */}
       <Modal
         visible={editModalOpen}
         transparent
@@ -730,16 +735,16 @@ export default function ExpiryBuckets() {
           setEditModalOpen(false);
         }}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Edit store and last price</Text>
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Edit store and last price</Text>
 
             <Text style={styles.modalSub}>Store</Text>
 
             {storesLoading ? (
               <ActivityIndicator />
             ) : (
-              <View style={{ marginTop: 8 }}>
+              <View style={styles.storeListWrap}>
                 <TouchableOpacity
                   style={[
                     styles.storeChoice,
@@ -754,7 +759,7 @@ export default function ExpiryBuckets() {
                 <FlatList
                   data={stores}
                   keyExtractor={(s) => String(s.id)}
-                  style={{ maxHeight: 220 }}
+                  style={styles.storeList}
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       style={[
@@ -771,33 +776,33 @@ export default function ExpiryBuckets() {
               </View>
             )}
 
-            <Text style={[styles.modalSub, { marginTop: 12 }]}>Last price (optional)</Text>
+            <Text style={[styles.modalSub, styles.modalSubSpacing]}>Last price (optional)</Text>
             <TextInput
               value={priceText}
               onChangeText={setPriceText}
               placeholder="e.g. 2.49"
               keyboardType="decimal-pad"
-              style={styles.priceInput}
+              style={[formStyles.inputAlt, styles.modalInput]}
               editable={!savingMeta}
             />
 
             <TouchableOpacity
-              style={[styles.saveQtyBtn, savingMeta && { opacity: 0.6 }]}
+              style={[buttonStyles.base, buttonStyles.accent, savingMeta && styles.dimmed]}
               onPress={saveEditMeta}
               disabled={savingMeta}
             >
-              {savingMeta ? <ActivityIndicator /> : <Text style={styles.saveQtyBtnText}>Save</Text>}
+              {savingMeta ? <ActivityIndicator /> : <Text style={buttonStyles.accentText}>Save</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modalClose, savingMeta && { opacity: 0.6 }]}
+              style={[buttonStyles.base, buttonStyles.primary, savingMeta && styles.dimmed, styles.modalCloseBtn]}
               onPress={() => {
                 if (savingMeta) return;
                 setEditModalOpen(false);
               }}
               disabled={savingMeta}
             >
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -807,176 +812,164 @@ export default function ExpiryBuckets() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#663399" },
-  title: { color: "white", fontSize: 22, fontWeight: "800" },
-  subtitle: { color: "white", marginTop: 6, opacity: 0.9 },
-
-  headerButtonsRow: { flexDirection: "row", gap: 10, marginTop: 10, alignItems: "center" },
-
-  backBtn: {
-    alignSelf: "flex-start",
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
+  title: {
+    color: colors.primaryTextOn,
+    fontSize: 22,
+    fontWeight: fontWeight.heavy,
   },
-  backBtnText: { color: "#663399", fontWeight: "800" },
-
-  editBtn: {
-    alignSelf: "flex-start",
-    backgroundColor: "#ffcc00",
-    padding: 10,
-    borderRadius: 10,
+  subtitle: {
+    color: colors.primaryTextOn,
+    marginTop: spacing.sm,
+    opacity: 0.9,
   },
-  editBtnText: { color: "#333", fontWeight: "900" },
-
-  overrideCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  overrideTitle: { fontWeight: "900", color: "#333" },
-  overrideHint: { marginTop: 6, color: "#666" },
-  overrideInput: {
-    marginTop: 10,
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  saveOverrideBtn: {
-    marginTop: 10,
-    backgroundColor: "#ffcc00",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  headerButtonsRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.md,
     alignItems: "center",
   },
-  saveOverrideText: { fontWeight: "900", color: "#333" },
-
+  backBtnText: {
+    color: colors.primary,
+    fontWeight: fontWeight.heavy,
+  },
+  scroll: {
+    width: "100%",
+    marginTop: spacing.md,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
+  overrideCard: {
+    marginBottom: spacing.md,
+  },
+  overrideTitle: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  overrideHint: {
+    marginTop: spacing.sm,
+    color: colors.textMuted,
+  },
+  overrideInput: {
+    marginTop: spacing.md,
+    marginBottom: 0,
+  },
   bucketRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    marginBottom: spacing.md,
   },
-  bucketTitle: { color: "#333", fontWeight: "800" },
-
-  qtyTap: {
-    marginTop: 8,
-    alignSelf: "flex-start",
-    backgroundColor: "#eee",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-  },
-  bucketQty: { color: "#333", fontWeight: "900" },
-  qtyHint: { marginTop: 2, color: "#663399", fontWeight: "800", fontSize: 12 },
-
-  bucketActionsRow: { flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" },
-
-  changeBtn: {
-    alignSelf: "flex-start",
-    backgroundColor: "#eee",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-  },
-  changeBtnText: { fontWeight: "900", color: "#333" },
-
-  removeAllBtn: {
-    alignSelf: "flex-start",
-    backgroundColor: "#b00020",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-  },
-  removeAllBtnText: { fontWeight: "900", color: "#fff" },
-
-  ctrlBtn: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginLeft: 10,
-  },
-  ctrlBtnDisabled: { opacity: 0.5 },
-  ctrlBtnText: { fontSize: 18, fontWeight: "900", color: "#333" },
-
-  modalBackdrop: {
+  bucketMain: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 16,
   },
-  modalCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14 },
-  modalTitle: { fontWeight: "900", fontSize: 16, color: "#333" },
-  modalSub: { marginTop: 6, color: "#666", fontWeight: "700" },
-
-  quickTitle: { marginTop: 12, fontWeight: "800", color: "#333" },
-  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  bucketTitle: {
+    color: colors.text,
+    fontWeight: fontWeight.heavy,
+  },
+  qtyTap: {
+    marginTop: spacing.sm,
+    alignSelf: "flex-start",
+    backgroundColor: colors.surfaceAlt,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+  },
+  bucketQty: {
+    color: colors.text,
+    fontWeight: fontWeight.black,
+  },
+  qtyHint: {
+    marginTop: 2,
+    color: colors.primary,
+    fontWeight: fontWeight.heavy,
+    fontSize: fontSize.xs,
+  },
+  bucketActionsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    flexWrap: "wrap",
+  },
+  ctrlBtn: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    marginLeft: spacing.md,
+  },
+  ctrlBtnDisabled: {
+    opacity: 0.5,
+  },
+  ctrlBtnText: {
+    fontSize: 18,
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  modalSub: {
+    marginTop: spacing.sm,
+    color: colors.textMuted,
+    fontWeight: fontWeight.bold,
+  },
+  quickTitle: {
+    marginTop: spacing.lg,
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
+  },
+  quickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
   quickBtn: {
-    backgroundColor: "#ffcc00",
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
-  quickBtnText: { fontWeight: "900", color: "#333" },
-
-  modalRow: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+  noExpiryText: {
+    fontWeight: fontWeight.black,
+    color: colors.danger,
   },
-  modalRowText: { color: "#333", fontWeight: "700" },
-
-  qtyInput: {
-    marginTop: 12,
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  modalSpacer: {
+    height: 12,
   },
-
-  priceInput: {
-    marginTop: 10,
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  modalList: {
+    maxHeight: 320,
   },
-
-  saveQtyBtn: {
-    marginTop: 12,
-    backgroundColor: "#ffcc00",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
+  modalLoader: {
+    marginTop: spacing.md,
   },
-  saveQtyBtnText: { fontWeight: "900", color: "#333" },
-
-  modalClose: {
-    marginTop: 12,
-    backgroundColor: "#663399",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
+  modalInput: {
+    marginTop: spacing.lg,
+    marginBottom: 0,
   },
-  modalCloseText: { color: "#fff", fontWeight: "900" },
-
+  modalCloseBtn: {
+    marginTop: spacing.lg,
+  },
+  dimmed: {
+    opacity: 0.6,
+  },
+  storeListWrap: {
+    marginTop: spacing.sm,
+  },
+  storeList: {
+    maxHeight: 220,
+  },
   storeChoice: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
   },
   storeChoiceSelected: {
     borderWidth: 2,
-    borderColor: "#663399",
+    borderColor: colors.primary,
   },
-  storeChoiceText: { fontWeight: "900", color: "#333" },
+  storeChoiceText: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  modalSubSpacing: {
+    marginTop: spacing.lg,
+  },
 });

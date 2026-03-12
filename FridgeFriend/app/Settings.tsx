@@ -16,6 +16,11 @@ import {
   sendExpiryNotification,
 } from "../lib/notifications";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontWeight, spacing } from "../styles/tokens";
+
 export default function Settings() {
   const router = useRouter();
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
@@ -80,7 +85,6 @@ export default function Settings() {
         pending: { user_product_id: number; product_name: string; days_left: number }[];
       } = await resp.json();
 
-      // One-time sweep notifications
       if (Array.isArray(data.pending) && data.pending.length > 0) {
         const ok = await registerForLocalNotificationsAsync();
         if (ok) {
@@ -143,9 +147,9 @@ export default function Settings() {
       <Text style={styles.title}>Settings</Text>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#fff" />
+        <ActivityIndicator size="large" color={colors.primaryTextOn} />
       ) : (
-        <View style={styles.card}>
+        <View style={[commonStyles.card, styles.card]}>
           <Text style={styles.label}>Notify me this many days before expiry</Text>
 
           <TextInput
@@ -153,23 +157,35 @@ export default function Settings() {
             onChangeText={setPeriodText}
             placeholder="0"
             keyboardType="number-pad"
-            style={styles.input}
+            style={[formStyles.inputAlt, styles.input]}
           />
 
-          <TouchableOpacity style={styles.saveButton} onPress={onPressSave}>
-            <Text style={styles.saveText}>Save</Text>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.primary, styles.buttonSpacing]}
+            onPress={onPressSave}
+          >
+            <Text style={buttonStyles.primaryText}>Save</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.secondaryButton} onPress={goManageStores}>
-            <Text style={styles.secondaryText}>Manage stores</Text>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.accent, styles.buttonSpacing]}
+            onPress={goManageStores}
+          >
+            <Text style={buttonStyles.accentText}>Manage stores</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-            <Text style={styles.logoutText}>Log out</Text>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.danger, styles.buttonSpacing]}
+            onPress={logout}
+          >
+            <Text style={buttonStyles.dangerText}>Log out</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backText}>Back</Text>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.secondary]}
+            onPress={() => router.back()}
+          >
+            <Text style={buttonStyles.secondaryText}>Back</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -179,55 +195,30 @@ export default function Settings() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#663399",
+    ...commonStyles.screenPrimary,
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
   },
-  title: { color: "white", fontSize: 22, marginBottom: 16, fontWeight: "900" },
+  title: {
+    color: colors.primaryTextOn,
+    fontSize: 22,
+    marginBottom: spacing.xxl,
+    fontWeight: fontWeight.black,
+  },
   card: {
     width: "100%",
     maxWidth: 360,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
   },
-  label: { fontSize: 14, fontWeight: "700", color: "#333", marginBottom: 8 },
-  input: { backgroundColor: "#eee", borderRadius: 8, padding: 10, marginBottom: 12 },
-
-  saveButton: {
-    backgroundColor: "#663399",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: 10,
+  label: {
+    fontSize: 14,
+    fontWeight: fontWeight.bold,
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
-  saveText: { color: "#fff", fontWeight: "800" },
-
-  secondaryButton: {
-    backgroundColor: "#ffcc00",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: 10,
+  input: {
+    marginBottom: 0,
   },
-  secondaryText: { color: "#333", fontWeight: "900" },
-
-  logoutButton: {
-    backgroundColor: "#b00020",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: 10,
+  buttonSpacing: {
+    marginBottom: spacing.md,
   },
-  logoutText: { color: "#fff", fontWeight: "900" },
-
-  backButton: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  backText: { color: "#333", fontWeight: "800" },
 });

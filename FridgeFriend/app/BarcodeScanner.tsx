@@ -16,6 +16,8 @@ import {
 import { API_BASE_URL } from "../config/apiConfig";
 
 import { registerForLocalNotificationsAsync } from "../lib/notifications";
+import { commonStyles } from "../styles/common";
+import { colors, spacing } from "../styles/tokens";
 
 export default function BarcodeScanner() {
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
@@ -25,13 +27,11 @@ export default function BarcodeScanner() {
   const [scanned, setScanned] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Request camera permission on load
   useEffect(() => {
     if (!permission) return;
     if (!permission.granted) requestPermission();
   }, [permission]);
 
-  // Pre-register local notifications (so the first notify works cleanly)
   useEffect(() => {
     registerForLocalNotificationsAsync().catch(() => {});
   }, []);
@@ -68,7 +68,6 @@ export default function BarcodeScanner() {
         return;
       }
 
-      // If product exists in OFF but not in your DB, route to classification UI
       if (data.needs_classification) {
         setLoading(false);
         router.push({
@@ -107,23 +106,30 @@ export default function BarcodeScanner() {
     }
   };
 
-  // Permission states
-  if (!permission) return <Text>Requesting camera permission…</Text>;
+  if (!permission) {
+    return (
+      <View style={commonStyles.centered}>
+        <Text>Requesting camera permission…</Text>
+      </View>
+    );
+  }
 
   if (!permission.granted) {
     return (
-      <View style={styles.center}>
+      <View style={commonStyles.centered}>
         <Text>No access to camera.</Text>
-        <Button title="Grant Permission" onPress={requestPermission} />
+        <View style={styles.permissionButtonWrap}>
+          <Button title="Grant Permission" onPress={requestPermission} />
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.container}>
       {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
+        <View style={commonStyles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primaryTextOn} />
         </View>
       )}
 
@@ -146,13 +152,15 @@ export default function BarcodeScanner() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  scanAgainContainer: { position: "absolute", bottom: 40, alignSelf: "center" },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#0008",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
+  container: {
+    flex: 1,
+  },
+  permissionButtonWrap: {
+    marginTop: spacing.md,
+  },
+  scanAgainContainer: {
+    position: "absolute",
+    bottom: 40,
+    alignSelf: "center",
   },
 });

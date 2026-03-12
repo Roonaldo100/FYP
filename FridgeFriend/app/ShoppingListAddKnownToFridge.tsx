@@ -11,6 +11,10 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+
 function toValidId(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -110,7 +114,6 @@ export default function ShoppingListAddKnownToFridge() {
       .filter((n) => Number.isInteger(n) && n > 0);
 
     if (!itemIds.length) {
-      // allow skipping known items entirely
       goCustom();
       return;
     }
@@ -147,14 +150,22 @@ export default function ShoppingListAddKnownToFridge() {
   const header = data?.list?.name ?? "Shopping List";
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <View style={styles.topRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} disabled={loading}>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light]}
+          onPress={() => router.back()}
+          disabled={loading}
+        >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.primaryBtn} onPress={addSelected} disabled={loading}>
-          <Text style={styles.primaryText}>Add to fridge</Text>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.accent]}
+          onPress={addSelected}
+          disabled={loading}
+        >
+          <Text style={buttonStyles.accentText}>Add to fridge</Text>
         </TouchableOpacity>
       </View>
 
@@ -163,38 +174,45 @@ export default function ShoppingListAddKnownToFridge() {
         Select products that already exist (known/historical). You can also continue without selecting any.
       </Text>
 
-      {loading && <ActivityIndicator size="large" color="#fff" />}
+      {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
 
       {!loading && (
-        <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.smallBtn} onPress={selectAll}>
+            <TouchableOpacity style={[buttonStyles.base, buttonStyles.light]} onPress={selectAll}>
               <Text style={styles.smallBtnText}>Select all</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.smallBtn} onPress={clearAll}>
+            <TouchableOpacity style={[buttonStyles.base, buttonStyles.light]} onPress={clearAll}>
               <Text style={styles.smallBtnText}>Clear</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.smallBtn} onPress={goCustom}>
+            <TouchableOpacity style={[buttonStyles.base, buttonStyles.light]} onPress={goCustom}>
               <Text style={styles.smallBtnText}>Skip</Text>
             </TouchableOpacity>
           </View>
 
           {!knownItems.length ? (
-            <View style={styles.card}>
+            <View style={[commonStyles.card, styles.card]}>
               <Text style={styles.emptyText}>No known items on this list.</Text>
-              <TouchableOpacity style={styles.primaryBtn2} onPress={goCustom}>
-                <Text style={styles.primaryText2}>Continue</Text>
+              <TouchableOpacity
+                style={[buttonStyles.base, buttonStyles.primary, styles.primaryBtn2]}
+                onPress={goCustom}
+              >
+                <Text style={buttonStyles.primaryText}>Continue</Text>
               </TouchableOpacity>
             </View>
           ) : (
             knownItems.map((it) => {
               const checked = !!selected[it.id];
               return (
-                <TouchableOpacity key={String(it.id)} style={styles.itemRow} onPress={() => toggle(it.id)}>
+                <TouchableOpacity
+                  key={String(it.id)}
+                  style={[commonStyles.card, styles.itemRow]}
+                  onPress={() => toggle(it.id)}
+                >
                   <View style={[styles.checkbox, checked && styles.checkboxOn]} />
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.itemMain}>
                     <Text style={styles.itemName}>{it.name}</Text>
                     <Text style={styles.itemMeta}>
                       Store: {it.store_name ?? "No store"} • Qty: {it.quantity}
@@ -211,31 +229,77 @@ export default function ShoppingListAddKnownToFridge() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#663399", padding: 16, paddingTop: 40 },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-
-  backBtn: { backgroundColor: "#fff", padding: 10, borderRadius: 10 },
-  backText: { color: "#663399", fontWeight: "900" },
-
-  primaryBtn: { backgroundColor: "#ffcc00", padding: 10, borderRadius: 10 },
-  primaryText: { color: "#333", fontWeight: "900" },
-
-  title: { marginTop: 14, color: "white", fontSize: 20, fontWeight: "900" },
-  subtitle: { marginTop: 6, color: "white", opacity: 0.9 },
-
-  actionsRow: { flexDirection: "row", gap: 10, marginTop: 14, marginBottom: 10, flexWrap: "wrap" },
-  smallBtn: { backgroundColor: "#fff", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10 },
-  smallBtnText: { color: "#663399", fontWeight: "900" },
-
-  itemRow: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 10 },
-  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 2, borderColor: "#663399" },
-  checkboxOn: { backgroundColor: "#ffcc00", borderColor: "#ffcc00" },
-  itemName: { fontWeight: "900", color: "#333" },
-  itemMeta: { marginTop: 4, color: "#666", fontSize: 12 },
-
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginTop: 12 },
-  emptyText: { fontWeight: "900", color: "#333" },
-
-  primaryBtn2: { marginTop: 10, backgroundColor: "#663399", padding: 10, borderRadius: 10, alignItems: "center" },
-  primaryText2: { color: "#fff", fontWeight: "900" },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  backText: {
+    color: colors.primary,
+    fontWeight: fontWeight.black,
+  },
+  title: {
+    marginTop: spacing.lg,
+    color: colors.primaryTextOn,
+    fontSize: 20,
+    fontWeight: fontWeight.black,
+  },
+  subtitle: {
+    marginTop: spacing.sm,
+    color: colors.primaryTextOn,
+    opacity: 0.9,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+    flexWrap: "wrap",
+  },
+  smallBtnText: {
+    color: colors.primary,
+    fontWeight: fontWeight.black,
+  },
+  itemRow: {
+    marginBottom: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  checkboxOn: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  itemMain: {
+    flex: 1,
+  },
+  itemName: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  itemMeta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  card: {
+    marginTop: spacing.lg,
+  },
+  emptyText: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  primaryBtn2: {
+    marginTop: spacing.md,
+  },
 });

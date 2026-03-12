@@ -11,6 +11,10 @@ import {
 } from "react-native";
 import { useFocusEffect, useGlobalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../../config/apiConfig";
+import { commonStyles } from "../../styles/common";
+import { formStyles } from "../../styles/forms";
+import { buttonStyles } from "../../styles/buttons";
+import { colors, fontSize, fontWeight, spacing } from "../../styles/tokens";
 
 function toValidUserId(v: unknown): number | null {
   const n = Number(v);
@@ -142,16 +146,26 @@ export default function ShoppingTab() {
     <View style={styles.container}>
       <Text style={styles.title}>Shopping Lists</Text>
 
-      <View style={styles.card}>
+      <View style={[commonStyles.card, styles.card]}>
         <Text style={styles.cardTitle}>Create list</Text>
+
         <TextInput
           value={newName}
           onChangeText={setNewName}
           placeholder="e.g. Weekly shop"
-          style={styles.input}
+          style={[formStyles.inputAlt, styles.input]}
         />
-        <TouchableOpacity style={styles.primaryBtn} onPress={createList} disabled={loading}>
-          {loading ? <ActivityIndicator /> : <Text style={styles.primaryBtnText}>Create</Text>}
+
+        <TouchableOpacity
+          style={[buttonStyles.base, styles.primaryDarkButton]}
+          onPress={createList}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.primaryTextOn} />
+          ) : (
+            <Text style={styles.primaryDarkButtonText}>Create</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -161,18 +175,21 @@ export default function ShoppingTab() {
         <FlatList
           data={lists}
           keyExtractor={(x) => String(x.id)}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <View style={styles.row}>
-              <TouchableOpacity style={{ flex: 1 }} onPress={() => openList(item)}>
+            <View style={[commonStyles.card, styles.row]}>
+              <TouchableOpacity style={styles.rowMain} onPress={() => openList(item)}>
                 <Text style={styles.rowTitle}>{item.name}</Text>
                 <Text style={styles.rowMeta}>
                   {item.updated_at ? `Updated: ${String(item.updated_at)}` : ""}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.dangerBtn} onPress={() => deleteList(item)}>
-                <Text style={styles.dangerText}>Delete</Text>
+              <TouchableOpacity
+                style={[buttonStyles.base, buttonStyles.danger]}
+                onPress={() => deleteList(item)}
+              >
+                <Text style={buttonStyles.dangerText}>Delete</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -184,54 +201,65 @@ export default function ShoppingTab() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fafafa", padding: 14, paddingTop: 18 },
-  title: { fontSize: 22, fontWeight: "800" },
-
+  container: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.xl,
+    paddingTop: 18,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
+  },
   card: {
-    marginTop: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
+    marginTop: spacing.lg,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: colors.borderSoft,
   },
-  cardTitle: { fontWeight: "800", marginBottom: 8 },
+  cardTitle: {
+    fontWeight: fontWeight.heavy,
+    marginBottom: spacing.sm,
+    color: colors.text,
+  },
   input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    padding: 10,
+    marginBottom: 0,
   },
-  primaryBtn: {
-    marginTop: 10,
+  primaryDarkButton: {
+    marginTop: spacing.md,
     backgroundColor: "#111",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
   },
-  primaryBtnText: { color: "#fff", fontWeight: "800" },
-
+  primaryDarkButtonText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.heavy,
+  },
+  listContent: {
+    paddingBottom: spacing.xxxl,
+  },
   row: {
-    marginTop: 10,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
+    marginTop: spacing.md,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: colors.borderSoft,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
   },
-  rowTitle: { fontWeight: "800", fontSize: 16 },
-  rowMeta: { marginTop: 4, color: "#666", fontSize: 12 },
-
-  dangerBtn: {
-    backgroundColor: "#b00020",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+  rowMain: {
+    flex: 1,
   },
-  dangerText: { color: "#fff", fontWeight: "800" },
-
-  empty: { marginTop: 20, color: "#666", textAlign: "center" },
+  rowTitle: {
+    fontWeight: fontWeight.heavy,
+    fontSize: fontSize.md,
+    color: colors.text,
+  },
+  rowMeta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  empty: {
+    marginTop: spacing.xxxl,
+    color: colors.textMuted,
+    textAlign: "center",
+  },
 });

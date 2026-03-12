@@ -1,4 +1,3 @@
-// app/ManageCategoriesFoodTypes.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,6 +12,11 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
+
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
 
 type Category = {
   id: number;
@@ -51,22 +55,17 @@ export default function ManageCategoriesFoodTypes() {
   const userIdNum = useMemo(() => Number(user_id), [user_id]);
 
   const [loading, setLoading] = useState(false);
-
-  // View state
   const [mode, setMode] = useState<"categories" | "foodTypes" | "products">("categories");
 
-  // Data
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
 
-  // Product data
   const [productQuery, setProductQuery] = useState("");
   const [productsLoading, setProductsLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [foodTypeNameById, setFoodTypeNameById] = useState<Map<number, string>>(new Map());
 
-  // Inputs
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newFoodTypeName, setNewFoodTypeName] = useState("");
 
@@ -220,9 +219,6 @@ export default function ManageCategoriesFoodTypes() {
     ])
   );
 
-  // -------------------------
-  // Edit products in-page mode
-  // -------------------------
   const handleEditProductsPress = useCallback(() => {
     if (!requireUser()) return;
     setMode("products");
@@ -243,9 +239,6 @@ export default function ManageCategoriesFoodTypes() {
     [requireUser, router, userIdNum]
   );
 
-  // -------------------------
-  // Create / delete category
-  // -------------------------
   const createCategory = async () => {
     if (!requireUser()) return;
 
@@ -337,9 +330,6 @@ export default function ManageCategoriesFoodTypes() {
     ]);
   };
 
-  // -------------------------
-  // Create / delete food type
-  // -------------------------
   const createFoodType = async () => {
     if (!requireUser()) return;
 
@@ -436,9 +426,6 @@ export default function ManageCategoriesFoodTypes() {
     ]);
   };
 
-  // -------------------------
-  // UI helpers
-  // -------------------------
   const categoryList = useMemo(() => {
     const sys = categories.filter((c) => c.is_system);
     const user = categories.filter((c) => !c.is_system);
@@ -451,28 +438,37 @@ export default function ManageCategoriesFoodTypes() {
 
       <View style={styles.toggleRow}>
         <TouchableOpacity
-          style={[styles.toggleBtn, mode === "categories" && styles.toggleBtnActive]}
+          style={[
+            styles.toggleBtn,
+            mode === "categories" ? styles.toggleBtnActive : styles.toggleBtnInactive,
+          ]}
           onPress={() => setMode("categories")}
         >
-          <Text style={[styles.toggleText, mode === "categories" && styles.toggleTextActive]}>
+          <Text style={mode === "categories" ? styles.toggleTextActive : styles.toggleTextInactive}>
             Categories
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.toggleBtn, mode === "foodTypes" && styles.toggleBtnActive]}
+          style={[
+            styles.toggleBtn,
+            mode === "foodTypes" ? styles.toggleBtnActive : styles.toggleBtnInactive,
+          ]}
           onPress={() => setMode("foodTypes")}
         >
-          <Text style={[styles.toggleText, mode === "foodTypes" && styles.toggleTextActive]}>
+          <Text style={mode === "foodTypes" ? styles.toggleTextActive : styles.toggleTextInactive}>
             Food Types
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.toggleBtn, mode === "products" && styles.toggleBtnActive]}
+          style={[
+            styles.toggleBtn,
+            mode === "products" ? styles.toggleBtnActive : styles.toggleBtnInactive,
+          ]}
           onPress={handleEditProductsPress}
         >
-          <Text style={[styles.toggleText, mode === "products" && styles.toggleTextActive]}>
+          <Text style={mode === "products" ? styles.toggleTextActive : styles.toggleTextInactive}>
             Edit Products
           </Text>
         </TouchableOpacity>
@@ -482,30 +478,36 @@ export default function ManageCategoriesFoodTypes() {
 
       {!loading && mode === "categories" && (
         <>
-          <View style={styles.card}>
+          <View style={[commonStyles.card, styles.card]}>
             <Text style={styles.cardTitle}>Create category</Text>
             <TextInput
-              style={styles.input}
+              style={[formStyles.inputAlt, styles.input]}
               placeholder="e.g. Snacks"
               value={newCategoryName}
               onChangeText={setNewCategoryName}
             />
-            <TouchableOpacity style={styles.primaryBtn} onPress={createCategory}>
-              <Text style={styles.primaryBtnText}>Add Category</Text>
+            <TouchableOpacity
+              style={[buttonStyles.base, styles.darkButton]}
+              onPress={createCategory}
+            >
+              <Text style={styles.darkButtonText}>Add Category</Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 20 }}>
+          <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
             {categoryList.map((cat) => (
-              <View key={String(cat.id)} style={styles.row}>
+              <View key={String(cat.id)} style={[commonStyles.card, styles.row]}>
                 <Text style={styles.rowText}>
                   {cat.name}
                   {cat.is_system ? " (system)" : ""}
                 </Text>
 
                 {!cat.is_system && (
-                  <TouchableOpacity style={styles.dangerBtn} onPress={() => deleteCategory(cat)}>
-                    <Text style={styles.dangerBtnText}>Delete</Text>
+                  <TouchableOpacity
+                    style={[buttonStyles.base, buttonStyles.danger]}
+                    onPress={() => deleteCategory(cat)}
+                  >
+                    <Text style={buttonStyles.dangerText}>Delete</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -516,22 +518,25 @@ export default function ManageCategoriesFoodTypes() {
 
       {!loading && mode === "foodTypes" && (
         <>
-          <View style={styles.card}>
+          <View style={[commonStyles.card, styles.card]}>
             <Text style={styles.cardTitle}>Pick a category</Text>
 
-            <ScrollView horizontal contentContainerStyle={{ paddingVertical: 8 }}>
+            <ScrollView horizontal contentContainerStyle={styles.chipRow}>
               {categoryList.map((cat) => {
                 const selected = selectedCategory?.id === cat.id;
                 return (
                   <TouchableOpacity
                     key={String(cat.id)}
-                    style={[styles.chip, selected && styles.chipSelected]}
+                    style={[
+                      styles.chip,
+                      selected ? styles.chipSelected : styles.chipUnselected,
+                    ]}
                     onPress={async () => {
                       setSelectedCategory(cat);
                       await loadFoodTypes(cat.id);
                     }}
                   >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                    <Text style={selected ? styles.chipTextSelected : styles.chipTextUnselected}>
                       {cat.name}
                     </Text>
                   </TouchableOpacity>
@@ -540,30 +545,36 @@ export default function ManageCategoriesFoodTypes() {
             </ScrollView>
           </View>
 
-          <View style={styles.card}>
+          <View style={[commonStyles.card, styles.card]}>
             <Text style={styles.cardTitle}>Create food type</Text>
             <TextInput
-              style={styles.input}
+              style={[formStyles.inputAlt, styles.input]}
               placeholder="e.g. Yogurt"
               value={newFoodTypeName}
               onChangeText={setNewFoodTypeName}
             />
-            <TouchableOpacity style={styles.primaryBtn} onPress={createFoodType}>
-              <Text style={styles.primaryBtnText}>Add Food Type</Text>
+            <TouchableOpacity
+              style={[buttonStyles.base, styles.darkButton]}
+              onPress={createFoodType}
+            >
+              <Text style={styles.darkButtonText}>Add Food Type</Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 20 }}>
+          <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
             {foodTypes.map((ft) => (
-              <View key={String(ft.id)} style={styles.row}>
+              <View key={String(ft.id)} style={[commonStyles.card, styles.row]}>
                 <Text style={styles.rowText}>
                   {ft.name}
                   {ft.is_system ? " (system)" : ""}
                 </Text>
 
                 {!ft.is_system && (
-                  <TouchableOpacity style={styles.dangerBtn} onPress={() => deleteFoodType(ft)}>
-                    <Text style={styles.dangerBtnText}>Delete</Text>
+                  <TouchableOpacity
+                    style={[buttonStyles.base, buttonStyles.danger]}
+                    onPress={() => deleteFoodType(ft)}
+                  >
+                    <Text style={buttonStyles.dangerText}>Delete</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -574,30 +585,30 @@ export default function ManageCategoriesFoodTypes() {
 
       {mode === "products" && (
         <>
-          <View style={styles.card}>
+          <View style={[commonStyles.card, styles.card]}>
             <Text style={styles.cardTitle}>Search products</Text>
             <TextInput
-              style={styles.input}
+              style={[formStyles.inputAlt, styles.input]}
               placeholder="Search products..."
               value={productQuery}
               onChangeText={setProductQuery}
               autoCapitalize="none"
             />
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={[buttonStyles.base, styles.darkButton]}
               onPress={() => {
                 loadFoodTypesIndex();
                 loadProducts();
               }}
             >
-              <Text style={styles.primaryBtnText}>Load Products</Text>
+              <Text style={styles.darkButtonText}>Load Products</Text>
             </TouchableOpacity>
           </View>
 
           {productsLoading ? (
-            <ActivityIndicator size="large" style={{ marginTop: 16 }} />
+            <ActivityIndicator size="large" style={styles.productsLoader} />
           ) : (
-            <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 20 }}>
+            <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
               {products.length ? (
                 products.map((item) => {
                   const ftName =
@@ -608,7 +619,7 @@ export default function ManageCategoriesFoodTypes() {
                   return (
                     <TouchableOpacity
                       key={String(item.id)}
-                      style={styles.productCard}
+                      style={[commonStyles.card, styles.productCard]}
                       activeOpacity={0.85}
                       onPress={() => openEditProduct(item)}
                     >
@@ -633,97 +644,133 @@ export default function ManageCategoriesFoodTypes() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, paddingTop: 18, backgroundColor: "#fafafa" },
-  title: { fontSize: 22, fontWeight: "900", marginBottom: 10 },
-
+  container: {
+    flex: 1,
+    padding: spacing.xl,
+    paddingTop: 18,
+    backgroundColor: colors.surfaceMuted,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: fontWeight.black,
+    marginBottom: spacing.md,
+    color: colors.text,
+  },
   toggleRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: spacing.sm,
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: spacing.md,
     flexWrap: "wrap",
   },
   toggleBtn: {
-    backgroundColor: "#eee",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
-  toggleBtnActive: { backgroundColor: "#111" },
-  toggleText: { fontWeight: "900", color: "#111" },
-  toggleTextActive: { color: "#fff" },
-
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#eee",
-    marginTop: 10,
+  toggleBtnInactive: {
+    backgroundColor: colors.surfaceAlt,
   },
-  cardTitle: { fontWeight: "900", marginBottom: 8 },
-
-  input: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-
-  primaryBtn: {
+  toggleBtnActive: {
     backgroundColor: "#111",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 10,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "900", textAlign: "center" },
-
-  list: { marginTop: 10 },
-  row: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
+  toggleTextInactive: {
+    fontWeight: fontWeight.black,
+    color: "#111",
+  },
+  toggleTextActive: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.black,
+  },
+  card: {
+    marginTop: spacing.md,
     borderWidth: 1,
-    borderColor: "#eee",
-    marginBottom: 8,
+    borderColor: colors.borderSoft,
+  },
+  cardTitle: {
+    fontWeight: fontWeight.black,
+    marginBottom: spacing.sm,
+    color: colors.text,
+  },
+  input: {
+    marginBottom: 0,
+  },
+  darkButton: {
+    backgroundColor: "#111",
+    marginTop: spacing.md,
+  },
+  darkButtonText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.black,
+    textAlign: "center",
+  },
+  list: {
+    marginTop: spacing.md,
+  },
+  listContent: {
+    paddingBottom: spacing.xxxl,
+  },
+  row: {
+    marginBottom: spacing.sm,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
   },
-  rowText: { fontWeight: "800", flex: 1 },
-
-  dangerBtn: {
-    backgroundColor: "#b00020",
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+  rowText: {
+    fontWeight: fontWeight.heavy,
+    flex: 1,
+    color: colors.text,
   },
-  dangerBtnText: { color: "#fff", fontWeight: "900" },
-
+  chipRow: {
+    paddingVertical: spacing.sm,
+  },
   chip: {
-    backgroundColor: "#eee",
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginRight: spacing.sm,
   },
-  chipSelected: { backgroundColor: "#111" },
-  chipText: { fontWeight: "900", color: "#111" },
-  chipTextSelected: { color: "#fff" },
-
+  chipUnselected: {
+    backgroundColor: colors.surfaceAlt,
+  },
+  chipSelected: {
+    backgroundColor: "#111",
+  },
+  chipTextUnselected: {
+    fontWeight: fontWeight.black,
+    color: "#111",
+  },
+  chipTextSelected: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.black,
+  },
+  productsLoader: {
+    marginTop: spacing.xxl,
+  },
   productCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
+    marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: "#eee",
-    marginBottom: 8,
+    borderColor: colors.borderSoft,
   },
-  productName: { fontWeight: "900", color: "#111", fontSize: 15 },
-  productMeta: { marginTop: 4, color: "#666", fontSize: 12 },
-  productHint: { marginTop: 8, color: "#663399", fontWeight: "900", fontSize: 12 },
-
-  emptyText: { marginTop: 12, color: "#666" },
+  productName: {
+    fontWeight: fontWeight.black,
+    color: "#111",
+    fontSize: 15,
+  },
+  productMeta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  productHint: {
+    marginTop: spacing.sm,
+    color: colors.primary,
+    fontWeight: fontWeight.black,
+    fontSize: fontSize.xs,
+  },
+  emptyText: {
+    marginTop: spacing.lg,
+    color: colors.textMuted,
+  },
 });

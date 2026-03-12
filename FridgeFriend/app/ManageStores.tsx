@@ -12,6 +12,11 @@ import {
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontWeight, spacing } from "../styles/tokens";
+
 type Store = {
   id: number;
   name: string;
@@ -114,7 +119,7 @@ export default function ManageStores() {
                     method: "DELETE",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ deletePriceHistory: false }),
-                  },
+                  }
                 );
 
                 if (!resp.ok) {
@@ -129,14 +134,14 @@ export default function ManageStores() {
                         `• inventory rows: ${c.user_products}\n` +
                         `• product links: ${c.product_store}\n` +
                         `• shopping items: ${c.shopping_list_items}\n` +
-                        `• price history: ${c.user_product_prices}`,
+                        `• price history: ${c.user_product_prices}`
                     );
                     return;
                   }
 
                   Alert.alert(
                     "Error",
-                    data?.message ?? "Could not delete store.",
+                    data?.message ?? "Could not delete store."
                   );
                   return;
                 }
@@ -150,10 +155,10 @@ export default function ManageStores() {
               }
             },
           },
-        ],
+        ]
       );
     },
-    [userId, loadStores],
+    [userId, loadStores]
   );
 
   const renderItem = ({ item }: { item: Store }) => {
@@ -161,7 +166,7 @@ export default function ManageStores() {
 
     return (
       <View style={styles.row}>
-        <View style={{ flex: 1 }}>
+        <View style={styles.rowMain}>
           <Text style={styles.name}>{item.name}</Text>
           <Text style={styles.meta}>
             {isSystem ? "System store" : "Your store"}
@@ -170,11 +175,11 @@ export default function ManageStores() {
 
         {!isSystem && (
           <TouchableOpacity
-            style={styles.deleteBtn}
+            style={[buttonStyles.base, buttonStyles.danger]}
             onPress={() => confirmDelete(item)}
             disabled={loading}
           >
-            <Text style={styles.deleteText}>Delete</Text>
+            <Text style={buttonStyles.dangerText}>Delete</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -183,17 +188,17 @@ export default function ManageStores() {
 
   if (!userId) {
     return (
-      <View style={styles.container}>
+      <View style={commonStyles.screenPrimary}>
         <Text style={styles.title}>Manage Stores</Text>
-        <View style={styles.card}>
-          <Text style={{ color: "#333", fontWeight: "800" }}>
+        <View style={[commonStyles.card, styles.card]}>
+          <Text style={styles.missingText}>
             Missing user id — please log in again.
           </Text>
           <TouchableOpacity
-            style={styles.primaryBtn}
+            style={[buttonStyles.base, buttonStyles.accent, styles.primaryBtn]}
             onPress={() => router.replace("/LoginScreen")}
           >
-            <Text style={styles.primaryText}>Go to Login</Text>
+            <Text style={buttonStyles.accentText}>Go to Login</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -201,32 +206,32 @@ export default function ManageStores() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <Text style={styles.title}>Manage Stores</Text>
 
-      <View style={styles.card}>
+      <View style={[commonStyles.card, styles.card]}>
         <Text style={styles.label}>Create a new store</Text>
         <TextInput
           value={newName}
           onChangeText={setNewName}
           placeholder="e.g. Dunnes"
-          style={styles.input}
+          style={[formStyles.inputAlt, styles.input]}
           editable={!creating}
         />
         <TouchableOpacity
-          style={[styles.primaryBtn, creating && { opacity: 0.7 }]}
+          style={[buttonStyles.base, buttonStyles.accent, styles.primaryBtn, creating && styles.dimmed]}
           onPress={createStore}
           disabled={creating}
         >
           {creating ? (
             <ActivityIndicator />
           ) : (
-            <Text style={styles.primaryText}>Create</Text>
+            <Text style={buttonStyles.accentText}>Create</Text>
           )}
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.card, { marginTop: 12, flex: 1 }]}>
+      <View style={[commonStyles.card, styles.card, styles.listCard]}>
         <Text style={styles.label}>All stores</Text>
 
         {loading ? (
@@ -236,12 +241,15 @@ export default function ManageStores() {
             data={stores}
             keyExtractor={(s) => String(s.id)}
             renderItem={renderItem}
-            contentContainerStyle={{ paddingBottom: 20 }}
+            contentContainerStyle={styles.listContent}
           />
         )}
       </View>
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity
+        style={[buttonStyles.base, buttonStyles.light, styles.backBtn]}
+        onPress={() => router.back()}
+      >
         <Text style={styles.backText}>← Back</Text>
       </TouchableOpacity>
     </View>
@@ -249,59 +257,64 @@ export default function ManageStores() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  title: {
+    color: colors.primaryTextOn,
+    fontSize: 22,
+    fontWeight: fontWeight.black,
+    marginBottom: spacing.lg,
+  },
+  card: {},
+  listCard: {
+    marginTop: spacing.lg,
     flex: 1,
-    backgroundColor: "#663399",
-    padding: 16,
-    paddingTop: 40,
   },
-  title: { color: "white", fontSize: 22, fontWeight: "900", marginBottom: 12 },
-
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 12 },
-  label: { fontWeight: "900", color: "#333", marginBottom: 8 },
-
+  label: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
   input: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    marginBottom: 0,
   },
-
   primaryBtn: {
-    marginTop: 10,
-    backgroundColor: "#ffcc00",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
+    marginTop: spacing.md,
   },
-  primaryText: { fontWeight: "900", color: "#333" },
-
   row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f7f7f7",
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 12,
-    padding: 12,
-    marginTop: 10,
+    padding: spacing.lg,
+    marginTop: spacing.md,
   },
-  name: { fontWeight: "900", color: "#333" },
-  meta: { marginTop: 4, color: "#666", fontWeight: "700" },
-
-  deleteBtn: {
-    backgroundColor: "#b00020",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    marginLeft: 10,
+  rowMain: {
+    flex: 1,
   },
-  deleteText: { color: "#fff", fontWeight: "900" },
-
+  name: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  meta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontWeight: fontWeight.bold,
+  },
+  listContent: {
+    paddingBottom: spacing.xxxl,
+  },
   backBtn: {
-    marginTop: 12,
+    marginTop: spacing.lg,
     alignSelf: "flex-start",
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
   },
-  backText: { color: "#663399", fontWeight: "900" },
+  backText: {
+    color: colors.primary,
+    fontWeight: fontWeight.black,
+  },
+  missingText: {
+    color: colors.text,
+    fontWeight: fontWeight.heavy,
+  },
+  dimmed: {
+    opacity: 0.7,
+  },
 });

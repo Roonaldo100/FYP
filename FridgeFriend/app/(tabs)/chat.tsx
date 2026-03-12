@@ -10,9 +10,14 @@ import {
   ActivityIndicator,
   Linking,
   Alert,
+  StyleSheet,
 } from "react-native";
 import { useGlobalSearchParams } from "expo-router";
 import { API_BASE_URL } from "../../config/apiConfig";
+import { commonStyles } from "../../styles/common";
+import { formStyles } from "../../styles/forms";
+import { buttonStyles } from "../../styles/buttons";
+import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
 
 type ChatRole = "user" | "assistant";
 
@@ -28,17 +33,11 @@ type NutritionSummary = {
 type Recipe = {
   title: string;
   url?: string | null;
-
-  // NEW: needed for saving + de-duping spoonacular recipes
   source?: "spoonacular" | "custom";
   external_id?: string | null;
-
-  // NEW: needed to persist ingredients when saving from chat
   ingredients?: string[];
-
   used: string[];
   missing: string[];
-
   servings?: number | null;
   nutritionSummary?: NutritionSummary | null;
   nutrition?: any | null;
@@ -70,8 +69,6 @@ export default function ChatTab() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-
-  // track "saving" per card so button can show Saving...
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -111,7 +108,6 @@ export default function ChatTab() {
             url: r.url ?? null,
             source: r.source ?? "spoonacular",
             external_id: r.external_id ?? null,
-            // store ingredient strings so the saved recipe can show missing later
             ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
             servings: r.servings ?? null,
             nutrition: r.nutrition ?? null,
@@ -191,89 +187,75 @@ export default function ChatTab() {
     const isUser = item.role === "user";
 
     return (
-      <View style={{ paddingVertical: 8 }}>
+      <View style={styles.messageWrap}>
         <View
-          style={{
-            alignSelf: isUser ? "flex-end" : "flex-start",
-            backgroundColor: isUser ? "#DCF8C6" : "#EEE",
-            padding: 12,
-            borderRadius: 12,
-            maxWidth: "85%",
-          }}
+          style={[
+            styles.bubble,
+            isUser ? styles.userBubble : styles.assistantBubble,
+          ]}
         >
-          <Text style={{ fontSize: 16 }}>{item.text}</Text>
+          <Text style={styles.bubbleText}>{item.text}</Text>
         </View>
 
         {!!item.recipes?.length && (
-          <View style={{ marginTop: 10, gap: 10 }}>
+          <View style={styles.recipeList}>
             {item.recipes.map((r, idx) => {
               const key = `${item.id}-recipe-${idx}`;
               const saving = savingKey === key;
 
               return (
-                <View
-                  key={key}
-                  style={{
-                    backgroundColor: "#fff",
-                    borderRadius: 12,
-                    padding: 12,
-                    borderWidth: 1,
-                    borderColor: "#eee",
-                  }}
-                >
-                  <Text style={{ fontSize: 16, fontWeight: "600" }}>
-                    {r.title}
-                  </Text>
+                <View key={key} style={[commonStyles.card, styles.recipeCard]}>
+                  <Text style={styles.recipeTitle}>{r.title}</Text>
 
-                  <Text style={{ marginTop: 6, fontSize: 13 }}>
+                  <Text style={styles.recipeMeta}>
                     You have: {r.used.length ? r.used.join(", ") : "—"}
                   </Text>
 
-                  <Text style={{ marginTop: 2, fontSize: 13 }}>
+                  <Text style={styles.recipeMeta}>
                     You need: {r.missing.length ? r.missing.join(", ") : "—"}
                   </Text>
+
                   {!!r.nutritionSummary && (
-                    <Text style={{ marginTop: 6, fontSize: 13 }}>
+                    <Text style={styles.recipeMeta}>
                       Nutrition (per serving):{" "}
-                      {r.nutritionSummary.calories != null ? `${r.nutritionSummary.calories} kcal` : "—"} |{" "}
-                      {r.nutritionSummary.protein_g != null ? `${r.nutritionSummary.protein_g} g protein` : "—"} |{" "}
-                      {r.nutritionSummary.carbs_g != null ? `${r.nutritionSummary.carbs_g} g carbs` : "—"} |{" "}
-                      {r.nutritionSummary.fat_g != null ? `${r.nutritionSummary.fat_g} g fat` : "—"}
+                      {r.nutritionSummary.calories != null
+                        ? `${r.nutritionSummary.calories} kcal`
+                        : "—"}{" "}
+                      |{" "}
+                      {r.nutritionSummary.protein_g != null
+                        ? `${r.nutritionSummary.protein_g} g protein`
+                        : "—"}{" "}
+                      |{" "}
+                      {r.nutritionSummary.carbs_g != null
+                        ? `${r.nutritionSummary.carbs_g} g carbs`
+                        : "—"}{" "}
+                      |{" "}
+                      {r.nutritionSummary.fat_g != null
+                        ? `${r.nutritionSummary.fat_g} g fat`
+                        : "—"}
                     </Text>
                   )}
 
-
                   {!!r.url && (
-                    <Text
-                      style={{
-                        marginTop: 6,
-                        fontSize: 12,
-                        color: "#1a73e8",
-                        textDecorationLine: "underline",
-                      }}
-                      onPress={() => openUrl(r.url!)}
-                    >
+                    <Text style={styles.linkText} onPress={() => openUrl(r.url!)}>
                       {r.url}
                     </Text>
                   )}
 
-                  <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                  <View style={styles.recipeActions}>
                     <TouchableOpacity
                       onPress={() => saveRecipe(r, key)}
                       disabled={saving}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        borderRadius: 10,
-                        backgroundColor: saving ? "#ccc" : "#111",
-                      }}
+                      style={[
+                        buttonStyles.base,
+                        styles.actionButton,
+                        saving ? styles.disabledDarkButton : styles.darkButton,
+                      ]}
                     >
                       {saving ? (
-                        <ActivityIndicator />
+                        <ActivityIndicator color={colors.primaryTextOn} />
                       ) : (
-                        <Text style={{ color: "#fff", fontWeight: "600" }}>
-                          Save
-                        </Text>
+                        <Text style={styles.darkButtonText}>Save</Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -288,7 +270,7 @@ export default function ChatTab() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#fafafa" }}
+      style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
@@ -297,58 +279,130 @@ export default function ChatTab() {
         data={messages}
         keyExtractor={(m) => m.id}
         renderItem={renderMessage}
-        contentContainerStyle={{ padding: 14, paddingBottom: 90 }}
+        contentContainerStyle={styles.listContent}
       />
 
-      <View
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: 10,
-          borderTopWidth: 1,
-          borderTopColor: "#eee",
-          backgroundColor: "#fff",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
+      <View style={styles.inputBar}>
         <TextInput
           value={input}
           onChangeText={setInput}
           placeholder='Try: "I want to make an apple pie"'
-          style={{
-            flex: 1,
-            borderWidth: 1,
-            borderColor: "#ddd",
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            paddingVertical: 10,
-            fontSize: 16,
-          }}
+          style={[formStyles.inputAlt, styles.input]}
           editable={!loading}
           onSubmitEditing={onSend}
           returnKeyType="send"
         />
+
         <TouchableOpacity
           onPress={onSend}
           disabled={loading}
-          style={{
-            paddingHorizontal: 14,
-            paddingVertical: 10,
-            borderRadius: 12,
-            backgroundColor: loading ? "#ccc" : "#111",
-          }}
+          style={[
+            buttonStyles.base,
+            styles.sendButton,
+            loading ? styles.disabledDarkButton : styles.darkButton,
+          ]}
         >
           {loading ? (
-            <ActivityIndicator />
+            <ActivityIndicator color={colors.primaryTextOn} />
           ) : (
-            <Text style={{ color: "#fff", fontWeight: "600" }}>Send</Text>
+            <Text style={styles.darkButtonText}>Send</Text>
           )}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+  },
+  listContent: {
+    padding: spacing.xl,
+    paddingBottom: 90,
+  },
+  messageWrap: {
+    paddingVertical: spacing.sm,
+  },
+  bubble: {
+    padding: spacing.xl,
+    borderRadius: radius.lg,
+    maxWidth: "85%",
+  },
+  userBubble: {
+    alignSelf: "flex-end",
+    backgroundColor: "#DCF8C6",
+  },
+  assistantBubble: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.surfaceAlt,
+  },
+  bubbleText: {
+    fontSize: fontSize.md,
+    color: colors.text,
+  },
+  recipeList: {
+    marginTop: spacing.md,
+    gap: spacing.md,
+  },
+  recipeCard: {
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  recipeTitle: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.medium,
+    color: colors.text,
+  },
+  recipeMeta: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.sm,
+    color: colors.text,
+  },
+  linkText: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.xs,
+    color: "#1a73e8",
+    textDecorationLine: "underline",
+  },
+  recipeActions: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  actionButton: {
+    paddingHorizontal: spacing.lg,
+  },
+  inputBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSoft,
+    backgroundColor: colors.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  input: {
+    flex: 1,
+    marginBottom: 0,
+    fontSize: fontSize.md,
+  },
+  sendButton: {
+    paddingHorizontal: spacing.xl,
+  },
+  darkButton: {
+    backgroundColor: "#111",
+  },
+  disabledDarkButton: {
+    backgroundColor: "#ccc",
+  },
+  darkButtonText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.medium,
+  },
+});

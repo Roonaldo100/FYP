@@ -12,6 +12,11 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+
 function toValidId(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -295,12 +300,15 @@ export default function ShoppingAddItems() {
   return (
     <View style={styles.container}>
       <View style={styles.topRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+          onPress={() => router.back()}
+        >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.doneBtn}
+          style={[buttonStyles.base, styles.darkButton, styles.topButton]}
           onPress={() =>
             router.replace({
               pathname: "/ShoppingListDetail",
@@ -308,24 +316,27 @@ export default function ShoppingAddItems() {
             })
           }
         >
-          <Text style={styles.doneText}>Done</Text>
+          <Text style={styles.darkButtonText}>Done</Text>
         </TouchableOpacity>
       </View>
 
       <Text style={styles.title}>Add items</Text>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={[commonStyles.card, styles.card]}>
           <Text style={styles.cardTitle}>Store for adds (optional override)</Text>
 
           <TouchableOpacity
-            style={[styles.storeChip, selectedStoreId === null && styles.storeChipSelected]}
+            style={[
+              styles.storeChip,
+              selectedStoreId === null && styles.storeChipSelected,
+            ]}
             onPress={() => setSelectedStoreId(null)}
           >
             <Text style={styles.storeChipText}>Use item/default store</Text>
           </TouchableOpacity>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storeScroll}>
             {stores.map((s) => {
               const selected = selectedStoreId === s.id;
               return (
@@ -340,12 +351,12 @@ export default function ShoppingAddItems() {
             })}
           </ScrollView>
 
-          <Text style={[styles.cardTitle, { marginTop: 12 }]}>Default quantity</Text>
+          <Text style={[styles.cardTitle, styles.subTitle]}>Default quantity</Text>
           <TextInput
             value={defaultQtyText}
             onChangeText={setDefaultQtyText}
             keyboardType="number-pad"
-            style={styles.input}
+            style={[formStyles.inputAlt, styles.input]}
             placeholder="1"
           />
           <Text style={styles.helpText}>
@@ -353,31 +364,34 @@ export default function ShoppingAddItems() {
           </Text>
         </View>
 
-        <View style={styles.card}>
+        <View style={[commonStyles.card, styles.card]}>
           <Text style={styles.cardTitle}>Add new item (no product needed)</Text>
           <TextInput
             value={customName}
             onChangeText={setCustomName}
             placeholder="e.g. Toothpaste"
-            style={styles.input}
+            style={[formStyles.inputAlt, styles.input]}
           />
-          <TouchableOpacity style={styles.primaryBtn} onPress={addCustom}>
-            <Text style={styles.primaryBtnText}>Add to list</Text>
+          <TouchableOpacity
+            style={[buttonStyles.base, styles.darkButton, styles.primaryBtn]}
+            onPress={addCustom}
+          >
+            <Text style={styles.darkButtonText}>Add to list</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.card}>
+        <View style={[commonStyles.card, styles.card]}>
           <Text style={styles.cardTitle}>Search products (optional)</Text>
           <TextInput
             value={searchText}
             onChangeText={doSearch}
             placeholder="Search products..."
-            style={styles.input}
+            style={[formStyles.inputAlt, styles.input]}
             autoCapitalize="none"
           />
           {searchLoading ? <ActivityIndicator /> : null}
           {!!searchHits.length && (
-            <View style={{ marginTop: 10 }}>
+            <View style={styles.searchResults}>
               {searchHits.slice(0, 12).map((p) => (
                 <TouchableOpacity
                   key={String(p.id)}
@@ -392,7 +406,7 @@ export default function ShoppingAddItems() {
           )}
         </View>
 
-        <View style={styles.card}>
+        <View style={[commonStyles.card, styles.card]}>
           <Text style={styles.cardTitle}>Pick from inventory</Text>
           {loading ? (
             <ActivityIndicator />
@@ -433,10 +447,10 @@ export default function ShoppingAddItems() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.inlineAddBtn}
+                      style={[buttonStyles.base, styles.darkButton, styles.inlineAddBtn]}
                       onPress={() => addInventoryProduct(it)}
                     >
-                      <Text style={styles.inlineAddBtnText}>Add {qty}</Text>
+                      <Text style={styles.darkButtonText}>Add {qty}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -447,7 +461,7 @@ export default function ShoppingAddItems() {
           )}
         </View>
 
-        <View style={styles.card}>
+        <View style={[commonStyles.card, styles.card]}>
           <Text style={styles.cardTitle}>Pick from history</Text>
           {loading ? (
             <ActivityIndicator />
@@ -491,10 +505,10 @@ export default function ShoppingAddItems() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.inlineAddBtn}
+                      style={[buttonStyles.base, styles.darkButton, styles.inlineAddBtn]}
                       onPress={() => addHistoryProduct(it)}
                     >
-                      <Text style={styles.inlineAddBtnText}>Add {qty}</Text>
+                      <Text style={styles.darkButtonText}>Add {qty}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -510,114 +524,144 @@ export default function ShoppingAddItems() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fafafa", padding: 14, paddingTop: 18 },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  backBtn: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#eee",
+  container: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.xl,
+    paddingTop: 18,
   },
-  backText: { fontWeight: "800" },
-  doneBtn: { backgroundColor: "#111", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },
-  doneText: { color: "#fff", fontWeight: "800" },
-
-  title: { marginTop: 12, fontSize: 22, fontWeight: "900" },
-
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  topButton: {
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  backText: {
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
+  },
+  darkButton: {
+    backgroundColor: "#111",
+  },
+  darkButtonText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.heavy,
+  },
+  title: {
+    marginTop: spacing.lg,
+    fontSize: 22,
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
   card: {
-    marginTop: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
+    marginTop: spacing.lg,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: colors.borderSoft,
   },
-  cardTitle: { fontWeight: "900" },
-
+  cardTitle: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  subTitle: {
+    marginTop: spacing.lg,
+  },
   input: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    padding: 10,
+    marginTop: spacing.sm,
+    marginBottom: 0,
   },
   helpText: {
-    marginTop: 8,
-    color: "#666",
-    fontSize: 12,
+    marginTop: spacing.sm,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
   },
-
   primaryBtn: {
-    marginTop: 10,
-    backgroundColor: "#111",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
+    marginTop: spacing.md,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "900" },
-
+  storeScroll: {
+    marginTop: spacing.sm,
+  },
   storeChip: {
-    backgroundColor: "#eee",
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginRight: spacing.sm,
   },
-  storeChipSelected: { backgroundColor: "#ffcc00" },
-  storeChipText: { fontWeight: "800" },
-
+  storeChipSelected: {
+    backgroundColor: colors.accent,
+  },
+  storeChipText: {
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
+  },
+  searchResults: {
+    marginTop: spacing.md,
+  },
   row: {
-    marginTop: 10,
+    marginTop: spacing.md,
     borderWidth: 1,
-    borderColor: "#eee",
-    borderRadius: 12,
-    padding: 10,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.lg,
+    padding: spacing.md,
   },
-  rowTitle: { fontWeight: "900" },
-  rowMeta: { marginTop: 4, color: "#666", fontSize: 12 },
-  rowAction: { marginTop: 6, fontWeight: "900", color: "#663399" },
-
+  rowTitle: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  rowMeta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  rowAction: {
+    marginTop: spacing.sm,
+    fontWeight: fontWeight.black,
+    color: colors.primary,
+  },
   qtyRow: {
-    marginTop: 10,
+    marginTop: spacing.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: spacing.sm,
     flexWrap: "wrap",
   },
   qtyBtn: {
     width: 34,
     height: 34,
-    borderRadius: 8,
-    backgroundColor: "#eee",
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
   },
   qtyBtnText: {
     fontSize: 18,
-    fontWeight: "900",
-    color: "#333",
+    fontWeight: fontWeight.black,
+    color: colors.text,
   },
   qtyInput: {
     minWidth: 52,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
     textAlign: "center",
+    backgroundColor: colors.surface,
+    color: colors.text,
   },
   inlineAddBtn: {
-    backgroundColor: "#111",
-    borderRadius: 8,
+    borderRadius: radius.sm,
     paddingVertical: 9,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.lg,
   },
-  inlineAddBtnText: {
-    color: "#fff",
-    fontWeight: "900",
+  empty: {
+    marginTop: spacing.md,
+    color: colors.textMuted,
   },
-
-  empty: { marginTop: 10, color: "#666" },
 });

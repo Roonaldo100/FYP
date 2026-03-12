@@ -11,6 +11,11 @@ import {
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontWeight, spacing } from "../styles/tokens";
+
 export default function LoginScreen() {
   const router = useRouter();
   const [username, setUsername] = useState("");
@@ -56,71 +61,79 @@ export default function LoginScreen() {
       <Text style={styles.title}>Sign In</Text>
 
       <TextInput
-        style={styles.input}
+        style={[formStyles.input, styles.input]}
         placeholder="Username"
-        placeholderTextColor="#ccc"
+        placeholderTextColor={colors.textLight}
         onChangeText={setUsername}
         value={username}
       />
 
       <TextInput
-        style={styles.input}
+        style={[formStyles.input, styles.input]}
         placeholder="Password"
-        placeholderTextColor="#ccc"
+        placeholderTextColor={colors.textLight}
         secureTextEntry
         onChangeText={setPassword}
         value={password}
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
-      </TouchableOpacity>
       <TouchableOpacity
-        style={{ marginTop: 16 }}
+        style={[buttonStyles.base, buttonStyles.accent, styles.button]}
+        onPress={handleLogin}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.text} />
+        ) : (
+          <Text style={styles.buttonText}>Login</Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.linkBtn}
         onPress={() => router.push("../CreateAccount")}
         disabled={loading}
       >
-        <Text style={{ color: "white", fontWeight: "800", textDecorationLine: "underline" }}>
-          Create account
-        </Text>
-    </TouchableOpacity>
+        <Text style={styles.linkText}>Create account</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#663399",
+    ...commonStyles.screenPrimary,
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
   },
   title: {
-    color: "white",
+    color: colors.primaryTextOn,
     fontSize: 26,
-    fontWeight: "bold",
+    fontWeight: fontWeight.bold,
     marginBottom: 30,
   },
   input: {
     width: "80%",
     height: 50,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginVertical: 10,
-    fontSize: 16,
+    marginVertical: spacing.md,
+    marginBottom: 0,
   },
   button: {
-    marginTop: 20,
-    backgroundColor: "#ffcc00",
+    marginTop: spacing.xxxl,
     paddingVertical: 15,
     paddingHorizontal: 40,
-    borderRadius: 10,
   },
   buttonText: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: fontWeight.medium,
+    color: colors.text,
+  },
+  linkBtn: {
+    marginTop: spacing.xxl,
+  },
+  linkText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.heavy,
+    textDecorationLine: "underline",
   },
 });

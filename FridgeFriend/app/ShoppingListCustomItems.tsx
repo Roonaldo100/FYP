@@ -12,6 +12,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+
 function toValidId(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -142,14 +146,22 @@ export default function ShoppingListCustomItems() {
   const header = data?.list?.name ?? "Shopping List";
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <View style={styles.topRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} disabled={loading}>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light]}
+          onPress={() => router.back()}
+          disabled={loading}
+        >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.doneBtn} onPress={onDone} disabled={loading}>
-          <Text style={styles.doneText}>Done</Text>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.accent]}
+          onPress={onDone}
+          disabled={loading}
+        >
+          <Text style={buttonStyles.accentText}>Done</Text>
         </TouchableOpacity>
       </View>
 
@@ -159,25 +171,28 @@ export default function ShoppingListCustomItems() {
         the item quantity will be added to your fridge automatically.
       </Text>
 
-      {loading && <ActivityIndicator size="large" color="#fff" />}
+      {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
 
       {!loading && (
-        <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
           {!customItems.length ? (
-            <View style={styles.card}>
+            <View style={[commonStyles.card, styles.card]}>
               <Text style={styles.emptyText}>No custom items remaining.</Text>
-              <TouchableOpacity style={styles.doneBtn2} onPress={onDone}>
-                <Text style={styles.doneText2}>Done</Text>
+              <TouchableOpacity
+                style={[buttonStyles.base, buttonStyles.primary, styles.doneBtn2]}
+                onPress={onDone}
+              >
+                <Text style={buttonStyles.primaryText}>Done</Text>
               </TouchableOpacity>
             </View>
           ) : (
             customItems.map((it) => (
               <TouchableOpacity
                 key={String(it.id)}
-                style={styles.itemRow}
+                style={[commonStyles.card, styles.itemRow]}
                 onPress={() => openManualCreate(it)}
               >
-                <View style={{ flex: 1 }}>
+                <View style={styles.itemMain}>
                   <Text style={styles.itemName}>{String(it.custom_name)}</Text>
                   <Text style={styles.itemMeta}>
                     Store: {it.store_name ?? "No store"} • Qty: {it.quantity}
@@ -193,25 +208,52 @@ export default function ShoppingListCustomItems() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#663399", padding: 16, paddingTop: 40 },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-
-  backBtn: { backgroundColor: "#fff", padding: 10, borderRadius: 10 },
-  backText: { color: "#663399", fontWeight: "900" },
-
-  doneBtn: { backgroundColor: "#ffcc00", padding: 10, borderRadius: 10 },
-  doneText: { color: "#333", fontWeight: "900" },
-
-  title: { marginTop: 14, color: "white", fontSize: 20, fontWeight: "900" },
-  subtitle: { marginTop: 6, color: "white", opacity: 0.9 },
-
-  itemRow: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 10 },
-  itemName: { fontWeight: "900", color: "#333" },
-  itemMeta: { marginTop: 4, color: "#666", fontSize: 12 },
-
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginTop: 12 },
-  emptyText: { fontWeight: "900", color: "#333" },
-
-  doneBtn2: { marginTop: 10, backgroundColor: "#663399", padding: 10, borderRadius: 10, alignItems: "center" },
-  doneText2: { color: "#fff", fontWeight: "900" },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  backText: {
+    color: colors.primary,
+    fontWeight: fontWeight.black,
+  },
+  title: {
+    marginTop: spacing.lg,
+    color: colors.primaryTextOn,
+    fontSize: 20,
+    fontWeight: fontWeight.black,
+  },
+  subtitle: {
+    marginTop: spacing.sm,
+    color: colors.primaryTextOn,
+    opacity: 0.9,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
+  itemRow: {
+    marginBottom: spacing.md,
+  },
+  itemMain: {
+    flex: 1,
+  },
+  itemName: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  itemMeta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  card: {
+    marginTop: spacing.lg,
+  },
+  emptyText: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  doneBtn2: {
+    marginTop: spacing.md,
+  },
 });

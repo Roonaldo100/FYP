@@ -1,15 +1,20 @@
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
+
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
 
 export default function CreateAccount() {
   const router = useRouter();
@@ -22,8 +27,12 @@ export default function CreateAccount() {
     const u = username.trim();
     if (!u) return Alert.alert("Error", "Enter a username");
     if (u.length > 30) return Alert.alert("Error", "Username max length is 30");
-    if (!password || password.length < 6) return Alert.alert("Error", "Password must be at least 6 characters");
-    if (password !== password2) return Alert.alert("Error", "Passwords do not match");
+    if (!password || password.length < 6) {
+      return Alert.alert("Error", "Password must be at least 6 characters");
+    }
+    if (password !== password2) {
+      return Alert.alert("Error", "Passwords do not match");
+    }
 
     setLoading(true);
     try {
@@ -59,34 +68,42 @@ export default function CreateAccount() {
       <Text style={styles.title}>Create account</Text>
 
       <TextInput
-        style={styles.input}
+        style={[formStyles.input, styles.input]}
         placeholder="Username"
-        placeholderTextColor="#ccc"
+        placeholderTextColor={colors.textLight}
         onChangeText={setUsername}
         value={username}
         autoCapitalize="none"
       />
 
       <TextInput
-        style={styles.input}
+        style={[formStyles.input, styles.input]}
         placeholder="Password (min 6 chars)"
-        placeholderTextColor="#ccc"
+        placeholderTextColor={colors.textLight}
         secureTextEntry
         onChangeText={setPassword}
         value={password}
       />
 
       <TextInput
-        style={styles.input}
+        style={[formStyles.input, styles.input]}
         placeholder="Confirm password"
-        placeholderTextColor="#ccc"
+        placeholderTextColor={colors.textLight}
         secureTextEntry
         onChangeText={setPassword2}
         value={password2}
       />
 
-      <TouchableOpacity style={styles.button} onPress={onCreate} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create</Text>}
+      <TouchableOpacity
+        style={[buttonStyles.base, buttonStyles.accent, styles.createButton]}
+        onPress={onCreate}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.text} />
+        ) : (
+          <Text style={styles.createButtonText}>Create</Text>
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -102,30 +119,38 @@ export default function CreateAccount() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#663399",
+    ...commonStyles.screenPrimary,
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
   },
-  title: { color: "white", fontSize: 26, fontWeight: "bold", marginBottom: 30 },
+  title: {
+    color: colors.primaryTextOn,
+    fontSize: 26,
+    fontWeight: fontWeight.bold,
+    marginBottom: 30,
+  },
   input: {
     width: "80%",
     height: 50,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginVertical: 10,
-    fontSize: 16,
+    marginVertical: spacing.md,
+    marginBottom: 0,
   },
-  button: {
-    marginTop: 20,
-    backgroundColor: "#ffcc00",
+  createButton: {
+    marginTop: spacing.xxxl,
     paddingVertical: 15,
     paddingHorizontal: 40,
-    borderRadius: 10,
   },
-  buttonText: { fontSize: 18, fontWeight: "600", color: "#333" },
-  linkBtn: { marginTop: 16 },
-  linkText: { color: "white", fontWeight: "800", textDecorationLine: "underline" },
+  createButtonText: {
+    fontSize: 18,
+    fontWeight: fontWeight.medium,
+    color: colors.text,
+  },
+  linkBtn: {
+    marginTop: spacing.xxl,
+  },
+  linkText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.heavy,
+    textDecorationLine: "underline",
+  },
 });

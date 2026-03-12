@@ -11,6 +11,10 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number };
 
@@ -30,19 +34,18 @@ export default function NewProductClassification() {
 
   const [loading, setLoading] = useState(false);
 
-  // Load categories once
   const loadCategories = useCallback(async () => {
-  if (!user_id) return;
+    if (!user_id) return;
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
-    const data = await res.json();
-    setCategories(Array.isArray(data) ? data : []);
-  } catch (e) {
-    console.error("Categories fetch error:", e);
-    setCategories([]);
-  }
-}, [user_id]);
+    try {
+      const res = await fetch(`${API_BASE_URL}/categories?userId=${user_id}`);
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Categories fetch error:", e);
+      setCategories([]);
+    }
+  }, [user_id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -88,7 +91,6 @@ export default function NewProductClassification() {
     setLoading(true);
 
     try {
-      // 1) Create product in DB with chosen food type
       const createResp = await fetch(`${API_BASE_URL}/products/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,7 +112,6 @@ export default function NewProductClassification() {
 
       const created = await createResp.json();
 
-      // 2) Route to optional store/expiry screen
       router.push({
         pathname: "/AddItemToFridge",
         params: {
@@ -135,10 +136,10 @@ export default function NewProductClassification() {
       {items.map((item) => (
         <TouchableOpacity
           key={item.key}
-          style={styles.button}
+          style={[buttonStyles.gridButton, buttonStyles.accent]}
           onPress={() => onPress(item.key)}
         >
-          <Text style={styles.buttonText}>{item.label}</Text>
+          <Text style={styles.gridButtonText}>{item.label}</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -165,19 +166,22 @@ export default function NewProductClassification() {
         <Text style={styles.metaText}>Barcode: {barcode ?? "Unknown"}</Text>
       </View>
 
-      {loading && <ActivityIndicator size="large" color="#fff" />}
+      {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
 
       {!loading && (
         <>
           {selectedCategory ? (
             selectedFoodType ? (
               <>
-                <View style={styles.confirmCard}>
+                <View style={[commonStyles.card, styles.confirmCard]}>
                   <Text style={styles.confirmText}>Category: {selectedCategory.name}</Text>
                   <Text style={styles.confirmText}>Food Type: {selectedFoodType.name}</Text>
                 </View>
 
-                <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
+                <TouchableOpacity
+                  style={[buttonStyles.base, buttonStyles.light, styles.confirmButton]}
+                  onPress={handleConfirm}
+                >
                   <Text style={styles.confirmButtonText}>Continue</Text>
                 </TouchableOpacity>
               </>
@@ -202,7 +206,10 @@ export default function NewProductClassification() {
         </>
       )}
 
-      <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+      <TouchableOpacity
+        style={[buttonStyles.base, buttonStyles.light, styles.backButton]}
+        onPress={handleBackPress}
+      >
         <Text style={styles.backButtonText}>← Back</Text>
       </TouchableOpacity>
     </View>
@@ -211,60 +218,61 @@ export default function NewProductClassification() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#663399",
+    ...commonStyles.screenPrimary,
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
   },
-  title: { color: "white", fontSize: 18, marginBottom: 12, textAlign: "center" },
-  meta: { marginBottom: 12, alignItems: "center" },
-  metaText: { color: "white", fontSize: 14 },
-
+  title: {
+    color: colors.primaryTextOn,
+    fontSize: 18,
+    marginBottom: spacing.lg,
+    textAlign: "center",
+  },
+  meta: {
+    marginBottom: spacing.lg,
+    alignItems: "center",
+  },
+  metaText: {
+    color: colors.primaryTextOn,
+    fontSize: fontSize.sm,
+  },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
     width: 320,
   },
-  button: {
-    backgroundColor: "#ffcc00",
-    width: 150,
-    height: 60,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    margin: 5,
+  gridButtonText: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.medium,
+    textAlign: "center",
   },
-  buttonText: { color: "#333", fontSize: 16, fontWeight: "600", textAlign: "center" },
-
   confirmCard: {
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 10,
     width: 320,
-    marginBottom: 10,
+    marginBottom: spacing.md,
   },
-  confirmText: { color: "#333", fontSize: 16, fontWeight: "600" },
-
+  confirmText: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.medium,
+  },
   confirmButton: {
-    backgroundColor: "#ffffff",
+    marginTop: spacing.sm,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 10,
-    marginTop: 8,
   },
   confirmButtonText: {
-    color: "#663399",
-    fontWeight: "bold",
-    fontSize: 16,
+    color: colors.primary,
+    fontWeight: fontWeight.bold,
+    fontSize: fontSize.md,
   },
-
   backButton: {
-    marginTop: 18,
-    padding: 10,
-    backgroundColor: "#fff",
-    borderRadius: 8,
+    marginTop: spacing.xxl,
   },
-  backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
+  backButtonText: {
+    color: colors.primary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+  },
 });

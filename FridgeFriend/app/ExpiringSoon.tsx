@@ -12,6 +12,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+
 type ExpiringSoonRow = {
   product_id: number;
   product_name: string;
@@ -172,18 +176,23 @@ export default function ExpiringSoon() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <View style={styles.topRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light]}
+          onPress={() => router.back()}
+        >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Expiring soon</Text>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#fff" />
+        <ActivityIndicator size="large" color={colors.primaryTextOn} />
       ) : !items.length ? (
-        <Text style={styles.empty}>No items expiring within your notification windows.</Text>
+        <Text style={styles.empty}>
+          No items expiring within your notification windows.
+        </Text>
       ) : (
         <FlatList
           data={items}
@@ -197,7 +206,7 @@ export default function ExpiringSoon() {
             const canIncrease = selectedQty < item.quantity && !isBusy;
 
             return (
-              <View style={styles.card}>
+              <View style={[commonStyles.card, styles.card]}>
                 <TouchableOpacity
                   onPress={() => openProduct(item)}
                   activeOpacity={0.85}
@@ -239,7 +248,12 @@ export default function ExpiringSoon() {
                   </View>
 
                   <TouchableOpacity
-                    style={[styles.removeBtn, isBusy && styles.disabledRemoveBtn]}
+                    style={[
+                      buttonStyles.base,
+                      buttonStyles.danger,
+                      styles.removeBtn,
+                      isBusy && styles.disabledRemoveBtn,
+                    ]}
                     onPress={() => removeQuantity(item)}
                     disabled={isBusy}
                   >
@@ -262,117 +276,96 @@ export default function ExpiringSoon() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#663399",
-    padding: 16,
-    paddingTop: 40,
-  },
   topRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
-    gap: 10,
-  },
-  backBtn: {
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
+    marginBottom: spacing.lg,
+    gap: spacing.md,
   },
   backText: {
-    color: "#663399",
-    fontWeight: "900",
+    color: colors.primary,
+    fontWeight: fontWeight.black,
   },
   title: {
-    color: "white",
+    color: colors.primaryTextOn,
     fontSize: 20,
-    fontWeight: "900",
+    fontWeight: fontWeight.black,
   },
   empty: {
-    color: "white",
-    marginTop: 10,
+    color: colors.primaryTextOn,
+    marginTop: spacing.md,
     opacity: 0.9,
   },
   listContent: {
-    paddingBottom: 20,
+    paddingBottom: spacing.xxxl,
   },
-
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    marginBottom: spacing.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
   },
   cardMain: {
     flex: 1,
   },
   name: {
-    fontWeight: "900",
-    color: "#333",
-    fontSize: 16,
+    fontWeight: fontWeight.black,
+    color: colors.text,
+    fontSize: fontSize.md,
   },
   meta: {
-    marginTop: 6,
-    color: "#666",
-    fontSize: 12,
+    marginTop: spacing.sm,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
   },
   tapHint: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#663399",
+    marginTop: spacing.sm,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    color: colors.primary,
   },
-
   controlsColumn: {
     alignItems: "center",
     justifyContent: "center",
     minWidth: 110,
   },
   removeLabel: {
-    color: "#333",
-    fontSize: 12,
-    fontWeight: "800",
-    marginBottom: 6,
+    color: colors.text,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.heavy,
+    marginBottom: spacing.sm,
   },
   qtyRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
-    gap: 8,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
   },
   qtyBtn: {
     backgroundColor: "#e7def5",
-    borderRadius: 8,
+    borderRadius: radius.sm,
     width: 30,
     height: 30,
     alignItems: "center",
     justifyContent: "center",
   },
   qtyBtnText: {
-    color: "#663399",
+    color: colors.primary,
     fontSize: 18,
-    fontWeight: "900",
+    fontWeight: fontWeight.black,
     lineHeight: 20,
   },
   qtyValue: {
     minWidth: 24,
     textAlign: "center",
-    color: "#333",
-    fontSize: 14,
-    fontWeight: "900",
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.black,
   },
   disabledBtn: {
     opacity: 0.45,
   },
-
   removeBtn: {
-    backgroundColor: "#b00020",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
     minWidth: 92,
     alignItems: "center",
   },
@@ -380,8 +373,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   removeText: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: 12,
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.black,
+    fontSize: fontSize.xs,
   },
 });

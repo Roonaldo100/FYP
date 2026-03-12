@@ -13,6 +13,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { buttonStyles } from "../styles/buttons";
+import { modalStyles } from "../styles/modals";
+import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+
 function toValidId(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -57,7 +62,6 @@ export default function ShoppingListDetail() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<DetailResponse | null>(null);
 
-  // Stores for store-picker
   const [stores, setStores] = useState<Store[]>([]);
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [storeModalItem, setStoreModalItem] = useState<Item | null>(null);
@@ -67,7 +71,7 @@ export default function ShoppingListDetail() {
     setLoading(true);
     try {
       const res = await fetch(
-        `${API_BASE_URL}/user/${userId}/shoppingLists/${listId}`,
+        `${API_BASE_URL}/user/${userId}/shoppingLists/${listId}`
       );
       if (!res.ok) {
         const t = await res.text().catch(() => "");
@@ -88,14 +92,18 @@ export default function ShoppingListDetail() {
     if (!userId) return;
     try {
       const res = await fetch(
-        `${API_BASE_URL}/stores?userId=${encodeURIComponent(String(userId))}`,
+        `${API_BASE_URL}/stores?userId=${encodeURIComponent(String(userId))}`
       );
       if (!res.ok) {
         const t = await res.text().catch(() => "");
         throw new Error(t || `HTTP ${res.status}`);
       }
       const d = await res.json();
-      setStores(Array.isArray(d) ? d.map((s: any) => ({ id: Number(s.id), name: String(s.name) })) : []);
+      setStores(
+        Array.isArray(d)
+          ? d.map((s: any) => ({ id: Number(s.id), name: String(s.name) }))
+          : []
+      );
     } catch (e) {
       console.warn("loadStores error:", e);
       setStores([]);
@@ -111,7 +119,7 @@ export default function ShoppingListDetail() {
     useCallback(() => {
       load();
       loadStores();
-    }, [load, loadStores]),
+    }, [load, loadStores])
   );
 
   const goAddItems = () => {
@@ -128,7 +136,7 @@ export default function ShoppingListDetail() {
       setLoading(true);
       const res = await fetch(
         `${API_BASE_URL}/user/${userId}/shoppingLists/${listId}/items/${itemId}`,
-        { method: "DELETE" },
+        { method: "DELETE" }
       );
       if (!res.ok) {
         const t = await res.text().catch(() => "");
@@ -153,7 +161,7 @@ export default function ShoppingListDetail() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ quantity: currentQty + 1 }),
-        },
+        }
       );
       if (!res.ok) {
         const t = await res.text().catch(() => "");
@@ -179,7 +187,7 @@ export default function ShoppingListDetail() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ quantity: currentQty - 1 }),
-        },
+        }
       );
       if (!res.ok) {
         const t = await res.text().catch(() => "");
@@ -194,7 +202,6 @@ export default function ShoppingListDetail() {
     }
   };
 
-  // ---- Store editing ----
   const openStoreModal = (item: Item) => {
     setStoreModalItem(item);
     setStoreModalOpen(true);
@@ -217,7 +224,7 @@ export default function ShoppingListDetail() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ storeId: newStoreId }),
-        },
+        }
       );
 
       if (!res.ok) {
@@ -240,12 +247,18 @@ export default function ShoppingListDetail() {
   return (
     <View style={styles.container}>
       <View style={styles.topRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+          onPress={() => router.back()}
+        >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.addBtn} onPress={goAddItems}>
-          <Text style={styles.addText}>+ Add items</Text>
+        <TouchableOpacity
+          style={[buttonStyles.base, styles.darkButton, styles.topButton]}
+          onPress={goAddItems}
+        >
+          <Text style={styles.darkButtonText}>+ Add items</Text>
         </TouchableOpacity>
       </View>
 
@@ -254,11 +267,10 @@ export default function ShoppingListDetail() {
       {loading && <ActivityIndicator />}
 
       {!loading && data && (
-        <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-          <View style={styles.summary}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={[commonStyles.card, styles.summary]}>
             <Text style={styles.summaryLine}>
-              Total (known prices): €
-              {Number(data.total_known_price || 0).toFixed(2)}
+              Total (known prices): €{Number(data.total_known_price || 0).toFixed(2)}
             </Text>
             <Text style={styles.summaryLine}>
               Unknown price items: {Number(data.unknown_price_count || 0)}
@@ -266,17 +278,16 @@ export default function ShoppingListDetail() {
           </View>
 
           {data.groups.map((g, idx) => (
-            <View key={`${String(g.store_id)}-${idx}`} style={styles.groupCard}>
+            <View key={`${String(g.store_id)}-${idx}`} style={[commonStyles.card, styles.groupCard]}>
               <Text style={styles.groupTitle}>{g.store_name}</Text>
               <Text style={styles.groupMeta}>
-                Subtotal known: €
-                {Number(g.subtotal_known || 0).toFixed(2)} • Unknown:{" "}
+                Subtotal known: €{Number(g.subtotal_known || 0).toFixed(2)} • Unknown:{" "}
                 {Number(g.unknown_count || 0)}
               </Text>
 
               {g.items.map((it) => (
                 <View key={String(it.id)} style={styles.itemRow}>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.itemMain}>
                     <Text style={styles.itemName}>{it.name}</Text>
                     <Text style={styles.itemMeta}>
                       Qty: {it.quantity}{" "}
@@ -293,20 +304,17 @@ export default function ShoppingListDetail() {
                         Store: {it.store_name ?? "No store"}
                       </Text>
                       <TouchableOpacity
-                        style={styles.changeStoreBtn}
+                        style={[buttonStyles.base, buttonStyles.secondary, styles.changeStoreBtn]}
                         onPress={() => openStoreModal(it)}
                       >
-                        <Text style={styles.changeStoreText}>Change store</Text>
+                        <Text style={buttonStyles.secondaryText}>Change store</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
 
                   <View style={styles.qtyCol}>
                     <TouchableOpacity
-                      style={[
-                        styles.qtyBtn,
-                        it.quantity <= 1 && { opacity: 0.4 },
-                      ]}
+                      style={[styles.qtyBtn, it.quantity <= 1 && styles.dimmed]}
                       onPress={() => decQty(it.id, it.quantity)}
                       disabled={it.quantity <= 1}
                     >
@@ -321,10 +329,10 @@ export default function ShoppingListDetail() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.removeBtn}
+                      style={[buttonStyles.base, buttonStyles.danger, styles.removeBtn]}
                       onPress={() => removeItem(it.id)}
                     >
-                      <Text style={styles.removeText}>Remove</Text>
+                      <Text style={buttonStyles.dangerText}>Remove</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -335,7 +343,7 @@ export default function ShoppingListDetail() {
       )}
 
       <TouchableOpacity
-        style={styles.addBtn}
+        style={[buttonStyles.base, styles.darkButton, styles.bottomAddBtn]}
         onPress={() =>
           router.push({
             pathname: "/ShoppingListAddKnownToFridge",
@@ -343,19 +351,18 @@ export default function ShoppingListDetail() {
           })
         }
       >
-        <Text style={styles.addText}>Add to fridge</Text>
+        <Text style={styles.darkButtonText}>Add to fridge</Text>
       </TouchableOpacity>
 
-      {/* Store picker modal */}
       <Modal
         visible={storeModalOpen}
         transparent
         animationType="fade"
         onRequestClose={closeStoreModal}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Select store</Text>
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Select store</Text>
 
             <Text style={styles.modalSub}>
               Item: {storeModalItem?.name ?? "—"}
@@ -370,9 +377,9 @@ export default function ShoppingListDetail() {
               <Text style={styles.modalRowText}>No store</Text>
             </TouchableOpacity>
 
-            <View style={{ height: 8 }} />
+            <View style={styles.modalSpacer} />
 
-            <ScrollView style={{ maxHeight: 320 }}>
+            <ScrollView style={styles.modalScroll}>
               {stores.map((s) => (
                 <TouchableOpacity
                   key={String(s.id)}
@@ -392,8 +399,11 @@ export default function ShoppingListDetail() {
               )}
             </ScrollView>
 
-            <TouchableOpacity style={styles.modalClose} onPress={closeStoreModal}>
-              <Text style={styles.modalCloseText}>Close</Text>
+            <TouchableOpacity
+              style={[buttonStyles.base, styles.darkButton, styles.modalClose]}
+              onPress={closeStoreModal}
+            >
+              <Text style={styles.darkButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -403,119 +413,157 @@ export default function ShoppingListDetail() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fafafa", padding: 14, paddingTop: 18 },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-
-  backBtn: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#eee",
+  container: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.xl,
+    paddingTop: 18,
   },
-  backText: { fontWeight: "800" },
-
-  addBtn: {
-    backgroundColor: "#111",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignSelf: "stretch",
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 10,
   },
-  addText: { color: "#fff", fontWeight: "800" },
-
-  title: { marginTop: 12, fontSize: 22, fontWeight: "900" },
-
+  topButton: {
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  backText: {
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
+  },
+  darkButton: {
+    backgroundColor: "#111",
+  },
+  darkButtonText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.heavy,
+  },
+  title: {
+    marginTop: spacing.lg,
+    fontSize: 22,
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
   summary: {
-    marginTop: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
+    marginTop: spacing.lg,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: colors.borderSoft,
   },
-  summaryLine: { fontWeight: "800", marginTop: 4 },
-
+  summaryLine: {
+    fontWeight: fontWeight.heavy,
+    marginTop: spacing.xs,
+    color: colors.text,
+  },
   groupCard: {
-    marginTop: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
+    marginTop: spacing.lg,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: colors.borderSoft,
   },
-  groupTitle: { fontSize: 18, fontWeight: "900" },
-  groupMeta: { marginTop: 4, color: "#666" },
-
+  groupTitle: {
+    fontSize: 18,
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  groupMeta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+  },
   itemRow: {
-    marginTop: 10,
+    marginTop: spacing.md,
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
-    paddingTop: 10,
+    gap: spacing.md,
+    paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
   },
-  itemName: { fontWeight: "900" },
-  itemMeta: { marginTop: 4, color: "#666", fontSize: 12 },
-
+  itemMain: {
+    flex: 1,
+  },
+  itemName: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  itemMeta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
   storeRow: {
-    marginTop: 8,
+    marginTop: spacing.sm,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
     flexWrap: "wrap",
   },
-  storeLabel: { color: "#333", fontWeight: "800", fontSize: 12 },
+  storeLabel: {
+    color: colors.text,
+    fontWeight: fontWeight.heavy,
+    fontSize: fontSize.xs,
+  },
   changeStoreBtn: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+  },
+  qtyCol: {
+    alignItems: "flex-end",
+    gap: 6,
+  },
+  qtyBtn: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: 8,
   },
-  changeStoreText: { fontWeight: "900", fontSize: 12 },
-
-  qtyCol: { alignItems: "flex-end", gap: 6 },
-  qtyBtn: { backgroundColor: "#eee", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
-  qtyBtnText: { fontWeight: "900", fontSize: 16 },
-
-  removeBtn: { backgroundColor: "#b00020", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-  removeText: { color: "#fff", fontWeight: "900", fontSize: 12 },
-
-  // Modal styles
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    padding: 16,
+  qtyBtnText: {
+    fontWeight: fontWeight.black,
+    fontSize: 16,
+    color: colors.text,
   },
-  modalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 14,
+  removeBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
   },
-  modalTitle: { fontWeight: "900", fontSize: 16, marginBottom: 6 },
-  modalSub: { color: "#666", marginBottom: 10 },
-
-  modalRow: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-  },
-  modalRowText: { fontWeight: "900", color: "#111" },
-  modalEmpty: { color: "#666", marginTop: 8, marginBottom: 8 },
-
-  modalClose: {
-    marginTop: 8,
-    backgroundColor: "#111",
-    borderRadius: 10,
-    paddingVertical: 12,
+  bottomAddBtn: {
+    marginTop: spacing.md,
+    alignSelf: "stretch",
     alignItems: "center",
   },
-  modalCloseText: { color: "#fff", fontWeight: "900" },
+  modalSub: {
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+  },
+  modalRow: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  modalRowText: {
+    fontWeight: fontWeight.black,
+    color: "#111",
+  },
+  modalEmpty: {
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  modalSpacer: {
+    height: 8,
+  },
+  modalScroll: {
+    maxHeight: 320,
+  },
+  modalClose: {
+    marginTop: spacing.sm,
+    alignItems: "center",
+  },
+  dimmed: {
+    opacity: 0.4,
+  },
 });

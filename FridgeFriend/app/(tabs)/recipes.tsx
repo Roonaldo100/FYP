@@ -8,9 +8,14 @@ import {
   ActivityIndicator,
   Linking,
   Alert,
+  StyleSheet,
 } from "react-native";
 import { useFocusEffect, useGlobalSearchParams } from "expo-router";
 import { API_BASE_URL } from "../../config/apiConfig";
+import { commonStyles } from "../../styles/common";
+import { formStyles } from "../../styles/forms";
+import { buttonStyles } from "../../styles/buttons";
+import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
 
 function toValidUserId(v: unknown): number | null {
   const n = Number(v);
@@ -58,26 +63,21 @@ export default function RecipesTab() {
   const [loading, setLoading] = useState(false);
   const [recipes, setRecipes] = useState<SavedRecipe[]>([]);
 
-  // Missing display
   const [missingLoading, setMissingLoading] = useState(false);
   const [missingData, setMissingData] = useState<MissingResponse | null>(null);
 
-  // Nutrition display
   const [nutritionLoading, setNutritionLoading] = useState(false);
   const [nutritionData, setNutritionData] = useState<NutritionResponse | null>(null);
 
-  // Create recipe form
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newUrl, setNewUrl] = useState("");
   const [ingredients, setIngredients] = useState<string[]>([]);
 
-  // Add ingredient input + optional product search
   const [ingredientInput, setIngredientInput] = useState("");
   const [productHits, setProductHits] = useState<ProductHit[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
 
-  // Edit recipe form
   const [editOpen, setEditOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editRecipeId, setEditRecipeId] = useState<number | null>(null);
@@ -124,9 +124,6 @@ export default function RecipesTab() {
 
     setMissingLoading(true);
     setMissingData(null);
-
-    // Optional: clear nutrition panel when switching cards
-    // setNutritionData(null);
 
     try {
       const res = await fetch(
@@ -277,7 +274,6 @@ export default function RecipesTab() {
     }
   };
 
-  // EDIT / DELETE
   const openEdit = async (recipe: SavedRecipe) => {
     if (!userId) return;
 
@@ -300,10 +296,12 @@ export default function RecipesTab() {
 
       setEditTitle(String(details.title || ""));
       setEditUrl(String(details.url || ""));
-      const names = Array.isArray(details.ingredients)
-        ? details.ingredients.map((i: any) => String(i?.name ?? "")).filter(Boolean)
-        : [];
-      setEditIngredients(names);
+
+      setEditIngredients(
+        Array.isArray(details.ingredients)
+          ? details.ingredients.map((i: any) => String(i?.name ?? "")).filter(Boolean)
+          : []
+      );
       setEditIngredientInput("");
     } catch (e) {
       console.warn(e);
@@ -449,150 +447,90 @@ export default function RecipesTab() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#fafafa" }}>
-      <View style={{ padding: 14, paddingBottom: 6 }}>
-        <Text style={{ fontSize: 22, fontWeight: "700" }}>Recipes</Text>
+    <View style={styles.container}>
+      <View style={styles.headerArea}>
+        <Text style={styles.title}>Recipes</Text>
 
         <TouchableOpacity
           onPress={() => setCreateOpen((v) => !v)}
-          style={{
-            marginTop: 10,
-            backgroundColor: "#111",
-            paddingVertical: 10,
-            paddingHorizontal: 12,
-            borderRadius: 12,
-            alignSelf: "flex-start",
-          }}
+          style={[buttonStyles.base, styles.darkButton, styles.inlineAction]}
         >
-          <Text style={{ color: "#fff", fontWeight: "600" }}>
+          <Text style={styles.darkButtonText}>
             {createOpen ? "Close create" : "Create recipe"}
           </Text>
         </TouchableOpacity>
 
         {createOpen && (
-          <View
-            style={{
-              marginTop: 12,
-              backgroundColor: "#fff",
-              borderRadius: 12,
-              padding: 12,
-              borderWidth: 1,
-              borderColor: "#eee",
-            }}
-          >
-            <Text style={{ fontWeight: "700", fontSize: 16 }}>New recipe</Text>
+          <View style={[commonStyles.card, styles.panelCard]}>
+            <Text style={styles.sectionHeading}>New recipe</Text>
 
             <TextInput
               value={newTitle}
               onChangeText={setNewTitle}
               placeholder="Recipe title"
-              style={{
-                marginTop: 10,
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 10,
-                padding: 10,
-              }}
+              style={[formStyles.inputAlt, styles.inputSpacing]}
             />
 
             <TextInput
               value={newUrl}
               onChangeText={setNewUrl}
               placeholder="Optional source URL"
-              style={{
-                marginTop: 10,
-                borderWidth: 1,
-                borderColor: "#ddd",
-                borderRadius: 10,
-                padding: 10,
-              }}
+              style={[formStyles.inputAlt, styles.inputSpacing]}
             />
 
-            <Text style={{ marginTop: 12, fontWeight: "700" }}>Add ingredient</Text>
+            <Text style={styles.subHeading}>Add ingredient</Text>
 
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+            <View style={styles.inputRow}>
               <TextInput
                 value={ingredientInput}
                 onChangeText={searchProducts}
                 placeholder="Type ingredient (min 3 chars)"
-                style={{
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: "#ddd",
-                  borderRadius: 10,
-                  padding: 10,
-                }}
+                style={[formStyles.inputAlt, styles.flexInput]}
               />
               <TouchableOpacity
                 onPress={() => addIngredientName(ingredientInput)}
                 disabled={!canAddIngredient}
-                style={{
-                  backgroundColor: canAddIngredient ? "#111" : "#999",
-                  paddingHorizontal: 12,
-                  borderRadius: 10,
-                  justifyContent: "center",
-                  opacity: canAddIngredient ? 1 : 0.7,
-                }}
+                style={[
+                  buttonStyles.base,
+                  styles.smallActionButton,
+                  canAddIngredient ? styles.darkButton : styles.disabledButton,
+                ]}
               >
-                <Text style={{ color: "#fff", fontWeight: "700" }}>Add</Text>
+                <Text style={styles.darkButtonText}>Add</Text>
               </TouchableOpacity>
             </View>
 
             {productSearchLoading ? (
-              <View style={{ marginTop: 8 }}>
+              <View style={styles.loaderWrap}>
                 <ActivityIndicator />
               </View>
             ) : null}
 
             {!!productHits.length && (
-              <View
-                style={{
-                  marginTop: 8,
-                  borderWidth: 1,
-                  borderColor: "#eee",
-                  borderRadius: 10,
-                  overflow: "hidden",
-                }}
-              >
+              <View style={styles.searchHits}>
                 {productHits.slice(0, 8).map((p) => (
                   <TouchableOpacity
                     key={p.id}
                     onPress={() => addIngredientName(p.name)}
-                    style={{
-                      padding: 10,
-                      borderTopWidth: 1,
-                      borderTopColor: "#f0f0f0",
-                    }}
+                    style={styles.searchHitRow}
                   >
-                    <Text>{p.name}</Text>
+                    <Text style={styles.searchHitText}>{p.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
 
-            <Text style={{ marginTop: 12, fontWeight: "700" }}>Ingredients</Text>
+            <Text style={styles.subHeading}>Ingredients</Text>
 
             {!ingredients.length ? (
-              <Text style={{ marginTop: 6, color: "#666" }}>None yet.</Text>
+              <Text style={styles.emptyInline}>None yet.</Text>
             ) : (
-              <View style={{ marginTop: 6, gap: 6 }}>
+              <View style={styles.ingredientList}>
                 {ingredients.map((name, idx) => (
-                  <View
-                    key={`${name}-${idx}`}
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      backgroundColor: "#fafafa",
-                      borderWidth: 1,
-                      borderColor: "#eee",
-                      padding: 10,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text>{name}</Text>
+                  <View key={`${name}-${idx}`} style={styles.ingredientRow}>
+                    <Text style={styles.ingredientName}>{name}</Text>
                     <TouchableOpacity onPress={() => removeIngredientAt(idx)}>
-                      <Text style={{ color: "#b00020", fontWeight: "700" }}>Remove</Text>
+                      <Text style={styles.removeText}>Remove</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -601,34 +539,19 @@ export default function RecipesTab() {
 
             <TouchableOpacity
               onPress={createRecipe}
-              style={{
-                marginTop: 14,
-                backgroundColor: "#111",
-                paddingVertical: 12,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
+              style={[buttonStyles.base, styles.darkButton, styles.saveButton]}
             >
-              <Text style={{ color: "#fff", fontWeight: "700" }}>Save recipe</Text>
+              <Text style={styles.darkButtonText}>Save recipe</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {editOpen && (
-          <View
-            style={{
-              marginTop: 12,
-              backgroundColor: "#fff",
-              borderRadius: 12,
-              padding: 12,
-              borderWidth: 1,
-              borderColor: "#eee",
-            }}
-          >
-            <Text style={{ fontWeight: "700", fontSize: 16 }}>Edit recipe</Text>
+          <View style={[commonStyles.card, styles.panelCard]}>
+            <Text style={styles.sectionHeading}>Edit recipe</Text>
 
             {editLoading ? (
-              <View style={{ marginTop: 10 }}>
+              <View style={styles.loaderWrap}>
                 <ActivityIndicator />
               </View>
             ) : (
@@ -637,100 +560,61 @@ export default function RecipesTab() {
                   value={editTitle}
                   onChangeText={setEditTitle}
                   placeholder="Recipe title"
-                  style={{
-                    marginTop: 10,
-                    borderWidth: 1,
-                    borderColor: "#ddd",
-                    borderRadius: 10,
-                    padding: 10,
-                  }}
+                  style={[formStyles.inputAlt, styles.inputSpacing]}
                 />
 
                 <TextInput
                   value={editUrl}
                   onChangeText={setEditUrl}
                   placeholder="Optional source URL"
-                  style={{
-                    marginTop: 10,
-                    borderWidth: 1,
-                    borderColor: "#ddd",
-                    borderRadius: 10,
-                    padding: 10,
-                  }}
+                  style={[formStyles.inputAlt, styles.inputSpacing]}
                 />
 
-                <Text style={{ marginTop: 12, fontWeight: "700" }}>Add ingredient</Text>
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                <Text style={styles.subHeading}>Add ingredient</Text>
+
+                <View style={styles.inputRow}>
                   <TextInput
                     value={editIngredientInput}
                     onChangeText={setEditIngredientInput}
                     placeholder="Type ingredient (min 3 chars)"
-                    style={{
-                      flex: 1,
-                      borderWidth: 1,
-                      borderColor: "#ddd",
-                      borderRadius: 10,
-                      padding: 10,
-                    }}
+                    style={[formStyles.inputAlt, styles.flexInput]}
                   />
                   <TouchableOpacity
                     onPress={addEditIngredientName}
                     disabled={!canAddEditIngredient}
-                    style={{
-                      backgroundColor: canAddEditIngredient ? "#111" : "#999",
-                      paddingHorizontal: 12,
-                      borderRadius: 10,
-                      justifyContent: "center",
-                      opacity: canAddEditIngredient ? 1 : 0.7,
-                    }}
+                    style={[
+                      buttonStyles.base,
+                      styles.smallActionButton,
+                      canAddEditIngredient ? styles.darkButton : styles.disabledButton,
+                    ]}
                   >
-                    <Text style={{ color: "#fff", fontWeight: "700" }}>Add</Text>
+                    <Text style={styles.darkButtonText}>Add</Text>
                   </TouchableOpacity>
                 </View>
 
-                <Text style={{ marginTop: 12, fontWeight: "700" }}>Ingredients</Text>
+                <Text style={styles.subHeading}>Ingredients</Text>
 
                 {!editIngredients.length ? (
-                  <Text style={{ marginTop: 6, color: "#666" }}>None yet.</Text>
+                  <Text style={styles.emptyInline}>None yet.</Text>
                 ) : (
-                  <View style={{ marginTop: 6, gap: 6 }}>
+                  <View style={styles.ingredientList}>
                     {editIngredients.map((name, idx) => (
-                      <View
-                        key={`${name}-${idx}`}
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          backgroundColor: "#fafafa",
-                          borderWidth: 1,
-                          borderColor: "#eee",
-                          padding: 10,
-                          borderRadius: 10,
-                        }}
-                      >
-                        <Text>{name}</Text>
+                      <View key={`${name}-${idx}`} style={styles.ingredientRow}>
+                        <Text style={styles.ingredientName}>{name}</Text>
                         <TouchableOpacity onPress={() => removeEditIngredientAt(idx)}>
-                          <Text style={{ color: "#b00020", fontWeight: "700" }}>
-                            Remove
-                          </Text>
+                          <Text style={styles.removeText}>Remove</Text>
                         </TouchableOpacity>
                       </View>
                     ))}
                   </View>
                 )}
 
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+                <View style={styles.editActions}>
                   <TouchableOpacity
                     onPress={saveEdit}
-                    style={{
-                      flex: 1,
-                      backgroundColor: "#111",
-                      paddingVertical: 12,
-                      borderRadius: 12,
-                      alignItems: "center",
-                    }}
+                    style={[buttonStyles.base, styles.darkButton, styles.editSaveButton]}
                   >
-                    <Text style={{ color: "#fff", fontWeight: "700" }}>Save</Text>
+                    <Text style={styles.darkButtonText}>Save</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -738,15 +622,9 @@ export default function RecipesTab() {
                       setEditOpen(false);
                       setEditRecipeId(null);
                     }}
-                    style={{
-                      backgroundColor: "#eee",
-                      paddingVertical: 12,
-                      paddingHorizontal: 16,
-                      borderRadius: 12,
-                      alignItems: "center",
-                    }}
+                    style={[buttonStyles.base, buttonStyles.secondary]}
                   >
-                    <Text style={{ fontWeight: "700" }}>Close</Text>
+                    <Text style={buttonStyles.secondaryText}>Close</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -755,16 +633,16 @@ export default function RecipesTab() {
         )}
       </View>
 
-      <View style={{ flex: 1, paddingHorizontal: 14 }}>
+      <View style={styles.listArea}>
         {loading ? (
-          <View style={{ marginTop: 20 }}>
+          <View style={styles.loaderWrap}>
             <ActivityIndicator />
           </View>
         ) : (
           <FlatList
             data={recipes}
             keyExtractor={(r) => String(r.id)}
-            contentContainerStyle={{ paddingBottom: 20 }}
+            contentContainerStyle={styles.listContent}
             renderItem={({ item }) => {
               const isMissingThis = missingData?.recipe?.id === item.id;
               const isNutritionThis = nutritionData?.recipe_id === item.id;
@@ -774,160 +652,112 @@ export default function RecipesTab() {
                 : [];
 
               return (
-                <View
-                  style={{
-                    backgroundColor: "#fff",
-                    borderRadius: 12,
-                    padding: 12,
-                    borderWidth: 1,
-                    borderColor: "#eee",
-                    marginTop: 10,
-                  }}
-                >
-                  <Text style={{ fontSize: 16, fontWeight: "700" }}>{item.title}</Text>
+                <View style={[commonStyles.card, styles.recipeCard]}>
+                  <Text style={styles.recipeTitle}>{item.title}</Text>
 
                   {!!item.url && (
-                    <Text
-                      style={{
-                        marginTop: 6,
-                        fontSize: 12,
-                        color: "#1a73e8",
-                        textDecorationLine: "underline",
-                      }}
-                      onPress={() => openUrl(item.url!)}
-                    >
+                    <Text style={styles.linkText} onPress={() => openUrl(item.url!)}>
                       {item.url}
                     </Text>
                   )}
 
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      gap: 10,
-                      marginTop: 10,
-                      flexWrap: "wrap",
-                    }}
-                  >
+                  <View style={styles.cardActions}>
                     <TouchableOpacity
                       onPress={() => showMissing(item.id)}
-                      style={{
-                        backgroundColor: "#111",
-                        paddingVertical: 10,
-                        paddingHorizontal: 12,
-                        borderRadius: 10,
-                      }}
+                      style={[buttonStyles.base, styles.darkButton]}
                     >
-                      <Text style={{ color: "#fff", fontWeight: "700" }}>
-                        What am I missing?
-                      </Text>
+                      <Text style={styles.darkButtonText}>What am I missing?</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={() => showNutrition(item.id)}
-                      style={{
-                        backgroundColor: "#111",
-                        paddingVertical: 10,
-                        paddingHorizontal: 12,
-                        borderRadius: 10,
-                      }}
+                      style={[buttonStyles.base, styles.darkButton]}
                     >
-                      <Text style={{ color: "#fff", fontWeight: "700" }}>
-                        Show nutrition
-                      </Text>
+                      <Text style={styles.darkButtonText}>Show nutrition</Text>
                     </TouchableOpacity>
 
                     {item.source === "custom" && (
                       <TouchableOpacity
                         onPress={() => openEdit(item)}
-                        style={{
-                          backgroundColor: "#eee",
-                          paddingVertical: 10,
-                          paddingHorizontal: 12,
-                          borderRadius: 10,
-                        }}
+                        style={[buttonStyles.base, buttonStyles.secondary]}
                       >
-                        <Text style={{ fontWeight: "700" }}>Edit</Text>
+                        <Text style={buttonStyles.secondaryText}>Edit</Text>
                       </TouchableOpacity>
                     )}
 
                     <TouchableOpacity
                       onPress={() => removeOrDelete(item)}
-                      style={{
-                        backgroundColor: "#b00020",
-                        paddingVertical: 10,
-                        paddingHorizontal: 12,
-                        borderRadius: 10,
-                      }}
+                      style={[buttonStyles.base, buttonStyles.danger]}
                     >
-                      <Text style={{ color: "#fff", fontWeight: "700" }}>
+                      <Text style={buttonStyles.dangerText}>
                         {item.source === "custom" ? "Delete" : "Remove"}
                       </Text>
                     </TouchableOpacity>
                   </View>
 
                   {missingLoading && isMissingThis ? (
-                    <View style={{ marginTop: 10 }}>
+                    <View style={styles.loaderWrapSmall}>
                       <ActivityIndicator />
                     </View>
                   ) : null}
 
                   {isMissingThis && !missingLoading ? (
-                    <View style={{ marginTop: 10 }}>
-                      <Text style={{ fontWeight: "700" }}>✅ Have</Text>
-                      <Text style={{ marginTop: 4 }}>
+                    <View style={styles.infoPanel}>
+                      <Text style={styles.infoTitle}>✅ Have</Text>
+                      <Text style={styles.infoText}>
                         {missingData!.have.length ? missingData!.have.join(", ") : "—"}
                       </Text>
 
-                      <Text style={{ marginTop: 10, fontWeight: "700" }}>🛒 Missing</Text>
-                      <Text style={{ marginTop: 4 }}>
-                        {missingData!.missing.length
-                          ? missingData!.missing.join(", ")
-                          : "—"}
+                      <Text style={[styles.infoTitle, styles.infoTitleSpacing]}>
+                        🛒 Missing
+                      </Text>
+                      <Text style={styles.infoText}>
+                        {missingData!.missing.length ? missingData!.missing.join(", ") : "—"}
                       </Text>
                     </View>
                   ) : null}
 
                   {nutritionLoading && isNutritionThis ? (
-                    <View style={{ marginTop: 10 }}>
+                    <View style={styles.loaderWrapSmall}>
                       <ActivityIndicator />
                     </View>
                   ) : null}
 
                   {isNutritionThis && !nutritionLoading ? (
-                    <View style={{ marginTop: 10 }}>
-                      <Text style={{ fontWeight: "700" }}>Nutrition</Text>
-                      <Text style={{ marginTop: 4, color: "#444" }}>
+                    <View style={styles.infoPanel}>
+                      <Text style={styles.infoTitle}>Nutrition</Text>
+                      <Text style={styles.subtleText}>
                         Servings: {nutritionData?.servings ?? "—"}
                       </Text>
 
                       {!nutritionData?.nutrition ? (
-                        <Text style={{ marginTop: 6, color: "#666" }}>
+                        <Text style={styles.emptyInline}>
                           No nutrition available for this recipe.
                         </Text>
                       ) : (
                         <>
-                          <Text style={{ marginTop: 10, fontWeight: "700" }}>
+                          <Text style={[styles.infoTitle, styles.infoTitleSpacing]}>
                             Nutrients (per serving)
                           </Text>
 
                           {nutrients.length ? (
-                            <View style={{ marginTop: 6, gap: 4 }}>
+                            <View style={styles.nutrientList}>
                               {nutrients.slice(0, 10).map((n, idx) => {
                                 const line = formatNutrientLine(n);
                                 if (!line) return null;
                                 return (
-                                  <Text key={idx} style={{ color: "#333" }}>
+                                  <Text key={idx} style={styles.nutrientText}>
                                     {line}
                                   </Text>
                                 );
                               })}
                             </View>
                           ) : (
-                            <Text style={{ marginTop: 6, color: "#666" }}>—</Text>
+                            <Text style={styles.emptyInline}>—</Text>
                           )}
 
                           {!!nutritionData?.nutrition_updated_at && (
-                            <Text style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
+                            <Text style={styles.updatedText}>
                               Updated: {nutritionData.nutrition_updated_at}
                             </Text>
                           )}
@@ -944,3 +774,182 @@ export default function RecipesTab() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+  },
+  headerArea: {
+    padding: spacing.xl,
+    paddingBottom: spacing.sm,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: fontWeight.bold,
+    color: colors.text,
+  },
+  inlineAction: {
+    marginTop: spacing.md,
+    alignSelf: "flex-start",
+  },
+  panelCard: {
+    marginTop: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  sectionHeading: {
+    fontWeight: fontWeight.bold,
+    fontSize: fontSize.md,
+    color: colors.text,
+  },
+  subHeading: {
+    marginTop: spacing.lg,
+    fontWeight: fontWeight.bold,
+    color: colors.text,
+  },
+  inputSpacing: {
+    marginTop: spacing.md,
+    marginBottom: 0,
+  },
+  inputRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  flexInput: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  smallActionButton: {
+    paddingHorizontal: spacing.lg,
+    justifyContent: "center",
+  },
+  searchHits: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    borderRadius: radius.md,
+    overflow: "hidden",
+  },
+  searchHitRow: {
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+  },
+  searchHitText: {
+    color: colors.text,
+  },
+  ingredientList: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  ingredientRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: spacing.md,
+    borderRadius: radius.md,
+  },
+  ingredientName: {
+    color: colors.text,
+  },
+  removeText: {
+    color: colors.danger,
+    fontWeight: fontWeight.bold,
+  },
+  saveButton: {
+    marginTop: spacing.xl,
+  },
+  editActions: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
+  editSaveButton: {
+    flex: 1,
+  },
+  listArea: {
+    flex: 1,
+    paddingHorizontal: spacing.xl,
+  },
+  listContent: {
+    paddingBottom: spacing.xxxl,
+  },
+  recipeCard: {
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    marginTop: spacing.md,
+  },
+  recipeTitle: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    color: colors.text,
+  },
+  linkText: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.xs,
+    color: "#1a73e8",
+    textDecorationLine: "underline",
+  },
+  cardActions: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.md,
+    flexWrap: "wrap",
+  },
+  infoPanel: {
+    marginTop: spacing.md,
+  },
+  infoTitle: {
+    fontWeight: fontWeight.bold,
+    color: colors.text,
+  },
+  infoTitleSpacing: {
+    marginTop: spacing.md,
+  },
+  infoText: {
+    marginTop: spacing.xs,
+    color: colors.text,
+  },
+  subtleText: {
+    marginTop: spacing.xs,
+    color: "#444",
+  },
+  nutrientList: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  nutrientText: {
+    color: colors.text,
+  },
+  updatedText: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.xs,
+    color: "#777",
+  },
+  emptyInline: {
+    marginTop: spacing.sm,
+    color: colors.textMuted,
+  },
+  loaderWrap: {
+    marginTop: spacing.sm,
+  },
+  loaderWrapSmall: {
+    marginTop: spacing.md,
+  },
+  darkButton: {
+    backgroundColor: "#111",
+  },
+  disabledButton: {
+    backgroundColor: "#999",
+    opacity: 0.7,
+  },
+  darkButtonText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.bold,
+  },
+});

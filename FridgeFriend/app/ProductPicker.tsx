@@ -11,6 +11,11 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontWeight, spacing } from "../styles/tokens";
+
 type ProductRow = {
   id: number;
   name: string;
@@ -126,10 +131,13 @@ export default function ProductPicker() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <Text style={styles.title}>Add an item</Text>
 
-      <TouchableOpacity style={styles.manualBtn} onPress={goManualAdd}>
+      <TouchableOpacity
+        style={[buttonStyles.base, buttonStyles.accent, styles.manualBtn]}
+        onPress={goManualAdd}
+      >
         <Text style={styles.manualBtnText}>➕ Add a brand new product (Manual)</Text>
       </TouchableOpacity>
 
@@ -137,7 +145,7 @@ export default function ProductPicker() {
         value={q}
         onChangeText={setQ}
         placeholder="Search products…"
-        style={styles.search}
+        style={[formStyles.input, styles.search]}
         autoCapitalize="none"
       />
 
@@ -151,7 +159,7 @@ export default function ProductPicker() {
           onEndReachedThreshold={0.6}
           ListFooterComponent={loadingMore ? <ActivityIndicator /> : null}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.row} onPress={() => onPick(item)}>
+            <TouchableOpacity style={[commonStyles.card, styles.row]} onPress={() => onPick(item)}>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.meta}>
                 {item.owner_user_id ? "Your product" : "System product"}
@@ -161,7 +169,10 @@ export default function ProductPicker() {
         />
       )}
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity
+        style={[buttonStyles.base, buttonStyles.light, styles.backBtn]}
+        onPress={() => router.back()}
+      >
         <Text style={styles.backText}>← Back</Text>
       </TouchableOpacity>
     </View>
@@ -169,37 +180,39 @@ export default function ProductPicker() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#663399", padding: 16 },
-  title: { color: "white", fontSize: 22, fontWeight: "800", marginBottom: 12 },
-  manualBtn: {
-    backgroundColor: "#ffcc00",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginBottom: 12,
+  title: {
+    color: colors.primaryTextOn,
+    fontSize: 22,
+    fontWeight: fontWeight.heavy,
+    marginBottom: spacing.lg,
   },
-  manualBtnText: { color: "#333", fontWeight: "900" },
+  manualBtn: {
+    marginBottom: spacing.lg,
+  },
+  manualBtnText: {
+    color: colors.text,
+    fontWeight: fontWeight.black,
+  },
   search: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
+    marginBottom: spacing.lg,
   },
   row: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
+    marginBottom: spacing.md,
   },
-  name: { fontWeight: "800", color: "#333" },
-  meta: { marginTop: 4, color: "#666" },
+  name: {
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
+  },
+  meta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+  },
   backBtn: {
-    marginTop: 8,
+    marginTop: spacing.sm,
     alignSelf: "flex-start",
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 10,
   },
-  backText: { color: "#663399", fontWeight: "800" },
+  backText: {
+    color: colors.primary,
+    fontWeight: fontWeight.heavy,
+  },
 });

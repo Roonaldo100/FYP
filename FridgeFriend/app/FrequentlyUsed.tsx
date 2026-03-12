@@ -12,6 +12,10 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+
 type FrequentRow = {
   product_id: number;
   product_name: string;
@@ -137,11 +141,11 @@ export default function FrequentlyUsed() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <Text style={styles.title}>Frequently Used</Text>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#fff" />
+        <ActivityIndicator size="large" color={colors.primaryTextOn} />
       ) : (
         <FlatList
           data={items}
@@ -152,7 +156,7 @@ export default function FrequentlyUsed() {
             const isDeleting = deletingKey === rowKey;
 
             return (
-              <View style={styles.row}>
+              <View style={[commonStyles.card, styles.row]}>
                 <TouchableOpacity
                   style={styles.rowMain}
                   onPress={() => onPick(item)}
@@ -183,11 +187,15 @@ export default function FrequentlyUsed() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.deleteBtn, isDeleting && styles.disabledDeleteBtn]}
+                    style={[
+                      buttonStyles.base,
+                      buttonStyles.danger,
+                      isDeleting && styles.disabledDeleteBtn,
+                    ]}
                     onPress={() => deleteItem(item)}
                     disabled={isDeleting}
                   >
-                    <Text style={styles.deleteText}>
+                    <Text style={buttonStyles.dangerText}>
                       {isDeleting ? "Deleting..." : "Delete"}
                     </Text>
                   </TouchableOpacity>
@@ -209,73 +217,51 @@ export default function FrequentlyUsed() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#663399",
-    padding: 16,
-    paddingTop: 40,
-  },
   title: {
-    color: "#fff",
+    color: colors.primaryTextOn,
     fontSize: 18,
-    fontWeight: "900",
-    marginBottom: 12,
+    fontWeight: fontWeight.black,
+    marginBottom: spacing.lg,
   },
   listContent: {
-    paddingBottom: 20,
+    paddingBottom: spacing.xxxl,
   },
-
   row: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
+    marginBottom: spacing.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
   },
   rowMain: {
     flex: 1,
   },
   name: {
-    fontWeight: "900",
-    color: "#333",
+    fontWeight: fontWeight.black,
+    color: colors.text,
   },
   meta: {
-    marginTop: 4,
-    color: "#666",
-    fontWeight: "700",
-    fontSize: 12,
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontWeight: fontWeight.bold,
+    fontSize: fontSize.xs,
   },
   subMeta: {
-    marginTop: 4,
+    marginTop: spacing.xs,
     color: "#777",
-    fontWeight: "600",
+    fontWeight: fontWeight.medium,
     fontSize: 11,
   },
-
   actions: {
     alignItems: "flex-end",
-    gap: 8,
+    gap: spacing.sm,
   },
   addBtn: {
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 6,
   },
   addText: {
-    fontWeight: "900",
-    color: "#663399",
-  },
-  deleteBtn: {
-    backgroundColor: "#b00020",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  deleteText: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: 12,
+    fontWeight: fontWeight.black,
+    color: colors.primary,
   },
   disabledBtn: {
     opacity: 0.5,
@@ -283,20 +269,18 @@ const styles = StyleSheet.create({
   disabledDeleteBtn: {
     opacity: 0.6,
   },
-
   empty: {
-    color: "#fff",
+    color: colors.primaryTextOn,
     opacity: 0.9,
-    marginTop: 10,
-    fontWeight: "800",
+    marginTop: spacing.md,
+    fontWeight: fontWeight.heavy,
   },
-
   backBtn: {
-    marginTop: 10,
+    marginTop: spacing.md,
     alignSelf: "flex-start",
   },
   backText: {
-    color: "#fff",
-    fontWeight: "900",
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.black,
   },
 });

@@ -12,6 +12,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { API_BASE_URL } from "../config/apiConfig";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+
 function toValidId(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -28,18 +33,15 @@ type ProductRow = {
 
 const PAGE = 30;
 
-// Merge where NEW data wins by id
 function mergeByIdNewWins(prev: ProductRow[], next: ProductRow[]) {
   const m = new Map<number, ProductRow>();
 
-  // put prev first...
   for (const p of prev) {
     const id = Number(p?.id);
     if (!Number.isFinite(id)) continue;
     m.set(id, p);
   }
 
-  // ...then overwrite with next (NEW wins)
   for (const p of next) {
     const id = Number(p?.id);
     if (!Number.isFinite(id)) continue;
@@ -73,46 +75,46 @@ export default function EditProducts() {
     if (!userIdNum) return;
 
     try {
-        const catRes = await fetch(
+      const catRes = await fetch(
         `${API_BASE_URL}/categories?userId=${encodeURIComponent(String(userIdNum))}`
-        );
+      );
 
-        if (!catRes.ok) {
+      if (!catRes.ok) {
         const txt = await catRes.text().catch(() => "");
         throw new Error(txt || `HTTP ${catRes.status}`);
-        }
+      }
 
-        const catData = await catRes.json();
-        const categories = Array.isArray(catData) ? catData : [];
+      const catData = await catRes.json();
+      const categories = Array.isArray(catData) ? catData : [];
 
-        const m = new Map<number, string>();
+      const m = new Map<number, string>();
 
-        await Promise.all(
+      await Promise.all(
         categories.map(async (cat: any) => {
-            const ftRes = await fetch(
+          const ftRes = await fetch(
             `${API_BASE_URL}/categories/${encodeURIComponent(String(cat.id))}/food?userId=${encodeURIComponent(String(userIdNum))}`
-            );
+          );
 
-            if (!ftRes.ok) {
+          if (!ftRes.ok) {
             const txt = await ftRes.text().catch(() => "");
             throw new Error(txt || `HTTP ${ftRes.status}`);
-            }
+          }
 
-            const ftData = await ftRes.json();
-            const arr = Array.isArray(ftData) ? ftData : [];
+          const ftData = await ftRes.json();
+          const arr = Array.isArray(ftData) ? ftData : [];
 
-            for (const ft of arr) {
+          for (const ft of arr) {
             m.set(Number(ft.id), String(ft.name));
-            }
+          }
         })
-        );
+      );
 
-        setFoodTypeNameById(m);
+      setFoodTypeNameById(m);
     } catch (e) {
-        console.error("foodTypes fetch error:", e);
-        setFoodTypeNameById(new Map());
+      console.error("foodTypes fetch error:", e);
+      setFoodTypeNameById(new Map());
     }
-    }, [userIdNum]);
+  }, [userIdNum]);
 
   const fetchPage = useCallback(
     async (reset: boolean) => {
@@ -147,7 +149,6 @@ export default function EditProducts() {
         const data = await r.json();
         const arrRaw: ProductRow[] = Array.isArray(data) ? data : [];
 
-        // Only show user-owned, non-system products
         const arr = arrRaw.filter((p) => {
           const isSystem = p.is_system === true;
           const owner = p.owner_user_id == null ? null : Number(p.owner_user_id);
@@ -155,8 +156,8 @@ export default function EditProducts() {
         });
 
         if (reset) {
-          setItems(arr); // replace list completely on reset
-          offsetRef.current = arrRaw.length; // keep paging aligned with server
+          setItems(arr);
+          offsetRef.current = arrRaw.length;
         } else {
           setItems((prev) => mergeByIdNewWins(prev, arr));
           offsetRef.current = offset + arrRaw.length;
@@ -178,7 +179,6 @@ export default function EditProducts() {
     [userIdNum]
   );
 
-  // Initial load
   useEffect(() => {
     if (!userIdNum) return;
     queryRef.current = "";
@@ -188,7 +188,6 @@ export default function EditProducts() {
     fetchPage(true);
   }, [userIdNum, loadFoodTypesIndex, fetchPage]);
 
-  // Debounced search
   useEffect(() => {
     if (!userIdNum) return;
     queryRef.current = q;
@@ -202,7 +201,6 @@ export default function EditProducts() {
     return () => clearTimeout(t);
   }, [q, userIdNum, fetchPage]);
 
-  // Guaranteed refresh when coming back (router.replace adds refresh param)
   useEffect(() => {
     if (!userIdNum) return;
     if (!refreshToken) return;
@@ -214,17 +212,16 @@ export default function EditProducts() {
     fetchPage(true);
   }, [refreshToken, userIdNum, loadFoodTypesIndex, fetchPage]);
 
-  // Still keep focus refresh (nice when navigating normally)
   useFocusEffect(
     useCallback(() => {
-        if (!userIdNum) return;
+      if (!userIdNum) return;
 
-        queryRef.current = q;
-        hasMoreRef.current = true;
-        offsetRef.current = 0;
+      queryRef.current = q;
+      hasMoreRef.current = true;
+      offsetRef.current = 0;
 
-        loadFoodTypesIndex();
-        fetchPage(true);
+      loadFoodTypesIndex();
+      fetchPage(true);
     }, [userIdNum, q, loadFoodTypesIndex, fetchPage])
   );
 
@@ -241,8 +238,8 @@ export default function EditProducts() {
       item.food_type != null ? foodTypeNameById.get(Number(item.food_type)) : null;
 
     return (
-      <TouchableOpacity style={styles.row} onPress={() => onEdit(item)}>
-        <View style={{ flex: 1 }}>
+      <TouchableOpacity style={[commonStyles.card, styles.row]} onPress={() => onEdit(item)}>
+        <View style={styles.rowMain}>
           <Text style={styles.name}>{item.name}</Text>
           <Text style={styles.meta}>Food type: {ftName ?? "None"}</Text>
         </View>
@@ -256,7 +253,7 @@ export default function EditProducts() {
       <Text style={styles.title}>Edit Products</Text>
 
       <TextInput
-        style={styles.search}
+        style={[formStyles.inputAlt, styles.search]}
         placeholder="Search your products…"
         value={q}
         onChangeText={setQ}
@@ -281,58 +278,86 @@ export default function EditProducts() {
         }}
         ListFooterComponent={
           loadingMore ? (
-            <View style={{ paddingVertical: 12 }}>
+            <View style={styles.footerLoader}>
               <ActivityIndicator />
             </View>
           ) : null
         }
       />
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backText}>← Back</Text>
+      <TouchableOpacity
+        style={[buttonStyles.base, styles.darkButton, styles.backBtn]}
+        onPress={() => router.back()}
+      >
+        <Text style={styles.darkButtonText}>← Back</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fafafa", padding: 14, paddingTop: 18 },
-  title: { fontSize: 22, fontWeight: "900" },
-
-  search: {
-    marginTop: 12,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#eee",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  container: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.xl,
+    paddingTop: 18,
   },
-
-  row: {
-    marginTop: 10,
-    backgroundColor: "#fff",
+  title: {
+    fontSize: 22,
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  search: {
+    marginTop: spacing.lg,
+    marginBottom: 0,
     borderWidth: 1,
-    borderColor: "#eee",
-    borderRadius: 12,
-    padding: 12,
+    borderColor: colors.borderSoft,
+  },
+  row: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
   },
-  name: { fontWeight: "900" },
-  meta: { marginTop: 4, color: "#666", fontSize: 12 },
-  chev: { fontSize: 22, fontWeight: "900", color: "#999" },
-
-  errorText: { marginTop: 12, color: "#b00020", fontWeight: "800" },
-  emptyText: { marginTop: 12, color: "#666" },
-
-  backBtn: {
-    marginTop: 10,
+  rowMain: {
+    flex: 1,
+  },
+  name: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  meta: {
+    marginTop: spacing.xs,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  chev: {
+    fontSize: 22,
+    fontWeight: fontWeight.black,
+    color: "#999",
+  },
+  errorText: {
+    marginTop: spacing.lg,
+    color: colors.danger,
+    fontWeight: fontWeight.heavy,
+  },
+  emptyText: {
+    marginTop: spacing.lg,
+    color: colors.textMuted,
+  },
+  footerLoader: {
+    paddingVertical: spacing.lg,
+  },
+  darkButton: {
     backgroundColor: "#111",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
   },
-  backText: { color: "#fff", fontWeight: "900" },
+  darkButtonText: {
+    color: colors.primaryTextOn,
+    fontWeight: fontWeight.black,
+  },
+  backBtn: {
+    marginTop: spacing.md,
+  },
 });

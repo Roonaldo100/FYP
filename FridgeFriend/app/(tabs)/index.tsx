@@ -18,6 +18,10 @@ import {
   sendExpiryNotification,
 } from "../../lib/notifications";
 
+import { commonStyles } from "../../styles/common";
+import { buttonStyles } from "../../styles/buttons";
+import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
+
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number };
 type UserProduct = {
@@ -52,12 +56,8 @@ export default function Home() {
   const [selectedFoodType, setSelectedFoodType] = useState<FoodType | null>(null);
 
   const [loading, setLoading] = useState<boolean>(false);
-
   const [expiringSoon, setExpiringSoon] = useState<ExpiringSoonRow[]>([]);
 
-  // -------------------------------
-  // Load categories (app boot / focus)
-  // -------------------------------
   const loadCategories = useCallback(async () => {
     if (!user_id) return;
 
@@ -77,9 +77,6 @@ export default function Home() {
     }, [loadCategories])
   );
 
-  // -------------------------------
-  // Poll due notifications (DB-driven)
-  // -------------------------------
   const pollPendingNotifications = useCallback(async () => {
     if (!user_id) return;
 
@@ -116,9 +113,6 @@ export default function Home() {
     }, [pollPendingNotifications])
   );
 
-  // -------------------------------
-  // Settings navigation
-  // -------------------------------
   const handleSettingsPress = () => {
     if (!user_id) {
       Alert.alert("Not logged in", "Please log in again.");
@@ -132,9 +126,6 @@ export default function Home() {
     });
   };
 
-  // -------------------------------
-  // Navigation + data loading
-  // -------------------------------
   const handleCategoryPress = async (category: Category) => {
     setLoading(true);
     setSelectedCategory(category);
@@ -239,7 +230,6 @@ export default function Home() {
     });
   };
 
-  //Frequently used items navigation
   const handleFrequentlyUsedPress = () => {
     if (!user_id) {
       Alert.alert("Not logged in", "Please log in again.");
@@ -248,7 +238,6 @@ export default function Home() {
     }
 
     router.push({
-      // If your file is app/(tabs)/FrequentlyUsed.tsx use "/(tabs)/FrequentlyUsed"
       pathname: "../FrequentlyUsed",
       params: { user_id: String(user_id) },
     });
@@ -305,10 +294,10 @@ export default function Home() {
       {items.map((item) => (
         <TouchableOpacity
           key={item.key}
-          style={styles.button}
+          style={[buttonStyles.gridButton, buttonStyles.accent]}
           onPress={() => onPress(item.key)}
         >
-          <Text style={styles.buttonText}>{item.label}</Text>
+          <Text style={styles.gridButtonText}>{item.label}</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -343,7 +332,7 @@ export default function Home() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -352,12 +341,18 @@ export default function Home() {
         <StatusBar style="light" />
 
         <View style={styles.topRow}>
-          <TouchableOpacity style={styles.settingsButton} onPress={handleSettingsPress}>
-            <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+            onPress={handleSettingsPress}
+          >
+            <Text style={styles.topButtonText}>⚙️ Settings</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.manageButton} onPress={handleManageTypesPress}>
-            <Text style={styles.manageButtonText}>Manage Types</Text>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+            onPress={handleManageTypesPress}
+          >
+            <Text style={styles.topButtonText}>Manage Types</Text>
           </TouchableOpacity>
         </View>
 
@@ -384,21 +379,30 @@ export default function Home() {
           </TouchableOpacity>
         )}
 
-        <Text style={styles.title}>{title}</Text>
+        <Text style={[commonStyles.titleOnPrimary, styles.title]}>{title}</Text>
 
-        <TouchableOpacity style={styles.scanButton} onPress={handleScanPress}>
-          <Text style={styles.scanButtonText}>📷 Scan Item</Text>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light, styles.actionButton]}
+          onPress={handleScanPress}
+        >
+          <Text style={styles.actionButtonText}>📷 Scan Item</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.scanButton} onPress={handleManualAddPress}>
-          <Text style={styles.scanButtonText}>➕ Add Item Manually</Text>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light, styles.actionButton]}
+          onPress={handleManualAddPress}
+        >
+          <Text style={styles.actionButtonText}>➕ Add Item Manually</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.scanButton} onPress={handleFrequentlyUsedPress}>
-          <Text style={styles.scanButtonText}>⭐ Frequently Used</Text>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light, styles.actionButton]}
+          onPress={handleFrequentlyUsedPress}
+        >
+          <Text style={styles.actionButtonText}>⭐ Frequently Used</Text>
         </TouchableOpacity>
 
-        {loading && <ActivityIndicator size="large" color="#fff" />}
+        {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
 
         {!loading && (
           <>
@@ -425,7 +429,10 @@ export default function Home() {
         )}
 
         {(selectedCategory || selectedFoodType) && (
-          <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.light, styles.backButton]}
+            onPress={handleBackPress}
+          >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
         )}
@@ -435,138 +442,121 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-  flex: 1,
-  backgroundColor: "#663399",
-  },
   scroll: {
     flex: 1,
     width: "100%",
   },
   scrollContent: {
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: spacing.xxxl,
     paddingBottom: 40,
   },
-
   topRow: {
     width: "100%",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: spacing.sm,
   },
-
-  settingsButton: {
-    backgroundColor: "#fff",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+  topButton: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
   },
-
-  settingsButtonText: {
-    color: "#663399",
-    fontWeight: "800",
-    fontSize: 14,
+  topButtonText: {
+    color: colors.primary,
+    fontWeight: fontWeight.heavy,
+    fontSize: fontSize.sm,
   },
-
-  manageButton: {
-    backgroundColor: "#fff",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+  title: {
+    marginBottom: spacing.xxxl,
+    textAlign: "center",
   },
-
-  manageButtonText: {
-    color: "#663399",
-    fontWeight: "800",
-    fontSize: 14,
-  },
-
-  title: { color: "white", fontSize: 22, marginBottom: 20,  textAlign: "center"},
-
-  scanButton: {
-    backgroundColor: "#ffffff",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
+  actionButton: {
     marginBottom: 15,
+    paddingHorizontal: spacing.xxxl,
   },
-  scanButtonText: {
-    color: "#663399",
-    fontWeight: "bold",
-    fontSize: 16,
+  actionButtonText: {
+    color: colors.primary,
+    fontWeight: fontWeight.bold,
+    fontSize: fontSize.md,
   },
-
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
     width: 320,
   },
-
-  button: {
-    backgroundColor: "#ffcc00",
-    width: 150,
-    height: 60,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    margin: 5,
-  },
-  buttonText: { color: "#333", fontSize: 18, fontWeight: "600" },
-
-  productCard: {
-    backgroundColor: "#fff",
-    width: 150,
-    borderRadius: 10,
-    padding: 10,
-    margin: 5,
-    alignItems: "center",
-  },
-  productName: { fontSize: 16, fontWeight: "bold", color: "#333" },
-  productDetails: { fontSize: 14, color: "#555", textAlign: "center" },
-
-  tapHint: {
-    marginTop: 6,
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#663399",
+  gridButtonText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: fontWeight.medium,
     textAlign: "center",
   },
-
-  backButton: {
-    marginTop: 20,
-    padding: 10,
-    backgroundColor: "#fff",
-    borderRadius: 8,
+  productCard: {
+    backgroundColor: colors.surface,
+    width: 150,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    margin: 5,
+    alignItems: "center",
   },
-  backButtonText: { color: "#663399", fontSize: 16, fontWeight: "bold" },
-
+  productName: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    color: colors.text,
+    textAlign: "center",
+  },
+  productDetails: {
+    fontSize: fontSize.sm,
+    color: "#555",
+    textAlign: "center",
+  },
+  tapHint: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    color: colors.primary,
+    textAlign: "center",
+  },
+  backButton: {
+    marginTop: spacing.xxxl,
+  },
+  backButtonText: {
+    color: colors.primary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+  },
   soonCard: {
     width: "100%",
     maxWidth: 360,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 10,
-    marginBottom: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
   },
   soonHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  soonTitle: { fontWeight: "900", color: "#333", fontSize: 16 },
-  soonCount: {
-    fontWeight: "900",
-    color: "#333",
-    fontSize: 18,
-    backgroundColor: "#ffcc00",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
+  soonTitle: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+    fontSize: fontSize.md,
   },
-  soonHint: { marginTop: 8, color: "#666", fontSize: 12 },
+  soonCount: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+    fontSize: 18,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+  },
+  soonHint: {
+    marginTop: spacing.sm,
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
 });

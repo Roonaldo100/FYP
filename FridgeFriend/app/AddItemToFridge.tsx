@@ -19,6 +19,12 @@ import {
   sendExpiryNotification,
 } from "../lib/notifications";
 
+import { commonStyles } from "../styles/common";
+import { formStyles } from "../styles/forms";
+import { buttonStyles } from "../styles/buttons";
+import { modalStyles } from "../styles/modals";
+import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+
 type Store = { id: number; name: string };
 
 function pad2(n: number) {
@@ -324,17 +330,23 @@ export default function AddItemToFridge() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={commonStyles.screenPrimary}>
       <Text style={styles.title}>{title}</Text>
 
-      {loading && <ActivityIndicator size="large" color="#fff" />}
+      {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
 
       {!loading && (
-        <ScrollView contentContainerStyle={{ paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quantity</Text>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={commonStyles.section}>
+            <Text style={commonStyles.sectionTitle}>Quantity</Text>
             <View style={styles.qtyRow}>
-              <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQuantityBy(-1)}>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => changeQuantityBy(-1)}
+              >
                 <Text style={styles.qtyBtnText}>-</Text>
               </TouchableOpacity>
 
@@ -346,14 +358,17 @@ export default function AddItemToFridge() {
                 onChangeText={(v) => setQuantityText(v.replace(/[^0-9]/g, ""))}
               />
 
-              <TouchableOpacity style={styles.qtyBtn} onPress={() => changeQuantityBy(1)}>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => changeQuantityBy(1)}
+              >
                 <Text style={styles.qtyBtnText}>+</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Store (optional)</Text>
+          <View style={commonStyles.section}>
+            <Text style={commonStyles.sectionTitle}>Store (optional)</Text>
 
             <TouchableOpacity
               style={[
@@ -362,11 +377,15 @@ export default function AddItemToFridge() {
               ]}
               onPress={() => setSelectedStoreId(null)}
             >
-              <Text>No store</Text>
+              <Text style={styles.storeButtonText}>No store</Text>
             </TouchableOpacity>
 
-            <View style={{ maxHeight: 180 }}>
-              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+            <View style={styles.storeListWrap}>
+              <ScrollView
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
                 {stores.map((s) => (
                   <TouchableOpacity
                     key={s.id}
@@ -376,28 +395,35 @@ export default function AddItemToFridge() {
                     ]}
                     onPress={() => setSelectedStoreId(s.id)}
                   >
-                    <Text>{s.name}</Text>
+                    <Text style={styles.storeButtonText}>{s.name}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             </View>
 
-            <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Create store</Text>
+            <Text style={[commonStyles.sectionTitle, styles.subSectionTitle]}>
+              Create store
+            </Text>
+
             <TextInput
-              style={styles.input}
+              style={formStyles.inputAlt}
               placeholder="e.g. Aldi"
               value={newStoreName}
               onChangeText={setNewStoreName}
             />
-            <TouchableOpacity style={styles.createBtn} onPress={createStore}>
-              <Text style={styles.createBtnText}>Create store</Text>
+
+            <TouchableOpacity
+              style={[buttonStyles.base, buttonStyles.primary]}
+              onPress={createStore}
+            >
+              <Text style={buttonStyles.primaryText}>Create store</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Price (optional)</Text>
+          <View style={commonStyles.section}>
+            <Text style={commonStyles.sectionTitle}>Price (optional)</Text>
             <TextInput
-              style={styles.input}
+              style={formStyles.inputAlt}
               placeholder="e.g. 1.50"
               keyboardType="decimal-pad"
               value={price}
@@ -405,42 +431,47 @@ export default function AddItemToFridge() {
             />
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Expiry (optional)</Text>
+          <View style={commonStyles.section}>
+            <Text style={commonStyles.sectionTitle}>Expiry (optional)</Text>
 
             <View style={styles.row}>
               <TouchableOpacity
-                style={styles.secondaryBtn}
+                style={[buttonStyles.base, buttonStyles.secondary, styles.flexButton]}
                 onPress={() => setExpiryMenuOpen(true)}
               >
-                <Text style={styles.secondaryBtnText}>
+                <Text style={buttonStyles.secondaryText}>
                   {expiryDate.trim() ? `Picked: ${expiryDate}` : "Pick a date"}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.clearBtn} onPress={clearExpiry}>
-                <Text style={styles.clearBtnText}>Clear</Text>
+              <TouchableOpacity
+                style={[buttonStyles.base, buttonStyles.danger]}
+                onPress={clearExpiry}
+              >
+                <Text style={buttonStyles.dangerText}>Clear</Text>
               </TouchableOpacity>
             </View>
 
             <Text style={styles.quickTitle}>Quick set</Text>
+
             <View style={styles.quickRow}>
               {[1, 2, 3, 5, 7, 14].map((d) => (
                 <TouchableOpacity
                   key={String(d)}
-                  style={styles.quickBtn}
+                  style={[buttonStyles.accent, buttonStyles.pill, styles.quickBtn]}
                   onPress={() => setQuickExpiry(d)}
                 >
-                  <Text style={styles.quickBtnText}>{d}d</Text>
+                  <Text style={buttonStyles.accentText}>{d}d</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text style={styles.helperText}>
+            <Text style={commonStyles.helperText}>
               You can still type manually if you want:
             </Text>
+
             <TextInput
-              style={styles.input}
+              style={formStyles.inputAlt}
               placeholder="YYYY-MM-DD"
               value={expiryDate}
               onChangeText={setExpiryDate}
@@ -448,10 +479,12 @@ export default function AddItemToFridge() {
             />
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Expiry notification override (optional)</Text>
+          <View style={commonStyles.section}>
+            <Text style={commonStyles.sectionTitle}>
+              Expiry notification override (optional)
+            </Text>
             <TextInput
-              style={styles.input}
+              style={formStyles.inputAlt}
               placeholder="Days before expiry to notify (blank = use Settings)"
               keyboardType="number-pad"
               value={expiryPeriodText}
@@ -459,7 +492,10 @@ export default function AddItemToFridge() {
             />
           </View>
 
-          <TouchableOpacity style={styles.confirmButton} onPress={confirmAdd}>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.light, styles.confirmButton]}
+            onPress={confirmAdd}
+          >
             <Text style={styles.confirmButtonText}>
               Confirm and Add {validateQuantity(quantityText) ? Number(quantityText) : 1}
             </Text>
@@ -473,36 +509,42 @@ export default function AddItemToFridge() {
         animationType="fade"
         onRequestClose={() => setExpiryMenuOpen(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Select expiry date</Text>
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Select expiry date</Text>
 
             <TouchableOpacity
-              style={styles.modalTopAction}
+              style={modalStyles.topAction}
               onPress={() => pickExpiry(formatDateYYYYMMDD(addDays(new Date(), 0)))}
             >
-              <Text style={styles.modalTopActionText}>Today</Text>
+              <Text style={modalStyles.topActionText}>Today</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.modalTopAction} onPress={clearExpiry}>
-              <Text style={[styles.modalTopActionText, { color: "#b00020" }]}>No expiry</Text>
+            <TouchableOpacity style={modalStyles.topAction} onPress={clearExpiry}>
+              <Text style={styles.noExpiryText}>No expiry</Text>
             </TouchableOpacity>
 
-            <View style={{ height: 12 }} />
+            <View style={styles.modalSpacer} />
 
             <FlatList
               data={dateOptions}
               keyExtractor={(it) => it.key}
-              style={{ maxHeight: 360 }}
+              style={styles.modalList}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.modalRow} onPress={() => pickExpiry(item.value)}>
-                  <Text style={styles.modalRowText}>{item.label}</Text>
+                <TouchableOpacity
+                  style={modalStyles.row}
+                  onPress={() => pickExpiry(item.value)}
+                >
+                  <Text style={modalStyles.rowText}>{item.label}</Text>
                 </TouchableOpacity>
               )}
             />
 
-            <TouchableOpacity style={styles.modalClose} onPress={() => setExpiryMenuOpen(false)}>
-              <Text style={styles.modalCloseText}>Close</Text>
+            <TouchableOpacity
+              style={[buttonStyles.base, buttonStyles.primary, styles.modalCloseButton]}
+              onPress={() => setExpiryMenuOpen(false)}
+            >
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -512,140 +554,100 @@ export default function AddItemToFridge() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#663399", padding: 20 },
-  title: { color: "white", fontSize: 18, marginBottom: 12 },
-
-  section: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
+  title: {
+    color: colors.primaryTextOn,
+    fontSize: 18,
+    marginBottom: spacing.lg,
   },
-  sectionTitle: { fontWeight: "700", marginBottom: 8 },
-  input: {
-    backgroundColor: "#eee",
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 8,
+  scrollContent: {
+    paddingBottom: 30,
   },
-
   qtyRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
   },
   qtyBtn: {
     width: 40,
     height: 40,
-    backgroundColor: "#eee",
-    borderRadius: 8,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   qtyBtnText: {
     fontSize: 20,
-    fontWeight: "900",
-    color: "#333",
+    fontWeight: fontWeight.black,
+    color: colors.text,
   },
   qtyInput: {
     minWidth: 72,
-    backgroundColor: "#eee",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    backgroundColor: colors.surfaceAlt,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
     textAlign: "center",
+    color: colors.text,
   },
-
+  storeListWrap: {
+    maxHeight: 180,
+  },
   storeButton: {
-    backgroundColor: "#eee",
-    padding: 10,
-    borderRadius: 8,
+    backgroundColor: colors.surfaceAlt,
+    padding: spacing.md,
+    borderRadius: radius.sm,
     marginBottom: 6,
   },
-  storeButtonSelected: { backgroundColor: "#ffcc00" },
-
-  createBtn: {
-    backgroundColor: "#663399",
-    borderRadius: 10,
-    paddingVertical: 10,
+  storeButtonSelected: {
+    backgroundColor: colors.accent,
+  },
+  storeButtonText: {
+    color: colors.text,
+  },
+  subSectionTitle: {
+    marginTop: spacing.md,
+  },
+  row: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: spacing.md,
   },
-  createBtnText: { color: "#fff", fontWeight: "900" },
-
-  row: { flexDirection: "row", alignItems: "center", gap: 10 },
-  secondaryBtn: {
+  flexButton: {
     flex: 1,
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
   },
-  secondaryBtnText: { fontWeight: "800", color: "#333" },
-  clearBtn: {
-    backgroundColor: "#b00020",
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+  quickTitle: {
+    marginTop: spacing.md,
+    fontWeight: fontWeight.heavy,
+    color: colors.text,
   },
-  clearBtnText: { color: "#fff", fontWeight: "900" },
-
-  quickTitle: { marginTop: 10, fontWeight: "800", color: "#333" },
-  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  quickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
   quickBtn: {
-    backgroundColor: "#ffcc00",
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
-  quickBtnText: { fontWeight: "900", color: "#333" },
-
-  helperText: { marginTop: 10, marginBottom: 6, color: "#666", fontSize: 12 },
-
   confirmButton: {
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 6,
+    marginTop: spacing.sm,
   },
-  confirmButtonText: { color: "#663399", fontWeight: "bold" },
-
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 16,
+  confirmButtonText: {
+    color: colors.primary,
+    fontWeight: fontWeight.bold,
   },
-  modalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
+  noExpiryText: {
+    fontWeight: fontWeight.black,
+    color: colors.danger,
   },
-  modalTitle: { fontWeight: "900", fontSize: 16, color: "#333", marginBottom: 10 },
-
-  modalTopAction: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+  modalSpacer: {
+    height: 12,
   },
-  modalTopActionText: { fontWeight: "900", color: "#333" },
-
-  modalRow: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+  modalList: {
+    maxHeight: 360,
   },
-  modalRowText: { color: "#333", fontWeight: "700" },
-
-  modalClose: {
-    marginTop: 12,
-    backgroundColor: "#663399",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
+  modalCloseButton: {
+    marginTop: spacing.lg,
   },
-  modalCloseText: { color: "#fff", fontWeight: "900" },
 });
