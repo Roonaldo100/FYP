@@ -23,7 +23,7 @@ import { commonStyles } from "../styles/common";
 import { formStyles } from "../styles/forms";
 import { buttonStyles } from "../styles/buttons";
 import { modalStyles } from "../styles/modals";
-import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+import { colors, fontWeight, radius, spacing } from "../styles/tokens";
 
 type Store = { id: number; name: string };
 
@@ -71,6 +71,10 @@ export default function AddItemToFridge() {
     product_name?: string;
   }>();
 
+  const [editableProductName, setEditableProductName] = useState(
+    String(product_name ?? "")
+  );
+
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
 
@@ -85,9 +89,14 @@ export default function AddItemToFridge() {
   const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
   const dateOptions = useMemo(() => makeNextDaysOptions(60), []);
 
-  const title = useMemo(() => {
-    return `Add Item: ${product_name ?? "Unnamed Product"}`;
+  useEffect(() => {
+    setEditableProductName(String(product_name ?? ""));
   }, [product_name]);
+
+  const title = useMemo(() => {
+    const displayName = editableProductName.trim() || product_name || "Unnamed Product";
+    return `Add Item: ${displayName}`;
+  }, [editableProductName, product_name]);
 
   const validateExpiryPeriod = (s: string) => {
     if (!s.trim()) return true;
@@ -208,9 +217,60 @@ export default function AddItemToFridge() {
     setQuantityText(String(next));
   };
 
+  const updateProductNameIfNeeded = async () => {
+    if (!user_id || !product_id) return;
+
+    const trimmed = editableProductName.trim();
+    const original = String(product_name ?? "").trim();
+
+    if (!trimmed) {
+      Alert.alert("Missing product name", "Please enter a product name.");
+      throw new Error("Missing product name");
+    }
+
+    if (trimmed === original) return;
+
+    try {
+      const resp = await fetch(
+        `${API_BASE_URL}/user/${encodeURIComponent(String(user_id))}/products/${encodeURIComponent(
+          String(product_id)
+        )}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: trimmed,
+          }),
+        }
+      );
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("Update product name failed:", resp.status, txt);
+
+        Alert.alert(
+          "Couldn't rename product",
+          "This product name couldn't be updated. The item will still be added to your fridge using the existing product."
+        );
+      }
+    } catch (e) {
+      console.error("Update product name error:", e);
+      Alert.alert(
+        "Couldn't rename product",
+        "This product name couldn't be updated. The item will still be added to your fridge using the existing product."
+      );
+    }
+  };
+
   const confirmAdd = async () => {
     if (!user_id || !product_id) {
       Alert.alert("Error", "Missing required information.");
+      return;
+    }
+
+    const trimmedName = editableProductName.trim();
+    if (!trimmedName) {
+      Alert.alert("Missing product name", "Please enter a product name.");
       return;
     }
 
@@ -258,6 +318,8 @@ export default function AddItemToFridge() {
     try {
       setLoading(true);
 
+      await updateProductNameIfNeeded();
+
       const addResp = await fetch(`${API_BASE_URL}/user/addProduct`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -299,7 +361,7 @@ export default function AddItemToFridge() {
       ) {
         const ok = await registerForLocalNotificationsAsync();
         if (ok) {
-          await sendExpiryNotification(product_name ?? "Item", daysLeft);
+          await sendExpiryNotification(trimmedName || product_name || "Item", daysLeft);
 
           if (userProductId) {
             await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
@@ -340,6 +402,21 @@ export default function AddItemToFridge() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
+          <View style={commonStyles.section}>
+            <Text style={commonStyles.sectionTitle}>Product details</Text>
+            <Text style={commonStyles.label}>Product name</Text>
+            <TextInput
+              style={formStyles.inputAlt}
+              placeholder="e.g. Milk"
+              value={editableProductName}
+              onChangeText={setEditableProductName}
+              autoCapitalize="words"
+            />
+            <Text style={commonStyles.helperText}>
+              Edit the name before adding this item to your fridge
+            </Text>
+          </View>
+
           <View style={commonStyles.section}>
             <Text style={commonStyles.sectionTitle}>Quantity</Text>
             <View style={styles.qtyRow}>

@@ -313,9 +313,13 @@ export async function updateUserOwnedProduct(userId, productId, payload) {
 
   const name = String(payload?.name || "").trim().slice(0, 30) || null;
 
+  const foodTypeProvided = Object.prototype.hasOwnProperty.call(payload ?? {}, "food_type");
   const foodTypeRaw = payload?.food_type;
   const foodType =
-    foodTypeRaw === undefined || foodTypeRaw === null || String(foodTypeRaw).trim() === ""
+    !foodTypeProvided ||
+    foodTypeRaw === undefined ||
+    foodTypeRaw === null ||
+    String(foodTypeRaw).trim() === ""
       ? null
       : Number(foodTypeRaw);
 
@@ -324,51 +328,91 @@ export async function updateUserOwnedProduct(userId, productId, payload) {
     err.statusCode = 400;
     throw err;
   }
-  if (foodType !== null && (!Number.isInteger(foodType) || foodType <= 0)) {
+
+  if (foodTypeProvided && foodType !== null && (!Number.isInteger(foodType) || foodType <= 0)) {
     const err = new Error("Invalid food_type");
     err.statusCode = 400;
     throw err;
   }
 
-  if (foodType !== null) {
-    const ftOk = await pool.query(
+  try {
+    const currentRes = await pool.query(
       `
-      SELECT id
-      FROM food_types
+      SELECT id, name, food_type, is_system, owner_user_id
+      FROM products
       WHERE id = $1
-        AND (is_system = true OR owner_user_id = $2)
+        AND is_system = false
+        AND owner_user_id = $2
       LIMIT 1
       `,
-      [foodType, uid]
+      [pid, uid]
     );
 
-    if (!ftOk.rows.length) {
-      const err = new Error("Invalid food_type for this user");
-      err.statusCode = 400;
+    if (!currentRes.rows.length) {
+      const err = new Error("Product not found");
+      err.statusCode = 404;
       throw err;
     }
-  }
 
-  const upd = await pool.query(
-    `
-    UPDATE products
-    SET name = $1,
-        food_type = $2
-    WHERE id = $3
-      AND is_system = false
-      AND owner_user_id = $4
-    RETURNING id, name, food_type, is_system, owner_user_id
-    `,
-    [name, foodType, pid, uid]
-  );
+    const current = currentRes.rows[0];
+    const originalName = String(current.name);
 
-  if (!upd.rows.length) {
-    const err = new Error("Product not found");
-    err.statusCode = 404;
+    let finalFoodType = current.food_type;
+
+    if (foodTypeProvided) {
+      if (foodType !== null) {
+        const ftOk = await pool.query(
+          `
+          SELECT id
+          FROM food_types
+          WHERE id = $1
+            AND (is_system = true OR owner_user_id = $2)
+          LIMIT 1
+          `,
+          [foodType, uid]
+        );
+
+        if (!ftOk.rows.length) {
+          const err = new Error("Invalid food_type for this user");
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
+      finalFoodType = foodType;
+    }
+
+    const upd = await pool.query(
+      `
+      UPDATE products
+      SET name = $1,
+          food_type = $2
+      WHERE name = $3
+        AND is_system = false
+        AND owner_user_id = $4
+      RETURNING id, name, food_type, is_system, owner_user_id
+      `,
+      [name, finalFoodType, originalName, uid]
+    );
+
+    if (!upd.rows.length) {
+      const err = new Error("Product not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return {
+      message: "Updated",
+      updated_count: upd.rowCount,
+      product: upd.rows.find((row) => Number(row.id) === pid) || upd.rows[0],
+    };
+  } catch (e) {
+    if (e.statusCode) throw e;
+    console.error("update product error:", e);
+    const err = new Error("Server error updating product");
+    err.statusCode = 500;
     throw err;
   }
-
-  return { message: "Updated", product: upd.rows[0] };
 }
 
 export async function removeUserProducts({ userId, productId, storeId, quantity }) {
