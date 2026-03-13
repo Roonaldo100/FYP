@@ -259,6 +259,18 @@ export default function Home() {
     });
   };
 
+  const openEditProduct = (prod: UserProduct) => {
+  if (!user_id) return;
+
+  router.push({
+    pathname: "../EditProduct",
+    params: {
+      user_id: String(user_id),
+      product_id: String(prod.product_id),
+    },
+  });
+};
+
   const loadExpiringSoon = useCallback(async () => {
     if (!user_id) return;
 
@@ -310,6 +322,8 @@ export default function Home() {
           key={`${prod.product_id}-${String(prod.store_id)}-${idx}`}
           style={styles.productCard}
           onPress={() => openBuckets(prod)}
+          onLongPress={() => openEditProduct(prod)}
+          delayLongPress={250}
           activeOpacity={0.8}
         >
           <Text style={styles.productName}>{prod.product_name}</Text>
@@ -326,6 +340,7 @@ export default function Home() {
           )}
 
           <Text style={styles.tapHint}>Tap to manage expiry batches →</Text>
+          <Text style={styles.tapHint}>Long press to edit product →</Text>
         </TouchableOpacity>
       ))}
     </View>
