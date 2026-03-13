@@ -612,10 +612,133 @@ export async function updateStoreAndPrice({
   }
 }
 
+export async function deleteUserOwnedProduct(userId, productId) {
+  const uid = Number(userId);
+  const pid = Number(productId);
+
+  if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(pid) || pid <= 0) {
+    const err = new Error("Invalid userId or productId");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      `
+      SELECT id, name, is_system, owner_user_id
+      FROM products
+      WHERE id = $1
+        AND is_system = false
+        AND owner_user_id = $2
+      LIMIT 1
+      `,
+      [pid, uid]
+    );
+
+    if (!existing.rows.length) {
+      const err = new Error("Product not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const delUserProducts = await client.query(
+      `
+      DELETE FROM user_products
+      WHERE product_id = $1
+      RETURNING id
+      `,
+      [pid]
+    );
+
+    const delShoppingItems = await client.query(
+      `
+      DELETE FROM shopping_list_items
+      WHERE product_id = $1
+      RETURNING id
+      `,
+      [pid]
+    );
+
+    const delPriceHistory = await client.query(
+      `
+      DELETE FROM user_product_prices
+      WHERE product_id = $1
+      RETURNING id
+      `,
+      [pid]
+    );
+
+    const delProductStore = await client.query(
+      `
+      DELETE FROM product_store
+      WHERE product_id = $1
+      RETURNING product_id
+      `,
+      [pid]
+    );
+
+    const delUsage = await client.query(
+      `
+      DELETE FROM user_product_usage
+      WHERE product_id = $1
+      RETURNING product_id
+      `,
+      [pid]
+    );
+
+    const delProduct = await client.query(
+      `
+      DELETE FROM products
+      WHERE id = $1
+        AND is_system = false
+        AND owner_user_id = $2
+      RETURNING id, name
+      `,
+      [pid, uid]
+    );
+
+    if (!delProduct.rows.length) {
+      const err = new Error("Product not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    await client.query("COMMIT");
+
+    return {
+      deleted: true,
+      product_id: Number(delProduct.rows[0].id),
+      product_name: String(delProduct.rows[0].name),
+      removed_references: {
+        user_products: delUserProducts.rowCount,
+        shopping_list_items: delShoppingItems.rowCount,
+        user_product_prices: delPriceHistory.rowCount,
+        product_store: delProductStore.rowCount,
+        user_product_usage: delUsage.rowCount,
+      },
+    };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    if (e.statusCode) throw e;
+
+    console.error("delete product error:", e);
+    const err = new Error("Server error deleting product");
+    err.statusCode = 500;
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export default {
   addProductToInventory,
   getUserOwnedProduct,
   updateUserOwnedProduct,
   removeUserProducts,
   updateStoreAndPrice,
+  deleteUserOwnedProduct,
 };

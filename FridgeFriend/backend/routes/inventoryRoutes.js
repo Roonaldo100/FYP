@@ -63,6 +63,21 @@ router.put("/user/:userId/products/:productId", async (req, res) => {
   }
 });
 
+router.delete("/user/:userId/products/:productId", async (req, res) => {
+  try {
+    const result = await inventoryService.deleteUserOwnedProduct(
+      req.params.userId,
+      req.params.productId,
+    );
+    return res.json(result);
+  } catch (err) {
+    console.error("delete product error:", err);
+    return res.status(err.statusCode || 500).json({
+      message: err.message || "Server error deleting product",
+    });
+  }
+});
+
 /**
  * POST: Remove N items from user_products for a grouped product/store row
  */

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
   ScrollView,
   StyleSheet,
@@ -9,20 +10,18 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  FlatList,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
 import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
 import { buttonStyles } from "../styles/buttons";
-import { modalStyles } from "../styles/modals";
-import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+import { colors, fontWeight, radius, spacing } from "../styles/tokens";
 
-function toValidId(v: unknown): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : null;
+function toValidId(v: string | string[] | undefined): number | null {
+  const raw = Array.isArray(v) ? v[0] : v;
+  const n = raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && Number.isInteger(n) && n > 0 ? n : null;
 }
 
 type Category = { id: number; name: string };
@@ -52,6 +51,7 @@ export default function EditProduct() {
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [name, setName] = useState("");
@@ -145,6 +145,50 @@ export default function EditProduct() {
     },
     [userId, productId]
   );
+
+  const deleteProduct = useCallback(async () => {
+    if (!userId || !productId) return;
+
+    const res = await fetch(
+      `${API_BASE_URL}/user/${encodeURIComponent(String(userId))}/products/${encodeURIComponent(
+        String(productId)
+      )}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+
+    if (!res.ok) {
+      let payload: any = null;
+      try {
+        payload = await res.json();
+      } catch {
+        payload = null;
+      }
+
+      if (res.status === 409 && payload) {
+        const details = [
+          `Inventory: ${payload.inventoryCount ?? 0}`,
+          `Shopping lists: ${payload.shoppingCount ?? 0}`,
+          `Price history: ${payload.priceCount ?? 0}`,
+          `Store links: ${payload.storeLinkCount ?? 0}`,
+          `Usage rows: ${payload.usageCount ?? 0}`,
+        ].join("\n");
+
+        throw new Error(
+          `${payload.message || "This product is still in use."}\n\n${details}`
+        );
+      }
+
+      const txt =
+        payload?.message ||
+        (await res.text().catch(() => "")) ||
+        `HTTP ${res.status}`;
+
+      throw new Error(txt);
+    }
+  }, [userId, productId]);
 
   useEffect(() => {
     if (!userId || !productId) return;
@@ -267,6 +311,42 @@ export default function EditProduct() {
     }
   };
 
+  const onDelete = async () => {
+    if (!userId || !productId || !product) return;
+
+    Alert.alert(
+      "Delete product?",
+      `Delete "${product.name}"?\n\nThis will also remove it from inventory, shopping lists, price history, store links, and usage data.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setDeleting(true);
+              await deleteProduct();
+
+              Alert.alert("Deleted", "Product deleted successfully.");
+              router.replace({
+                pathname: "/EditProducts",
+                params: {
+                  user_id: String(userId),
+                  refresh: String(Date.now()),
+                },
+              });
+            } catch (e: any) {
+              console.error("delete product error:", e);
+              Alert.alert("Could not delete product", e?.message || "Delete failed.");
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const header = useMemo(() => {
     if (!product) return "Edit Product";
     return `Edit: ${product.name ?? "Product"}`;
@@ -298,13 +378,25 @@ export default function EditProduct() {
           <Text style={styles.inlineBackText}>← Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[buttonStyles.base, styles.darkButton, saving && styles.dimmed]}
-          onPress={onSave}
-          disabled={saving}
-        >
-          <Text style={styles.darkButtonText}>{saving ? "Saving…" : "Save"}</Text>
-        </TouchableOpacity>
+        <View style={styles.rightActions}>
+          <TouchableOpacity
+            style={[buttonStyles.base, styles.deleteButton, deleting && styles.dimmed]}
+            onPress={onDelete}
+            disabled={saving || deleting}
+          >
+            <Text style={styles.deleteButtonText}>
+              {deleting ? "Deleting…" : "Delete"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[buttonStyles.base, styles.darkButton, saving && styles.dimmed]}
+            onPress={onSave}
+            disabled={saving || deleting}
+          >
+            <Text style={styles.darkButtonText}>{saving ? "Saving…" : "Save"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Text style={styles.title}>{header}</Text>
@@ -364,7 +456,7 @@ export default function EditProduct() {
                 setSelectedFoodTypeId(null);
               }}
             >
-              <Text style={styles.clearText}>Clear food type (None)</Text>
+              <Text style={styles.clearBtnText}>Clear food type</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -376,29 +468,25 @@ export default function EditProduct() {
         animationType="fade"
         onRequestClose={() => setCategoryModalOpen(false)}
       >
-        <View style={modalStyles.backdrop}>
-          <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>Select category</Text>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select category</Text>
 
             <FlatList
               data={categories}
-              keyExtractor={(c) => `cat_${String(c.id)}`}
-              style={styles.modalList}
+              keyExtractor={(item) => String(item.id)}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={modalStyles.row}
+                  style={styles.modalRow}
                   onPress={() => pickCategory(Number(item.id))}
                 >
-                  <Text style={modalStyles.rowText}>{item.name}</Text>
+                  <Text style={styles.modalRowText}>{item.name}</Text>
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={
-                <Text style={styles.modalEmpty}>No categories found.</Text>
-              }
             />
 
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton, styles.modalCloseBtn]}
+              style={[buttonStyles.base, styles.darkButton]}
               onPress={() => setCategoryModalOpen(false)}
             >
               <Text style={styles.darkButtonText}>Close</Text>
@@ -413,29 +501,25 @@ export default function EditProduct() {
         animationType="fade"
         onRequestClose={() => setFoodTypeModalOpen(false)}
       >
-        <View style={modalStyles.backdrop}>
-          <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>Select food type</Text>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select food type</Text>
 
             <FlatList
               data={foodTypes}
-              keyExtractor={(ft) => `ft_${String(ft.id)}`}
-              style={styles.modalList}
+              keyExtractor={(item) => String(item.id)}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={modalStyles.row}
+                  style={styles.modalRow}
                   onPress={() => pickFoodType(Number(item.id))}
                 >
-                  <Text style={modalStyles.rowText}>{item.name}</Text>
+                  <Text style={styles.modalRowText}>{item.name}</Text>
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={
-                <Text style={styles.modalEmpty}>No food types in this category.</Text>
-              }
             />
 
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton, styles.modalCloseBtn]}
+              style={[buttonStyles.base, styles.darkButton]}
               onPress={() => setFoodTypeModalOpen(false)}
             >
               <Text style={styles.darkButtonText}>Close</Text>
@@ -450,107 +534,138 @@ export default function EditProduct() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surfaceMuted,
-    padding: spacing.xl,
-    paddingTop: 18,
+    backgroundColor: colors.primary,
+    padding: spacing.lg,
   },
   topRow: {
+    marginTop: spacing.md,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: spacing.sm,
+  },
+  rightActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "center",
   },
   inlineBackBtn: {
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
+    paddingHorizontal: spacing.md,
   },
   inlineBackText: {
-    fontWeight: fontWeight.black,
-    color: "#111",
-  },
-  darkButton: {
-    backgroundColor: "#111",
-  },
-  darkButtonText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.black,
-  },
-  dimmed: {
-    opacity: 0.6,
+    color: colors.primary,
+    fontWeight: fontWeight.bold,
   },
   title: {
-    marginTop: spacing.md,
-    fontSize: 20,
+    color: colors.primaryTextOn,
+    fontSize: 22,
     fontWeight: fontWeight.black,
-    color: "#111",
+    marginTop: spacing.md,
+  },
+  errorText: {
+    color: colors.primaryTextOn,
+    marginTop: spacing.md,
   },
   loaderWrap: {
-    paddingVertical: spacing.xl,
+    marginTop: spacing.xl,
+    alignItems: "center",
   },
   scrollContent: {
-    paddingBottom: 30,
+    paddingTop: spacing.lg,
+    paddingBottom: 40,
   },
   card: {
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
+    marginBottom: spacing.lg,
   },
   input: {
-    backgroundColor: "#f3f3f3",
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    fontWeight: fontWeight.bold,
-    color: "#111",
+    color: colors.text,
   },
   pickerBtn: {
-    backgroundColor: "#f3f3f3",
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   pickerText: {
-    fontWeight: fontWeight.heavy,
-    color: "#111",
+    color: colors.text,
+    fontWeight: fontWeight.medium,
   },
   pickerChev: {
-    fontWeight: fontWeight.black,
-    color: "#777",
-    fontSize: 18,
-  },
-  secondLabel: {
-    marginTop: spacing.lg,
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: fontWeight.bold,
   },
   disabledPicker: {
     opacity: 0.5,
   },
+  secondLabel: {
+    marginTop: spacing.lg,
+  },
   clearBtn: {
     marginTop: spacing.md,
     alignSelf: "flex-start",
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
   },
-  clearText: {
-    color: colors.danger,
-    fontWeight: fontWeight.black,
-  },
-  errorText: {
-    marginTop: spacing.md,
-    color: colors.danger,
-    fontWeight: fontWeight.heavy,
-  },
-  backButton: {
-    marginTop: spacing.md,
-  },
-  modalList: {
-    maxHeight: 420,
-  },
-  modalEmpty: {
-    paddingVertical: spacing.lg,
-    color: colors.textMuted,
+  clearBtnText: {
+    color: colors.text,
     fontWeight: fontWeight.bold,
   },
-  modalCloseBtn: {
+  darkButton: {
+    backgroundColor: "#1f1f1f",
+  },
+  darkButtonText: {
+    color: "#fff",
+    fontWeight: fontWeight.bold,
+  },
+  deleteButton: {
+    backgroundColor: colors.danger,
+  },
+  deleteButtonText: {
+    color: "#fff",
+    fontWeight: fontWeight.bold,
+  },
+  backButton: {
     marginTop: spacing.lg,
+    alignSelf: "flex-start",
+  },
+  dimmed: {
+    opacity: 0.6,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    maxHeight: "70%",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: fontWeight.black,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  modalRow: {
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalRowText: {
+    color: colors.text,
+    fontWeight: fontWeight.medium,
   },
 });
