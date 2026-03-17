@@ -36,7 +36,8 @@ export async function searchProducts({ q, userId, limit, offset }) {
           `
           SELECT id, name, food_type, is_system, owner_user_id
           FROM products
-          WHERE (is_system = true OR owner_user_id = $1)
+          WHERE owner_user_id = $1
+            AND is_system = false
           ORDER BY id DESC
           LIMIT $2 OFFSET $3
           `,
@@ -56,11 +57,10 @@ export async function searchProducts({ q, userId, limit, offset }) {
         `
         SELECT id, name, food_type, is_system, owner_user_id
         FROM products
-        WHERE (is_system = true OR owner_user_id = $1)
+        WHERE owner_user_id = $1
+          AND is_system = false
           AND name ILIKE $2
-        ORDER BY
-          CASE WHEN owner_user_id = $1 THEN 0 ELSE 1 END,
-          name ASC
+        ORDER BY name ASC
         LIMIT $3 OFFSET $4
         `,
         [uid, `%${searchTerm}%`, limitNum, offsetNum],
