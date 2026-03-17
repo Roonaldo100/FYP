@@ -23,7 +23,7 @@ import { buttonStyles } from "../../styles/buttons";
 import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
 
 type Category = { id: number; name: string };
-type FoodType = { id: number; name: string; category: number };
+type FoodType = { id: number; name: string; category: number; product_count?: number; };
 type UserProduct = {
   product_id: number;
   product_name: string;
@@ -299,17 +299,22 @@ export default function Home() {
   }, [selectedCategory, selectedFoodType]);
 
   const renderButtons = (
-    items: { key: string; label: string }[],
+    items: { key: string; label: string; count?: number }[],
     onPress: (key: string) => void
   ) => (
     <View style={styles.grid}>
       {items.map((item) => (
         <TouchableOpacity
           key={item.key}
-          style={[buttonStyles.gridButton, buttonStyles.accent]}
+          style={[buttonStyles.gridButton, buttonStyles.accent, styles.typeButton]}
           onPress={() => onPress(item.key)}
         >
           <Text style={styles.gridButtonText}>{item.label}</Text>
+          {item.count !== undefined && (
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{item.count}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       ))}
     </View>
@@ -425,7 +430,11 @@ export default function Home() {
               renderUserProducts()
             ) : selectedCategory ? (
               renderButtons(
-                foodTypes.map((ft) => ({ key: String(ft.id), label: ft.name })),
+                foodTypes.map((ft) => ({
+                  key: String(ft.id),
+                  label: ft.name,
+                  count: ft.product_count ?? 0,
+                })),
                 (idStr) => {
                   const ft = foodTypes.find((f) => String(f.id) === idStr);
                   if (ft) handleFoodTypePress(ft);
@@ -574,4 +583,26 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: fontSize.xs,
   },
+  typeButton: {
+  position: "relative",
+},
+
+countBadge: {
+  position: "absolute",
+  top: 8,
+  right: 8,
+  minWidth: 26,
+  height: 26,
+  borderRadius: 13,
+  backgroundColor: colors.surface,
+  alignItems: "center",
+  justifyContent: "center",
+  paddingHorizontal: 6,
+},
+
+countBadgeText: {
+  color: colors.text,
+  fontSize: fontSize.xs,
+  fontWeight: fontWeight.black,
+},
 });

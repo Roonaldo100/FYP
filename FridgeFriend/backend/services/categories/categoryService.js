@@ -60,7 +60,7 @@ export async function getFoodByCategoryId(categoryIdRaw, userIdRaw) {
   const categoryId = Number(categoryIdRaw);
   const userId = parseOptionalUserId(userIdRaw);
 
-  if (!Number.isFinite(categoryId) || categoryId <= 0) {
+  if (!Number.isFinite(categoryId) || !Number.isInteger(categoryId) || categoryId <= 0) {
     return {
       status: 400,
       body: { message: "Invalid category id" },
@@ -73,7 +73,8 @@ export async function getFoodByCategoryId(categoryIdRaw, userIdRaw) {
         `
         SELECT id
         FROM categories
-        WHERE id = $1 AND (is_system = true OR owner_user_id = $2)
+        WHERE id = $1
+          AND (is_system = true OR owner_user_id = $2)
         LIMIT 1
         `,
         [categoryId, userId],
@@ -82,30 +83,31 @@ export async function getFoodByCategoryId(categoryIdRaw, userIdRaw) {
       if (!cat.rows.length) {
         return { status: 200, body: [] };
       }
-    } else {
-      const cat = await pool.query(
-        `
-        SELECT id
-        FROM categories
-        WHERE id = $1 AND is_system = true
-        LIMIT 1
-        `,
-        [categoryId],
-      );
 
-      if (!cat.rows.length) {
-        return { status: 200, body: [] };
-      }
-    }
-
-    if (userId) {
       const result = await pool.query(
         `
-        SELECT id, category, name, is_system, owner_user_id
-        FROM food_types
-        WHERE category = $1
-          AND (is_system = true OR owner_user_id = $2)
-        ORDER BY is_system DESC, id ASC
+        SELECT
+          ft.id,
+          ft.category,
+          ft.name,
+          ft.is_system,
+          ft.owner_user_id,
+          COUNT(up.product_id)::int AS product_count
+        FROM food_types ft
+        LEFT JOIN products p
+          ON p.food_type = ft.id
+        LEFT JOIN user_products up
+          ON up.product_id = p.id
+         AND up.user_id = $2
+        WHERE ft.category = $1
+          AND (ft.is_system = true OR ft.owner_user_id = $2)
+        GROUP BY
+          ft.id,
+          ft.category,
+          ft.name,
+          ft.is_system,
+          ft.owner_user_id
+        ORDER BY ft.is_system DESC, ft.id ASC
         `,
         [categoryId, userId],
       );
@@ -116,12 +118,34 @@ export async function getFoodByCategoryId(categoryIdRaw, userIdRaw) {
       };
     }
 
+    const cat = await pool.query(
+      `
+      SELECT id
+      FROM categories
+      WHERE id = $1
+        AND is_system = true
+      LIMIT 1
+      `,
+      [categoryId],
+    );
+
+    if (!cat.rows.length) {
+      return { status: 200, body: [] };
+    }
+
     const result = await pool.query(
       `
-      SELECT id, category, name, is_system, owner_user_id
-      FROM food_types
-      WHERE category = $1 AND is_system = true
-      ORDER BY id ASC
+      SELECT
+        ft.id,
+        ft.category,
+        ft.name,
+        ft.is_system,
+        ft.owner_user_id,
+        0::int AS product_count
+      FROM food_types ft
+      WHERE ft.category = $1
+        AND ft.is_system = true
+      ORDER BY ft.is_system DESC, ft.id ASC
       `,
       [categoryId],
     );
