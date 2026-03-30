@@ -8,6 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ScrollView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
@@ -124,6 +125,7 @@ export default function ManualAddProduct() {
 
   const handleCategoryPress = async (cat: Category) => {
     if (!userId) return;
+
     setLoading(true);
     setSelectedCategory(cat);
     setSelectedFoodType(null);
@@ -325,93 +327,100 @@ export default function ManualAddProduct() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topRow}>
-        <TouchableOpacity
-          style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
-          onPress={handleSettingsPress}
-        >
-          <Text style={styles.topButtonText}>⚙️ Settings</Text>
-        </TouchableOpacity>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.topRow}>
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+            onPress={handleSettingsPress}
+          >
+            <Text style={styles.topButtonText}>⚙️ Settings</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
-          onPress={handleManageTypesPress}
-        >
-          <Text style={styles.topButtonText}>Manage Types</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.title}>{title}</Text>
-
-      {!selectedCategory && (
-        <View style={commonStyles.section}>
-          <Text style={commonStyles.sectionTitle}>Product details</Text>
-
-          <Text style={commonStyles.label}>Product name *</Text>
-          <TextInput
-            style={[formStyles.input, formStyles.inputWide]}
-            placeholder="e.g. Strawberries"
-            value={name}
-            onChangeText={setName}
-          />
-
-          <Text style={commonStyles.helperText}>
-            This is the name that will appear in your fridge
-          </Text>
-
-          <Text style={[commonStyles.label, styles.subLabel]}>Barcode (optional)</Text>
-          <TextInput
-            style={[formStyles.input, formStyles.inputWide]}
-            placeholder="Leave blank if unknown"
-            value={barcode}
-            onChangeText={setBarcode}
-            keyboardType="number-pad"
-          />
-
-          <Text style={commonStyles.helperText}>
-            Only needed if you want to scan this product in the future
-          </Text>
-
-          {fromShopping && (
-            <Text style={[commonStyles.helperText, styles.shoppingPrefill]}>
-              From shopping list: Qty {prefillQty} • Store {params.prefill_store_name ?? "No store"}
-            </Text>
-          )}
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+            onPress={handleManageTypesPress}
+          >
+            <Text style={styles.topButtonText}>Manage Types</Text>
+          </TouchableOpacity>
         </View>
-      )}
 
-      {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
+        <Text style={styles.title}>{title}</Text>
 
-      {!loading && (
-        <>
-          {selectedCategory ? (
-            selectedFoodType ? (
-              <TouchableOpacity
-                style={[buttonStyles.base, buttonStyles.light, styles.confirmButton]}
-                onPress={handleConfirm}
-              >
-                <Text style={styles.confirmButtonText}>Continue</Text>
-              </TouchableOpacity>
+        {!selectedCategory && (
+          <View style={commonStyles.section}>
+            <Text style={commonStyles.sectionTitle}>Product details</Text>
+
+            <Text style={commonStyles.label}>Product name *</Text>
+            <TextInput
+              style={[formStyles.input, formStyles.inputWide]}
+              placeholder="e.g. Strawberries"
+              value={name}
+              onChangeText={setName}
+            />
+
+            <Text style={commonStyles.helperText}>
+              This is the name that will appear in your fridge
+            </Text>
+
+            <Text style={[commonStyles.label, styles.subLabel]}>Barcode (optional)</Text>
+            <TextInput
+              style={[formStyles.input, formStyles.inputWide]}
+              placeholder="Leave blank if unknown"
+              value={barcode}
+              onChangeText={setBarcode}
+              keyboardType="number-pad"
+            />
+
+            <Text style={commonStyles.helperText}>
+              Only needed if you want to scan this product in the future
+            </Text>
+
+            {fromShopping && (
+              <Text style={[commonStyles.helperText, styles.shoppingPrefill]}>
+                From shopping list: Qty {prefillQty} • Store {params.prefill_store_name ?? "No store"}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
+
+        {!loading && (
+          <>
+            {selectedCategory ? (
+              selectedFoodType ? (
+                <TouchableOpacity
+                  style={[buttonStyles.base, buttonStyles.light, styles.confirmButton]}
+                  onPress={handleConfirm}
+                >
+                  <Text style={styles.confirmButtonText}>Continue</Text>
+                </TouchableOpacity>
+              ) : (
+                renderButtons(
+                  foodTypes.map((ft) => ({ key: String(ft.id), label: ft.name })),
+                  (idStr) => {
+                    const ft = foodTypes.find((f) => String(f.id) === idStr);
+                    if (ft) setSelectedFoodType(ft);
+                  }
+                )
+              )
             ) : (
               renderButtons(
-                foodTypes.map((ft) => ({ key: String(ft.id), label: ft.name })),
+                categories.map((c) => ({ key: String(c.id), label: c.name })),
                 (idStr) => {
-                  const ft = foodTypes.find((f) => String(f.id) === idStr);
-                  if (ft) setSelectedFoodType(ft);
+                  const cat = categories.find((c) => String(c.id) === idStr);
+                  if (cat) handleCategoryPress(cat);
                 }
               )
-            )
-          ) : (
-            renderButtons(
-              categories.map((c) => ({ key: String(c.id), label: c.name })),
-              (idStr) => {
-                const cat = categories.find((c) => String(c.id) === idStr);
-                if (cat) handleCategoryPress(cat);
-              }
-            )
-          )}
-        </>
-      )}
+            )}
+          </>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -419,9 +428,15 @@ export default function ManualAddProduct() {
 const styles = StyleSheet.create({
   container: {
     ...commonStyles.screenPrimary,
+  },
+  scroll: {
+    flex: 1,
+    width: "100%",
+  },
+  scrollContent: {
     alignItems: "center",
-    justifyContent: "flex-start",
     paddingTop: spacing.xxxl,
+    paddingBottom: 40,
     paddingHorizontal: spacing.xl,
   },
   topRow: {
