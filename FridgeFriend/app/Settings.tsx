@@ -170,6 +170,7 @@ export default function Settings() {
         text: "Log out",
         style: "destructive",
         onPress: () => {
+          router.dismissAll();
           router.replace("/LoginScreen");
         },
       },

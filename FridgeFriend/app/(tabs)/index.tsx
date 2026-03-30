@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useMemo, useState } from "react";
@@ -47,6 +47,10 @@ type ExpiringSoonRow = {
 export default function Home() {
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
   const router = useRouter();
+
+  if (!user_id) {
+    return <Redirect href="/LoginScreen" />;
+  }
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
