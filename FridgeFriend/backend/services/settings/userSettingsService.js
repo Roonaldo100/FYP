@@ -1,5 +1,7 @@
 import pool from "../../db.js";
 
+export const MAX_NOTIFICATION_DAYS = 3650;
+
 export async function getUserSettings(userId) {
   const uid = Number(userId);
 
@@ -30,6 +32,7 @@ export async function getUserSettings(userId) {
       notification_period_preference: Number(
         r.rows[0].notification_period_preference ?? 0,
       ),
+      max_notification_days: MAX_NOTIFICATION_DAYS,
     };
   } catch (err) {
     if (err.statusCode) throw err;
@@ -54,8 +57,16 @@ export async function updateNotificationPeriod(
     throw err;
   }
 
-  if (!Number.isFinite(pref) || pref < 0) {
+  if (!Number.isFinite(pref) || !Number.isInteger(pref) || pref < 0) {
     const err = new Error("Invalid notification_period_preference");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (pref > MAX_NOTIFICATION_DAYS) {
+    const err = new Error(
+      `notification_period_preference must be <= ${MAX_NOTIFICATION_DAYS}`
+    );
     err.statusCode = 400;
     throw err;
   }

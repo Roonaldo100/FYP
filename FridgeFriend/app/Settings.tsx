@@ -27,15 +27,27 @@ export default function Settings() {
 
   const [loading, setLoading] = useState(false);
   const [periodText, setPeriodText] = useState("0");
+  const [maxNotificationDays, setMaxNotificationDays] = useState<number | null>(null);
 
   const loadSettings = async () => {
     if (!user_id) return;
+
     try {
       setLoading(true);
+
       const r = await fetch(`${API_BASE_URL}/user/${user_id}/settings`);
-      if (!r.ok) throw new Error("Failed to load settings");
+      if (!r.ok) {
+        throw new Error("Failed to load settings");
+      }
+
       const data = await r.json();
+
       setPeriodText(String(data.notification_period_preference ?? 0));
+      setMaxNotificationDays(
+        Number.isFinite(Number(data.max_notification_days))
+          ? Number(data.max_notification_days)
+          : null
+      );
     } catch (e) {
       console.error("Load settings error:", e);
       Alert.alert("Error", "Unable to load settings.");
@@ -52,8 +64,17 @@ export default function Settings() {
     if (!user_id) return;
 
     const parsed = Number(periodText);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      Alert.alert("Invalid value", "Please enter a number ≥ 0.");
+
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+      Alert.alert("Invalid value", "Please enter a whole number 0 or greater.");
+      return;
+    }
+
+    if (maxNotificationDays !== null && parsed > maxNotificationDays) {
+      Alert.alert(
+        "Value too large",
+        `Please enter a value no greater than ${maxNotificationDays}.`
+      );
       return;
     }
 
@@ -73,28 +94,40 @@ export default function Settings() {
       );
 
       if (!resp.ok) {
-        const txt = await resp.text().catch(() => "");
-        console.error("Save settings failed:", resp.status, txt);
-        Alert.alert("Error", "Failed to save settings.");
+        const data = await resp.json().catch(() => null);
+        console.error("Save settings failed:", resp.status, data);
+        Alert.alert("Error", data?.message || "Failed to save settings.");
         return;
       }
 
       const data: {
         notification_period_preference: number;
         overrideExisting: boolean;
-        pending: { user_product_id: number; product_name: string; days_left: number }[];
+        pending: {
+          user_product_id: number;
+          product_name: string;
+          days_left: number;
+          effective_period_days?: number;
+        }[];
       } = await resp.json();
 
       if (Array.isArray(data.pending) && data.pending.length > 0) {
         const ok = await registerForLocalNotificationsAsync();
+
         if (ok) {
           for (const row of data.pending) {
-            await sendExpiryNotification(String(row.product_name), Number(row.days_left));
+            await sendExpiryNotification(
+              String(row.product_name),
+              Number(row.days_left)
+            );
 
-            await fetch(`${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            });
+            await fetch(
+              `${API_BASE_URL}/user_products/${row.user_product_id}/markNotified`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              }
+            );
           }
         }
       }
@@ -123,6 +156,7 @@ export default function Settings() {
 
   const goManageStores = () => {
     if (!user_id) return;
+
     router.push({
       pathname: "/ManageStores",
       params: { user_id: String(user_id) },
