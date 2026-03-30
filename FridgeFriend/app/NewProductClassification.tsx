@@ -60,6 +60,32 @@ export default function NewProductClassification() {
     return `Pick a Category for: ${pn}`;
   }, [product_name, selectedCategory, selectedFoodType]);
 
+  const handleSettingsPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    router.push({
+      pathname: "/Settings",
+      params: { user_id: String(user_id) },
+    });
+  };
+
+  const handleManageTypesPress = () => {
+    if (!user_id) {
+      Alert.alert("Not logged in", "Please log in again.");
+      router.replace("/LoginScreen");
+      return;
+    }
+
+    router.push({
+      pathname: "/ManageCategoriesFoodTypes",
+      params: { user_id: String(user_id) },
+    });
+  };
+
   const handleCategoryPress = async (cat: Category) => {
     setLoading(true);
     setSelectedCategory(cat);
@@ -160,6 +186,22 @@ export default function NewProductClassification() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.topRow}>
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+          onPress={handleSettingsPress}
+        >
+          <Text style={styles.topButtonText}>⚙️ Settings</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[buttonStyles.base, buttonStyles.light, styles.topButton]}
+          onPress={handleManageTypesPress}
+        >
+          <Text style={styles.topButtonText}>Manage Types</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.title}>{title}</Text>
 
       <View style={styles.meta}>
@@ -220,7 +262,25 @@ const styles = StyleSheet.create({
   container: {
     ...commonStyles.screenPrimary,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
+    paddingTop: spacing.xxxl,
+    paddingHorizontal: spacing.xl,
+  },
+  topRow: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  topButton: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  topButtonText: {
+    color: colors.primary,
+    fontWeight: fontWeight.heavy,
+    fontSize: fontSize.sm,
   },
   title: {
     color: colors.primaryTextOn,
