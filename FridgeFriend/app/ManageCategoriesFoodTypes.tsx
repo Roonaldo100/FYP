@@ -521,22 +521,29 @@ export default function ManageCategoriesFoodTypes() {
           <View style={[commonStyles.card, styles.card]}>
             <Text style={styles.cardTitle}>Pick a category</Text>
 
-            <ScrollView horizontal contentContainerStyle={styles.chipRow}>
+            <ScrollView style={styles.categoryPickerList} contentContainerStyle={styles.categoryPickerListContent}>
               {categoryList.map((cat) => {
                 const selected = selectedCategory?.id === cat.id;
+
                 return (
                   <TouchableOpacity
                     key={String(cat.id)}
                     style={[
-                      styles.chip,
-                      selected ? styles.chipSelected : styles.chipUnselected,
+                      commonStyles.card,
+                      styles.categoryPickerRow,
+                      selected && styles.categoryPickerRowSelected,
                     ]}
                     onPress={async () => {
                       setSelectedCategory(cat);
                       await loadFoodTypes(cat.id);
                     }}
                   >
-                    <Text style={selected ? styles.chipTextSelected : styles.chipTextUnselected}>
+                    <Text
+                      style={[
+                        styles.categoryPickerText,
+                        selected && styles.categoryPickerTextSelected,
+                      ]}
+                    >
                       {cat.name}
                     </Text>
                   </TouchableOpacity>
@@ -773,4 +780,31 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     color: colors.textMuted,
   },
+  categoryPickerList: {
+  maxHeight: 220,
+},
+
+categoryPickerListContent: {
+  paddingBottom: spacing.sm,
+},
+
+categoryPickerRow: {
+  marginBottom: spacing.sm,
+  borderWidth: 1,
+  borderColor: colors.borderSoft,
+},
+
+categoryPickerRowSelected: {
+  backgroundColor: "#111",
+  borderColor: "#111",
+},
+
+categoryPickerText: {
+  fontWeight: fontWeight.black,
+  color: colors.text,
+},
+
+categoryPickerTextSelected: {
+  color: colors.primaryTextOn,
+},
 });

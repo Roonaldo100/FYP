@@ -498,7 +498,7 @@ export default function AddItemToFridge() {
           </View>
 
           <View style={commonStyles.section}>
-            <Text style={commonStyles.sectionTitle}>Price (optional)</Text>
+            <Text style={commonStyles.sectionTitle}>Price of 1 (optional)</Text>
             <TextInput
               style={formStyles.inputAlt}
               placeholder="e.g. 1.50"
