@@ -27,6 +27,20 @@ function toPositiveInt(v, fallback = null) {
   return n;
 }
 
+function parseOptionalExpiryDate(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+
+  const s = String(raw).trim();
+  if (!s) return null;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    throw new HttpError(400, "Invalid expiryDate");
+  }
+
+  return s;
+}
+
 async function assertUserOwnsList(userId, listId) {
   const r = await pool.query(
     `SELECT id, user_id, name, created_at, updated_at FROM shopping_lists WHERE id = $1 LIMIT 1`,
@@ -239,6 +253,7 @@ export async function addShoppingListItem(userId, listId, body) {
       : Number(storeIdRaw);
 
   const quantity = toPositiveInt(body?.quantity, 1) ?? 1;
+  const expiryDate = parseOptionalExpiryDate(body?.expiryDate);
 
   if (
     !Number.isInteger(uid) ||
@@ -262,11 +277,6 @@ export async function addShoppingListItem(userId, listId, body) {
     throw err;
   }
 
-  if (productId !== null && (!Number.isInteger(productId) || productId <= 0)) {
-    const err = new Error("Invalid productId");
-    err.statusCode = 400;
-    throw err;
-  }
   if (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0)) {
     const err = new Error("Invalid storeId");
     err.statusCode = 400;
@@ -275,77 +285,99 @@ export async function addShoppingListItem(userId, listId, body) {
 
   try {
     await assertUserOwnsList(uid, lid);
-    await assertStoreVisibleToUser(uid, storeId);
 
-    if (productId) {
+    if (storeId !== null) {
+      await assertStoreVisibleToUser(uid, storeId);
+    }
+
+    if (productId !== null) {
       await assertProductVisibleToUser(uid, productId);
     }
 
-    if (productId) {
-      const upd = await pool.query(
+    if (productId && storeId !== null) {
+      await pool.query(
         `
-        UPDATE shopping_list_items
-        SET quantity = quantity + $4
-        WHERE list_id = $1
-          AND product_id = $2
-          AND custom_name IS NULL
-          AND store_id IS NOT DISTINCT FROM $3
-        RETURNING id
+        INSERT INTO product_store (product_id, store_id)
+        VALUES ($1, $2)
+        ON CONFLICT (product_id, store_id) DO NOTHING
         `,
-        [lid, productId, storeId, quantity],
+        [productId, storeId],
       );
-
-      if (upd.rows.length) {
-        await pool.query(
-          `UPDATE shopping_lists SET updated_at = now() WHERE id = $1`,
-          [lid],
-        );
-
-        await bumpProductUsage(pool, uid, productId, "shopping");
-
-        return {
-          item_id: Number(upd.rows[0].id),
-          merged: true,
-          statusCode: 200,
-        };
-      }
     }
 
-    if (!productId) {
-      const upd = await pool.query(
+    let existing = null;
+
+    if (productId !== null) {
+      const r = await pool.query(
         `
-        UPDATE shopping_list_items
-        SET quantity = quantity + $4
+        SELECT id, quantity
+        FROM shopping_list_items
+        WHERE list_id = $1
+          AND product_id = $2
+          AND store_id IS NOT DISTINCT FROM $3
+          AND expiry_date IS NOT DISTINCT FROM $4::date
+        LIMIT 1
+        `,
+        [lid, productId, storeId, expiryDate ?? null],
+      );
+      existing = r.rows[0] || null;
+    } else {
+      const r = await pool.query(
+        `
+        SELECT id, quantity
+        FROM shopping_list_items
         WHERE list_id = $1
           AND product_id IS NULL
-          AND lower(custom_name) = lower($2)
+          AND LOWER(custom_name) = LOWER($2)
           AND store_id IS NOT DISTINCT FROM $3
-        RETURNING id
+          AND expiry_date IS NOT DISTINCT FROM $4::date
+        LIMIT 1
         `,
-        [lid, customName, storeId, quantity],
+        [lid, customName, storeId, expiryDate ?? null],
+      );
+      existing = r.rows[0] || null;
+    }
+
+    if (existing) {
+      await pool.query(
+        `
+        UPDATE shopping_list_items
+        SET quantity = quantity + $1
+        WHERE id = $2
+        `,
+        [quantity, Number(existing.id)],
       );
 
-      if (upd.rows.length) {
-        await pool.query(
-          `UPDATE shopping_lists SET updated_at = now() WHERE id = $1`,
-          [lid],
-        );
+      await pool.query(
+        `UPDATE shopping_lists SET updated_at = now() WHERE id = $1`,
+        [lid],
+      );
 
-        return {
-          item_id: Number(upd.rows[0].id),
-          merged: true,
-          statusCode: 200,
-        };
+      if (productId) {
+        await bumpProductUsage(pool, uid, productId, "shopping");
       }
+
+      return {
+        item_id: Number(existing.id),
+        merged: true,
+        statusCode: 200,
+      };
     }
 
     const ins = await pool.query(
       `
-      INSERT INTO shopping_list_items (list_id, product_id, custom_name, store_id, quantity)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO shopping_list_items (
+        list_id,
+        product_id,
+        custom_name,
+        store_id,
+        quantity,
+        expiry_date
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id
       `,
-      [lid, productId, customName, storeId, quantity],
+      [lid, productId, customName, storeId, quantity, expiryDate ?? null],
     );
 
     await pool.query(
@@ -375,80 +407,26 @@ export async function addShoppingListItem(userId, listId, body) {
   }
 }
 
-export async function attachProductToShoppingListItem(userId, listId, itemId, body) {
+export async function attachProductToShoppingListItem(
+  userId,
+  listId,
+  itemId,
+  body,
+) {
   const uid = Number(userId);
   const lid = Number(listId);
   const iid = Number(itemId);
 
-  const productId = Number(body?.productId);
-  const storeIdRaw = body?.storeId;
-  const storeId =
-    storeIdRaw === undefined ||
-    storeIdRaw === null ||
-    String(storeIdRaw).trim() === ""
-      ? null
-      : Number(storeIdRaw);
-
-  if (
-    !Number.isInteger(uid) ||
-    uid <= 0 ||
-    !Number.isInteger(lid) ||
-    lid <= 0 ||
-    !Number.isInteger(iid) ||
-    iid <= 0 ||
-    !Number.isInteger(productId) ||
-    productId <= 0
-  ) {
-    const err = new Error("Invalid ids");
-    err.statusCode = 400;
-    throw err;
-  }
-
-  try {
-    const updated = await pool.query(
-      `
-      UPDATE shopping_list_items
-      SET
-        product_id = $1,
-        custom_name = NULL,
-        store_id = COALESCE($2, store_id)
-      WHERE id = $3 AND list_id = $4
-      RETURNING id
-      `,
-      [productId, storeId, iid, lid],
-    );
-
-    if (!updated.rowCount) {
-      const err = new Error("Item not found");
-      err.statusCode = 404;
-      throw err;
-    }
-
-    return { attached: true };
-  } catch (e) {
-    if (e.statusCode) throw e;
-    console.error("attachProduct error:", e);
-    const err = new Error("Server error attaching product");
-    err.statusCode = 500;
-    throw err;
-  }
-}
-
-export async function updateShoppingListItem(userId, listId, itemId, body) {
-  const uid = Number(userId);
-  const lid = Number(listId);
-  const iid = Number(itemId);
+  const productId =
+    body?.productId != null && String(body.productId).trim() !== ""
+      ? Number(body.productId)
+      : null;
 
   const storeIdRaw = body?.storeId;
   const storeId =
-    storeIdRaw === undefined ||
-    storeIdRaw === null ||
-    String(storeIdRaw).trim() === ""
+    storeIdRaw === undefined || storeIdRaw === null || String(storeIdRaw) === ""
       ? null
       : Number(storeIdRaw);
-
-  const quantity =
-    body?.quantity != null ? toPositiveInt(body.quantity, null) : null;
 
   if (
     !Number.isInteger(uid) ||
@@ -463,7 +441,13 @@ export async function updateShoppingListItem(userId, listId, itemId, body) {
     throw err;
   }
 
-  if (storeId !== null && (!Number.isFinite(storeId) || storeId <= 0)) {
+  if (!Number.isInteger(productId) || productId <= 0) {
+    const err = new Error("Invalid productId");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0)) {
     const err = new Error("Invalid storeId");
     err.statusCode = 400;
     throw err;
@@ -471,9 +455,111 @@ export async function updateShoppingListItem(userId, listId, itemId, body) {
 
   try {
     await assertUserOwnsList(uid, lid);
-    await assertStoreVisibleToUser(uid, storeId);
+    await assertProductVisibleToUser(uid, productId);
 
-    const itemRes = await pool.query(
+    if (storeId !== null) {
+      await assertStoreVisibleToUser(uid, storeId);
+      await pool.query(
+        `
+        INSERT INTO product_store (product_id, store_id)
+        VALUES ($1, $2)
+        ON CONFLICT (product_id, store_id) DO NOTHING
+        `,
+        [productId, storeId],
+      );
+    }
+
+    const upd = await pool.query(
+      `
+      UPDATE shopping_list_items
+      SET product_id = $1,
+          custom_name = NULL,
+          store_id = $2
+      WHERE id = $3
+        AND list_id = $4
+      RETURNING id
+      `,
+      [productId, storeId, iid, lid],
+    );
+
+    if (!upd.rows.length) {
+      throw new HttpError(404, "Item not found");
+    }
+
+    await pool.query(
+      `UPDATE shopping_lists SET updated_at = now() WHERE id = $1`,
+      [lid],
+    );
+
+    await bumpProductUsage(pool, uid, productId, "shopping");
+
+    return { updated: true };
+  } catch (e) {
+    if (e.status) {
+      e.statusCode = e.status;
+      throw e;
+    }
+    if (e.statusCode) throw e;
+    console.error("attach shopping list item error:", e);
+    const err = new Error("Server error attaching product");
+    err.statusCode = 500;
+    throw err;
+  }
+}
+
+export async function updateShoppingListItem(userId, listId, itemId, payload) {
+  const uid = Number(userId);
+  const lid = Number(listId);
+  const iid = Number(itemId);
+
+  const quantityProvided = Object.prototype.hasOwnProperty.call(payload || {}, "quantity");
+  const storeProvided = Object.prototype.hasOwnProperty.call(payload || {}, "storeId");
+  const expiryProvided = Object.prototype.hasOwnProperty.call(payload || {}, "expiryDate");
+
+  const quantity = quantityProvided ? toPositiveInt(payload?.quantity, null) : null;
+
+  const storeId =
+    !storeProvided
+      ? undefined
+      : payload?.storeId === null || payload?.storeId === undefined || String(payload?.storeId) === ""
+        ? null
+        : Number(payload.storeId);
+
+  const expiryDate = parseOptionalExpiryDate(payload?.expiryDate);
+
+  if (
+    !Number.isInteger(uid) ||
+    uid <= 0 ||
+    !Number.isInteger(lid) ||
+    lid <= 0 ||
+    !Number.isInteger(iid) ||
+    iid <= 0
+  ) {
+    const err = new Error("Invalid ids");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (quantityProvided && quantity === null) {
+    const err = new Error("Invalid quantity");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (
+    storeProvided &&
+    storeId !== null &&
+    (!Number.isInteger(storeId) || storeId <= 0)
+  ) {
+    const err = new Error("Invalid storeId");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  try {
+    await assertUserOwnsList(uid, lid);
+
+    const currentRes = await pool.query(
       `
       SELECT id, product_id
       FROM shopping_list_items
@@ -482,26 +568,35 @@ export async function updateShoppingListItem(userId, listId, itemId, body) {
       `,
       [iid, lid],
     );
-    if (!itemRes.rows.length) throw new HttpError(404, "Item not found");
 
-    const productId =
-      itemRes.rows[0].product_id != null
-        ? Number(itemRes.rows[0].product_id)
-        : null;
+    const current = currentRes.rows[0] || null;
+    if (!current) {
+      throw new HttpError(404, "Item not found");
+    }
+
+    const productId = current.product_id != null ? Number(current.product_id) : null;
+
+    if (storeProvided && storeId !== null) {
+      await assertStoreVisibleToUser(uid, storeId);
+    }
 
     const updates = [];
     const params = [];
     let i = 1;
 
-    const storeProvided = body?.storeId !== undefined;
     if (storeProvided) {
       updates.push(`store_id = $${i++}`);
       params.push(storeId);
     }
 
-    if (quantity !== null) {
+    if (quantityProvided) {
       updates.push(`quantity = $${i++}`);
       params.push(quantity);
+    }
+
+    if (expiryProvided) {
+      updates.push(`expiry_date = $${i++}`);
+      params.push(expiryDate ?? null);
     }
 
     if (!updates.length) return { updated: true };
@@ -615,6 +710,7 @@ export async function getShoppingList(userId, listId) {
         sli.custom_name,
         sli.store_id,
         sli.quantity,
+        sli.expiry_date,
         p.name AS product_name,
         s.name AS store_name,
         upp.last_price AS unit_price
@@ -657,6 +753,7 @@ export async function getShoppingList(userId, listId) {
         store_id: row.store_id != null ? Number(row.store_id) : null,
         store_name: row.store_id != null ? (row.store_name ?? null) : null,
         quantity: qty,
+        expiry_date: row.expiry_date ?? null,
         unit_price: hasKnownPrice ? unitPrice : null,
         line_total: lineTotal,
       };
