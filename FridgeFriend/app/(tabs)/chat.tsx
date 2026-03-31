@@ -21,7 +21,7 @@ import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/toke
 
 type ChatRole = "user" | "assistant";
 
-type RecipeIngredient = string | { name: string; productId?: number | null };
+//type RecipeIngredient = string | { name: string; productId?: number | null };
 
 type NutritionSummary = {
   calories: number | null;
@@ -59,9 +59,10 @@ export default function ChatTab() {
   const params = useGlobalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidUserId(params.user_id), [params.user_id]);
 
+  //initial message given to the user
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      id: "seed-1",
+      id: "seed-1", //for persistence
       role: "assistant",
       text:
         'Ask for a dish like "apple pie". I’ll fetch its ingredients and compare them to your inventory.',
@@ -71,7 +72,7 @@ export default function ChatTab() {
   const [loading, setLoading] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const listRef = useRef<FlatList<ChatMessage>>(null); //useRef allows for later auto-scroll to bottom mechanics n
 
   const appendMessage = (msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg]);

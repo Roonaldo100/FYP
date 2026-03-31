@@ -22,6 +22,9 @@ import { commonStyles } from "../../styles/common";
 import { buttonStyles } from "../../styles/buttons";
 import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
 
+import { formatDisplayDate } from "../../lib/dateUtils";
+
+//types define the data shape
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number; product_count?: number; };
 type UserProduct = {
@@ -52,6 +55,7 @@ export default function Home() {
     return <Redirect href="/LoginScreen" />;
   }
 
+  //create a state variable called "categories" (with a setter "setCategories") that stores a list of Category objects, initially empty
   const [categories, setCategories] = useState<Category[]>([]);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
   const [userProducts, setUserProducts] = useState<UserProduct[]>([]);
@@ -75,6 +79,7 @@ export default function Home() {
     }
   }, [user_id]);
 
+  //reload on refresh
   useFocusEffect(
     useCallback(() => {
       loadCategories();
@@ -84,6 +89,7 @@ export default function Home() {
   const pollPendingNotifications = useCallback(async () => {
     if (!user_id) return;
 
+    //check that user affirmed notifications
     const ok = await registerForLocalNotificationsAsync();
     if (!ok) return;
 
@@ -98,6 +104,7 @@ export default function Home() {
         effective_period_days: number;
       }[] = await resp.json();
 
+      // send the notification and update expiry flag
       for (const row of rows) {
         await sendExpiryNotification(row.product_name, Number(row.days_left));
 
@@ -131,11 +138,13 @@ export default function Home() {
   };
 
   const handleCategoryPress = async (category: Category) => {
+    // select the tapped category and clean up for previously selected
     setLoading(true);
     setSelectedCategory(category);
     setSelectedFoodType(null);
     setUserProducts([]);
 
+    // fetch subsections for category
     try {
       const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food?userId=${user_id}`);
       const data = await res.json();
@@ -172,6 +181,7 @@ export default function Home() {
         setLoading(false);
       }
     },
+    //dependency array: only callback if one changes
     [user_id, router, pollPendingNotifications]
   );
 
@@ -183,6 +193,7 @@ export default function Home() {
     }, [selectedFoodType, handleFoodTypePress])
   );
 
+  //clean backpress to products
   const handleBackPress = async () => {
     if (selectedFoodType) {
       setSelectedFoodType(null);
@@ -296,6 +307,7 @@ export default function Home() {
     }, [loadExpiringSoon])
   );
 
+  //page title creator
   const title = useMemo(() => {
     if (selectedFoodType) return `${selectedFoodType.name} (Your Items)`;
     if (selectedCategory) return `${selectedCategory.name} Types`;
@@ -303,6 +315,7 @@ export default function Home() {
   }, [selectedCategory, selectedFoodType]);
 
   const renderButtons = (
+    //unique string identifier, text on button, optional count
     items: { key: string; label: string; count?: number }[],
     onPress: (key: string) => void
   ) => (
@@ -339,7 +352,7 @@ export default function Home() {
           <Text style={styles.productDetails}>Store: {prod.store_name ?? "None"}</Text>
           <Text style={styles.productDetails}>Qty: {prod.quantity}</Text>
           <Text style={styles.productDetails}>
-            Nearest expiry: {prod.nearest_expiry ?? "None"}
+            Nearest expiry: {formatDisplayDate(prod.nearest_expiry)}
           </Text>
 
           {prod.last_price !== null && prod.last_price !== undefined && (

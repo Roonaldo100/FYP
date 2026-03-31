@@ -20,6 +20,8 @@ import { buttonStyles } from "../styles/buttons";
 import { modalStyles } from "../styles/modals";
 import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
 
+import { formatDisplayDate, normalizeExpiryDisplay } from "../lib/dateUtils";
+
 type Bucket = {
   expiry_date: string | null;
   quantity: number;
@@ -60,7 +62,7 @@ function makeNextDaysOptions(count: number) {
       year: "numeric",
     });
 
-    out.push({ key: v, label: `${pretty} (${v})`, value: v });
+    out.push({ key: v, label: pretty, value: v });
   }
   return out;
 }
@@ -554,7 +556,7 @@ export default function ExpiryBuckets() {
               <View key={`${String(b.expiry_date)}-${i}`} style={[commonStyles.card, styles.bucketRow]}>
                 <View style={styles.bucketMain}>
                   <Text style={styles.bucketTitle}>
-                    {expNorm ? `Expires: ${expNorm}` : "No expiry date"}
+                    {expNorm ? `Expires: ${formatDisplayDate(expNorm)}` : "No expiry date"}
                   </Text>
 
                   <TouchableOpacity
@@ -613,7 +615,7 @@ export default function ExpiryBuckets() {
           <View style={modalStyles.card}>
             <Text style={modalStyles.title}>Change expiry for this bucket</Text>
             <Text style={styles.modalSub}>
-              Current: {normalizeExpiryForApi(editingFromExpiry) ? normalizeExpiryForApi(editingFromExpiry) : "No expiry date"}
+              Current: {normalizeExpiryDisplay(editingFromExpiry) ? formatDisplayDate(editingFromExpiry) : "No expiry date"}
             </Text>
 
             <Text style={styles.quickTitle}>Quick set</Text>
@@ -689,7 +691,7 @@ export default function ExpiryBuckets() {
           <View style={modalStyles.card}>
             <Text style={modalStyles.title}>Set quantity</Text>
             <Text style={styles.modalSub}>
-              Bucket: {normalizeExpiryForApi(qtyEditingExpiry) ? normalizeExpiryForApi(qtyEditingExpiry) : "No expiry date"}
+              Bucket: {normalizeExpiryDisplay(qtyEditingExpiry) ? formatDisplayDate(qtyEditingExpiry) : "No expiry date"}
             </Text>
 
             <Text style={styles.modalSub}>Current: {qtyCurrent}</Text>

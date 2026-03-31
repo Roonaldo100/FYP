@@ -25,6 +25,8 @@ import { buttonStyles } from "../styles/buttons";
 import { modalStyles } from "../styles/modals";
 import { colors, fontWeight, radius, spacing } from "../styles/tokens";
 
+import { formatDisplayDate } from "../lib/dateUtils";
+
 type Store = { id: number; name: string };
 
 function pad2(n: number) {
@@ -58,7 +60,7 @@ function makeNextDaysOptions(count: number) {
       year: "numeric",
     });
 
-    out.push({ key: v, label: `${pretty} (${v})`, value: v });
+    out.push({ key: v, label: pretty, value: v });
   }
   return out;
 }
@@ -517,7 +519,7 @@ export default function AddItemToFridge() {
                 onPress={() => setExpiryMenuOpen(true)}
               >
                 <Text style={buttonStyles.secondaryText}>
-                  {expiryDate.trim() ? `Picked: ${expiryDate}` : "Pick a date"}
+                  {expiryDate.trim() ? `Picked: ${formatDisplayDate(expiryDate)}` : "Pick a date"}
                 </Text>
               </TouchableOpacity>
 

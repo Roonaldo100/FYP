@@ -76,6 +76,7 @@ export default function ShoppingTab() {
         body: JSON.stringify({ name }),
       });
 
+      //avoids crashing if JSON parsing fails.
       const text = await res.text().catch(() => "");
       let data: any = null;
       try {

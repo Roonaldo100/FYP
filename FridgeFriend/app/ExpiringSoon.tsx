@@ -16,6 +16,8 @@ import { commonStyles } from "../styles/common";
 import { buttonStyles } from "../styles/buttons";
 import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
 
+import { formatDisplayDate } from "../lib/dateUtils";
+
 type ExpiringSoonRow = {
   product_id: number;
   product_name: string;
@@ -218,7 +220,7 @@ export default function ExpiringSoon() {
                     Store: {item.store_name ?? "No store"} • Qty: {item.quantity}
                   </Text>
                   <Text style={styles.meta}>
-                    Expires: {item.nearest_expiry} • In {item.days_left} day(s) • Window:{" "}
+                    Expires: {formatDisplayDate(item.nearest_expiry)} • In {item.days_left} day(s) • Window:{" "}
                     {item.effective_period_days} day(s)
                   </Text>
                   <Text style={styles.tapHint}>Tap to manage expiry buckets →</Text>
