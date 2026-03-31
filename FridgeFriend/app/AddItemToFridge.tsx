@@ -25,7 +25,7 @@ import { buttonStyles } from "../styles/buttons";
 import { modalStyles } from "../styles/modals";
 import { colors, fontWeight, radius, spacing } from "../styles/tokens";
 
-import { formatDisplayDate } from "../lib/dateUtils";
+import { formatDisplayDate, normalizeExpiryInput } from "../lib/dateUtils";
 
 type Store = { id: number; name: string };
 
@@ -67,10 +67,12 @@ function makeNextDaysOptions(count: number) {
 
 export default function AddItemToFridge() {
   const router = useRouter();
-  const { user_id, product_id, product_name } = useLocalSearchParams<{
+  const { user_id, product_id, product_name, scanned_expiry, store_id } = useLocalSearchParams<{
     user_id?: string;
     product_id?: string;
     product_name?: string;
+    scanned_expiry?: string;
+    store_id?: string;
   }>();
 
   const [editableProductName, setEditableProductName] = useState(
@@ -94,6 +96,26 @@ export default function AddItemToFridge() {
   useEffect(() => {
     setEditableProductName(String(product_name ?? ""));
   }, [product_name]);
+
+  useEffect(() => {
+    const sidRaw = String(store_id ?? "").trim();
+    if (!sidRaw) {
+      setSelectedStoreId(null);
+      return;
+    }
+
+    const sid = Number(sidRaw);
+    setSelectedStoreId(Number.isFinite(sid) && sid > 0 ? sid : null);
+  }, [store_id]);
+
+  useEffect(() => {
+    if (!scanned_expiry) return;
+
+    const normalized = normalizeExpiryInput(String(scanned_expiry));
+    if (normalized) {
+      setExpiryDate(normalized);
+    }
+  }, [scanned_expiry]);
 
   const title = useMemo(() => {
     const displayName = editableProductName.trim() || product_name || "Unnamed Product";
@@ -277,12 +299,16 @@ export default function AddItemToFridge() {
     }
 
     const trimmedExpiry = expiryDate.trim();
-    const expiryToSend = trimmedExpiry.length === 0 ? null : trimmedExpiry;
+    let expiryToSend: string | null = null;
 
-    if (expiryToSend) {
-      const okFormat = /^\d{4}-\d{2}-\d{2}$/.test(expiryToSend);
-      if (!okFormat) {
-        Alert.alert("Invalid expiry date", "Use the format YYYY-MM-DD or leave it blank.");
+    if (trimmedExpiry.length > 0) {
+      expiryToSend = normalizeExpiryInput(trimmedExpiry);
+
+      if (!expiryToSend) {
+        Alert.alert(
+          "Invalid expiry date",
+          "Use YYYY-MM-DD, yyyymmdd, ddmmyyyy, 25/04/26, 25/04/2026, or 04 APR 2026."
+        );
         return;
       }
     }
@@ -513,6 +539,22 @@ export default function AddItemToFridge() {
           <View style={commonStyles.section}>
             <Text style={commonStyles.sectionTitle}>Expiry (optional)</Text>
 
+            <TouchableOpacity
+              style={[buttonStyles.base, buttonStyles.accent, { marginTop: spacing.md }]}
+              onPress={() => {
+                router.push({
+                  pathname: "/ExpiryDateScanner",
+                  params: {
+                    user_id: String(user_id ?? ""),
+                    product_id: String(product_id ?? ""),
+                    product_name: String(editableProductName || product_name || ""),
+                  },
+                });
+              }}
+            >
+              <Text style={buttonStyles.accentText}>Scan expiry date</Text>
+            </TouchableOpacity>
+
             <View style={styles.row}>
               <TouchableOpacity
                 style={[buttonStyles.base, buttonStyles.secondary, styles.flexButton]}
@@ -551,10 +593,10 @@ export default function AddItemToFridge() {
 
             <TextInput
               style={formStyles.inputAlt}
-              placeholder="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD, yyyymmdd, 25/04/26, or 04 APR 2026"
               value={expiryDate}
               onChangeText={setExpiryDate}
-              autoCapitalize="none"
+              autoCapitalize="characters"
             />
           </View>
 
