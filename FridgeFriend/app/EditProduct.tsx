@@ -297,7 +297,7 @@ export default function EditProduct() {
       await saveProduct(trimmed, selectedFoodTypeId ?? null);
 
       router.replace({
-        pathname: "/EditProducts",
+        pathname: "/ManageCategoriesFoodTypes",
         params: {
           user_id: String(userId),
           refresh: String(Date.now()),
@@ -329,7 +329,7 @@ export default function EditProduct() {
 
               Alert.alert("Deleted", "Product deleted successfully.");
               router.replace({
-                pathname: "/EditProducts",
+                pathname: "/ManageCategoriesFoodTypes",
                 params: {
                   user_id: String(userId),
                   refresh: String(Date.now()),

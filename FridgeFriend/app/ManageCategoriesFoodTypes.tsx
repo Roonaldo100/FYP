@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  ScrollView,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -16,6 +17,7 @@ import { API_BASE_URL } from "../config/apiConfig";
 import { commonStyles } from "../styles/common";
 import { formStyles } from "../styles/forms";
 import { buttonStyles } from "../styles/buttons";
+import { modalStyles } from "../styles/modals";
 import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
 
 type Category = {
@@ -48,6 +50,14 @@ type FoodTypeIndexRow = {
   categoryName: string;
 };
 
+function sortProductsAlphabetically(rows: Product[]) {
+  return [...rows].sort((a, b) =>
+    String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, {
+      sensitivity: "base",
+    })
+  );
+}
+
 export default function ManageCategoriesFoodTypes() {
   const router = useRouter();
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
@@ -65,6 +75,9 @@ export default function ManageCategoriesFoodTypes() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [foodTypeNameById, setFoodTypeNameById] = useState<Map<number, string>>(new Map());
+  const [foodTypeIndexRows, setFoodTypeIndexRows] = useState<FoodTypeIndexRow[]>([]);
+  const [foodTypeFilterId, setFoodTypeFilterId] = useState<number | null>(null);
+  const [foodTypeFilterModalOpen, setFoodTypeFilterModalOpen] = useState(false);
 
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newFoodTypeName, setNewFoodTypeName] = useState("");
@@ -122,12 +135,14 @@ export default function ManageCategoriesFoodTypes() {
       const catRes = await fetch(`${API_BASE_URL}/categories?userId=${userIdNum}`);
       if (!catRes.ok) {
         setFoodTypeNameById(new Map());
+        setFoodTypeIndexRows([]);
         return;
       }
 
       const catData = await catRes.json();
-      const cats = Array.isArray(catData) ? catData : [];
+      const cats: Category[] = Array.isArray(catData) ? catData : [];
       const map = new Map<number, string>();
+      const rows: FoodTypeIndexRow[] = [];
 
       await Promise.all(
         cats.map(async (cat: Category) => {
@@ -137,17 +152,37 @@ export default function ManageCategoriesFoodTypes() {
           if (!ftRes.ok) return;
 
           const ftData = await ftRes.json();
-          const rows = Array.isArray(ftData) ? ftData : [];
-          for (const row of rows) {
-            map.set(Number(row.id), String(row.name));
+          const ftRows: FoodType[] = Array.isArray(ftData) ? ftData : [];
+
+          for (const row of ftRows) {
+            const id = Number(row.id);
+            map.set(id, String(row.name));
+            rows.push({
+              id,
+              name: String(row.name),
+              categoryId: Number(cat.id),
+              categoryName: String(cat.name),
+            });
           }
         })
       );
 
+      rows.sort((a, b) => {
+        const catCmp = a.categoryName.localeCompare(b.categoryName, undefined, {
+          sensitivity: "base",
+        });
+        if (catCmp !== 0) return catCmp;
+        return a.name.localeCompare(b.name, undefined, {
+          sensitivity: "base",
+        });
+      });
+
       setFoodTypeNameById(map);
+      setFoodTypeIndexRows(rows);
     } catch (e) {
       console.error("foodTypes index fetch error:", e);
       setFoodTypeNameById(new Map());
+      setFoodTypeIndexRows([]);
     }
   }, [requireUser, userIdNum]);
 
@@ -173,7 +208,15 @@ export default function ManageCategoriesFoodTypes() {
         }
 
         const data = await res.json();
-        setProducts(Array.isArray(data) ? data : []);
+        const arr: Product[] = Array.isArray(data) ? data : [];
+
+        const filtered = arr.filter((p) => {
+          const isSystem = p.is_system === true;
+          const owner = p.owner_user_id == null ? null : Number(p.owner_user_id);
+          return !isSystem && owner === userIdNum;
+        });
+
+        setProducts(filtered);
       } catch (e) {
         console.error("Load products error:", e);
         setProducts([]);
@@ -225,15 +268,15 @@ export default function ManageCategoriesFoodTypes() {
   }, [requireUser]);
 
   const openFoodTypesForCategory = useCallback(
-  async (cat: Category) => {
-    if (!requireUser()) return;
+    async (cat: Category) => {
+      if (!requireUser()) return;
 
-    setMode("foodTypes");
-    setSelectedCategory(cat);
-    await loadFoodTypes(cat.id);
-  },
-  [requireUser, loadFoodTypes]
-);
+      setMode("foodTypes");
+      setSelectedCategory(cat);
+      await loadFoodTypes(cat.id);
+    },
+    [requireUser, loadFoodTypes]
+  );
 
   const openEditProduct = useCallback(
     (product: Product) => {
@@ -443,6 +486,22 @@ export default function ManageCategoriesFoodTypes() {
     return [...sys, ...user];
   }, [categories]);
 
+  const selectedFoodTypeLabel = useMemo(() => {
+    if (foodTypeFilterId === null) return "All food types";
+    const row = foodTypeIndexRows.find((ft) => Number(ft.id) === Number(foodTypeFilterId));
+    return row ? `${row.categoryName} • ${row.name}` : "Filtered food type";
+  }, [foodTypeFilterId, foodTypeIndexRows]);
+
+  const visibleProducts = useMemo(() => {
+    let rows = products;
+
+    if (foodTypeFilterId !== null) {
+      rows = rows.filter((p) => Number(p.food_type) === Number(foodTypeFilterId));
+    }
+
+    return sortProductsAlphabetically(rows);
+  }, [products, foodTypeFilterId]);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Manage Categories & Types</Text>
@@ -507,7 +566,13 @@ export default function ManageCategoriesFoodTypes() {
 
           <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
             {categoryList.map((cat) => (
-              <TouchableOpacity key={String(cat.id)} style={[commonStyles.card, styles.row]} activeOpacity={0.85} onLongPress={() => openFoodTypesForCategory(cat)} delayLongPress={250}>
+              <TouchableOpacity
+                key={String(cat.id)}
+                style={[commonStyles.card, styles.row]}
+                activeOpacity={0.85}
+                onLongPress={() => openFoodTypesForCategory(cat)}
+                delayLongPress={250}
+              >
                 <View style={styles.rowMain}>
                   <Text style={styles.rowText}>
                     {cat.name}
@@ -523,8 +588,8 @@ export default function ManageCategoriesFoodTypes() {
                   >
                     <Text style={buttonStyles.dangerText}>Delete</Text>
                   </TouchableOpacity>
-  )}
-</TouchableOpacity>
+                )}
+              </TouchableOpacity>
             ))}
           </ScrollView>
         </>
@@ -535,7 +600,10 @@ export default function ManageCategoriesFoodTypes() {
           <View style={[commonStyles.card, styles.card]}>
             <Text style={styles.cardTitle}>Pick a category</Text>
 
-            <ScrollView style={styles.categoryPickerList} contentContainerStyle={styles.categoryPickerListContent}>
+            <ScrollView
+              style={styles.categoryPickerList}
+              contentContainerStyle={styles.categoryPickerListContent}
+            >
               {categoryList.map((cat) => {
                 const selected = selectedCategory?.id === cat.id;
 
@@ -615,6 +683,25 @@ export default function ManageCategoriesFoodTypes() {
               onChangeText={setProductQuery}
               autoCapitalize="none"
             />
+
+            <View style={styles.productToolsRow}>
+              <TouchableOpacity
+                style={[buttonStyles.base, buttonStyles.light, styles.filterBtn]}
+                onPress={() => setFoodTypeFilterModalOpen(true)}
+              >
+                <Text style={styles.filterBtnText}>{selectedFoodTypeLabel}</Text>
+              </TouchableOpacity>
+
+              {foodTypeFilterId !== null && (
+                <TouchableOpacity
+                  style={[buttonStyles.base, buttonStyles.secondary]}
+                  onPress={() => setFoodTypeFilterId(null)}
+                >
+                  <Text style={buttonStyles.secondaryText}>Clear filter</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
             <TouchableOpacity
               style={[buttonStyles.base, styles.darkButton]}
               onPress={() => {
@@ -630,8 +717,8 @@ export default function ManageCategoriesFoodTypes() {
             <ActivityIndicator size="large" style={styles.productsLoader} />
           ) : (
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-              {products.length ? (
-                products.map((item) => {
+              {visibleProducts.length ? (
+                visibleProducts.map((item) => {
                   const ftName =
                     item.food_type != null
                       ? foodTypeNameById.get(Number(item.food_type)) ?? "Unknown"
@@ -654,12 +741,61 @@ export default function ManageCategoriesFoodTypes() {
                   );
                 })
               ) : (
-                <Text style={styles.emptyText}>No products found.</Text>
+                <Text style={styles.emptyText}>
+                  {products.length ? "No products match this food type." : "No products found."}
+                </Text>
               )}
             </ScrollView>
           )}
         </>
       )}
+
+      <Modal
+        visible={foodTypeFilterModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFoodTypeFilterModalOpen(false)}
+      >
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Filter by food type</Text>
+
+            <TouchableOpacity
+              style={modalStyles.row}
+              onPress={() => {
+                setFoodTypeFilterId(null);
+                setFoodTypeFilterModalOpen(false);
+              }}
+            >
+              <Text style={modalStyles.rowText}>All food types</Text>
+            </TouchableOpacity>
+
+            <ScrollView style={styles.modalList}>
+              {foodTypeIndexRows.map((item) => (
+                <TouchableOpacity
+                  key={String(item.id)}
+                  style={modalStyles.row}
+                  onPress={() => {
+                    setFoodTypeFilterId(item.id);
+                    setFoodTypeFilterModalOpen(false);
+                  }}
+                >
+                  <Text style={modalStyles.rowText}>
+                    {item.categoryName} • {item.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[buttonStyles.base, styles.darkButton, styles.modalCloseBtn]}
+              onPress={() => setFoodTypeFilterModalOpen(false)}
+            >
+              <Text style={styles.darkButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -743,29 +879,6 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
   },
-  chipRow: {
-    paddingVertical: spacing.sm,
-  },
-  chip: {
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    marginRight: spacing.sm,
-  },
-  chipUnselected: {
-    backgroundColor: colors.surfaceAlt,
-  },
-  chipSelected: {
-    backgroundColor: "#111",
-  },
-  chipTextUnselected: {
-    fontWeight: fontWeight.black,
-    color: "#111",
-  },
-  chipTextSelected: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.black,
-  },
   productsLoader: {
     marginTop: spacing.xxl,
   },
@@ -795,40 +908,54 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   categoryPickerList: {
-  maxHeight: 220,
-},
-
-categoryPickerListContent: {
-  paddingBottom: spacing.sm,
-},
-
-categoryPickerRow: {
-  marginBottom: spacing.sm,
-  borderWidth: 1,
-  borderColor: colors.borderSoft,
-},
-
-categoryPickerRowSelected: {
-  backgroundColor: "#111",
-  borderColor: "#111",
-},
-
-categoryPickerText: {
-  fontWeight: fontWeight.black,
-  color: colors.text,
-},
-
-categoryPickerTextSelected: {
-  color: colors.primaryTextOn,
-},
-rowMain: {
-  flex: 1,
-},
-
-rowHint: {
-  marginTop: spacing.xs,
-  color: colors.primary,
-  fontWeight: fontWeight.black,
-  fontSize: fontSize.xs,
-},
+    maxHeight: 220,
+  },
+  categoryPickerListContent: {
+    paddingBottom: spacing.sm,
+  },
+  categoryPickerRow: {
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  categoryPickerRowSelected: {
+    backgroundColor: "#111",
+    borderColor: "#111",
+  },
+  categoryPickerText: {
+    fontWeight: fontWeight.black,
+    color: colors.text,
+  },
+  categoryPickerTextSelected: {
+    color: colors.primaryTextOn,
+  },
+  rowMain: {
+    flex: 1,
+  },
+  rowHint: {
+    marginTop: spacing.xs,
+    color: colors.primary,
+    fontWeight: fontWeight.black,
+    fontSize: fontSize.xs,
+  },
+  productToolsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+    marginTop: spacing.md,
+  },
+  filterBtn: {
+    flexShrink: 1,
+  },
+  filterBtnText: {
+    color: colors.primary,
+    fontWeight: fontWeight.black,
+  },
+  modalList: {
+    maxHeight: 320,
+  },
+  modalCloseBtn: {
+    marginTop: spacing.md,
+  },
 });
