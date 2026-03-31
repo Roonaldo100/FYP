@@ -224,6 +224,17 @@ export default function ManageCategoriesFoodTypes() {
     setMode("products");
   }, [requireUser]);
 
+  const openFoodTypesForCategory = useCallback(
+  async (cat: Category) => {
+    if (!requireUser()) return;
+
+    setMode("foodTypes");
+    setSelectedCategory(cat);
+    await loadFoodTypes(cat.id);
+  },
+  [requireUser, loadFoodTypes]
+);
+
   const openEditProduct = useCallback(
     (product: Product) => {
       if (!requireUser()) return;
@@ -496,11 +507,14 @@ export default function ManageCategoriesFoodTypes() {
 
           <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
             {categoryList.map((cat) => (
-              <View key={String(cat.id)} style={[commonStyles.card, styles.row]}>
-                <Text style={styles.rowText}>
-                  {cat.name}
-                  {cat.is_system ? " (system)" : ""}
-                </Text>
+              <TouchableOpacity key={String(cat.id)} style={[commonStyles.card, styles.row]} activeOpacity={0.85} onLongPress={() => openFoodTypesForCategory(cat)} delayLongPress={250}>
+                <View style={styles.rowMain}>
+                  <Text style={styles.rowText}>
+                    {cat.name}
+                    {cat.is_system ? " (system)" : ""}
+                  </Text>
+                  <Text style={styles.rowHint}>Long press to manage food types →</Text>
+                </View>
 
                 {!cat.is_system && (
                   <TouchableOpacity
@@ -509,8 +523,8 @@ export default function ManageCategoriesFoodTypes() {
                   >
                     <Text style={buttonStyles.dangerText}>Delete</Text>
                   </TouchableOpacity>
-                )}
-              </View>
+  )}
+</TouchableOpacity>
             ))}
           </ScrollView>
         </>
@@ -806,5 +820,15 @@ categoryPickerText: {
 
 categoryPickerTextSelected: {
   color: colors.primaryTextOn,
+},
+rowMain: {
+  flex: 1,
+},
+
+rowHint: {
+  marginTop: spacing.xs,
+  color: colors.primary,
+  fontWeight: fontWeight.black,
+  fontSize: fontSize.xs,
 },
 });
