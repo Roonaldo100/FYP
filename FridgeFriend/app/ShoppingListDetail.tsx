@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -15,6 +16,7 @@ import { API_BASE_URL } from "../config/apiConfig";
 
 import { commonStyles } from "../styles/common";
 import { buttonStyles } from "../styles/buttons";
+import { formStyles } from "../styles/forms";
 import { modalStyles } from "../styles/modals";
 import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
 
@@ -66,8 +68,35 @@ export default function ShoppingListDetail() {
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [storeModalItem, setStoreModalItem] = useState<Item | null>(null);
 
+  const [qtyModalOpen, setQtyModalOpen] = useState(false);
+  const [qtyModalItem, setQtyModalItem] = useState<Item | null>(null);
+  const [qtyInput, setQtyInput] = useState("");
+  const [qtySaving, setQtySaving] = useState(false);
+
+  function parsePositiveInt(s: string): number | null {
+    const t = s.trim();
+    if (!t) return null;
+    const n = Number(t);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return null;
+    return n;
+  }
+
+  const openQtyModal = (item: Item) => {
+    setQtyModalItem(item);
+    setQtyInput(String(item.quantity));
+    setQtyModalOpen(true);
+  };
+
+  const closeQtyModal = () => {
+    if (qtySaving) return;
+    setQtyModalOpen(false);
+    setQtyModalItem(null);
+    setQtyInput("");
+  };
+
   const load = useCallback(async () => {
     if (!userId || !listId) return;
+
     setLoading(true);
     try {
       const res = await fetch(
@@ -90,6 +119,7 @@ export default function ShoppingListDetail() {
 
   const loadStores = useCallback(async () => {
     if (!userId) return;
+
     try {
       const res = await fetch(
         `${API_BASE_URL}/stores?userId=${encodeURIComponent(String(userId))}`
@@ -132,6 +162,7 @@ export default function ShoppingListDetail() {
 
   const removeItem = async (itemId: number) => {
     if (!userId || !listId) return;
+
     try {
       setLoading(true);
       const res = await fetch(
@@ -153,6 +184,7 @@ export default function ShoppingListDetail() {
 
   const incQty = async (itemId: number, currentQty: number) => {
     if (!userId || !listId) return;
+
     try {
       setLoading(true);
       const res = await fetch(
@@ -179,6 +211,7 @@ export default function ShoppingListDetail() {
   const decQty = async (itemId: number, currentQty: number) => {
     if (!userId || !listId) return;
     if (currentQty <= 1) return;
+
     try {
       setLoading(true);
       const res = await fetch(
@@ -199,6 +232,44 @@ export default function ShoppingListDetail() {
       Alert.alert("Error", "Could not update quantity.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveItemQuantity = async () => {
+    if (!userId || !listId || !qtyModalItem) return;
+
+    const parsed = parsePositiveInt(qtyInput);
+    if (parsed === null) {
+      Alert.alert("Invalid quantity", "Enter a whole number greater than 0.");
+      return;
+    }
+
+    try {
+      setQtySaving(true);
+
+      const res = await fetch(
+        `${API_BASE_URL}/user/${userId}/shoppingLists/${listId}/items/${qtyModalItem.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quantity: parsed }),
+        }
+      );
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+
+      setQtyModalOpen(false);
+      setQtyModalItem(null);
+      setQtyInput("");
+      await load();
+    } catch (e) {
+      console.warn("save quantity error:", e);
+      Alert.alert("Error", "Could not update quantity.");
+    } finally {
+      setQtySaving(false);
     }
   };
 
@@ -278,7 +349,10 @@ export default function ShoppingListDetail() {
           </View>
 
           {data.groups.map((g, idx) => (
-            <View key={`${String(g.store_id)}-${idx}`} style={[commonStyles.card, styles.groupCard]}>
+            <View
+              key={`${String(g.store_id)}-${idx}`}
+              style={[commonStyles.card, styles.groupCard]}
+            >
               <Text style={styles.groupTitle}>{g.store_name}</Text>
               <Text style={styles.groupMeta}>
                 Subtotal known: €{Number(g.subtotal_known || 0).toFixed(2)} • Unknown:{" "}
@@ -289,15 +363,22 @@ export default function ShoppingListDetail() {
                 <View key={String(it.id)} style={styles.itemRow}>
                   <View style={styles.itemMain}>
                     <Text style={styles.itemName}>{it.name}</Text>
-                    <Text style={styles.itemMeta}>
-                      Qty: {it.quantity}{" "}
-                      {it.unit_price != null
-                        ? `• €${Number(it.unit_price).toFixed(2)} each`
-                        : "• price unknown"}
-                      {it.line_total != null
-                        ? ` • line €${Number(it.line_total).toFixed(2)}`
-                        : ""}
-                    </Text>
+
+                    <TouchableOpacity
+                      style={styles.qtyTap}
+                      onPress={() => openQtyModal(it)}
+                    >
+                      <Text style={styles.itemMeta}>
+                        Qty: {it.quantity}{" "}
+                        {it.unit_price != null
+                          ? `• €${Number(it.unit_price).toFixed(2)} each`
+                          : "• price unknown"}
+                        {it.line_total != null
+                          ? ` • line €${Number(it.line_total).toFixed(2)}`
+                          : ""}
+                      </Text>
+                      <Text style={styles.qtyHint}>Tap to set exact quantity</Text>
+                    </TouchableOpacity>
 
                     <View style={styles.storeRow}>
                       <Text style={styles.storeLabel}>
@@ -408,6 +489,59 @@ export default function ShoppingListDetail() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={qtyModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={closeQtyModal}
+      >
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.card}>
+            <Text style={modalStyles.title}>Set quantity</Text>
+
+            <Text style={styles.modalSub}>
+              Item: {qtyModalItem?.name ?? "—"}
+            </Text>
+
+            <TextInput
+              value={qtyInput}
+              onChangeText={(v) => setQtyInput(v.replace(/[^0-9]/g, ""))}
+              placeholder="Enter quantity"
+              keyboardType="number-pad"
+              style={[formStyles.inputAlt, styles.modalInput]}
+              editable={!qtySaving}
+            />
+
+            <TouchableOpacity
+              style={[
+                buttonStyles.base,
+                buttonStyles.accent,
+                qtySaving && styles.dimmed,
+              ]}
+              onPress={saveItemQuantity}
+              disabled={qtySaving}
+            >
+              <Text style={buttonStyles.accentText}>
+                {qtySaving ? "Saving..." : "Save"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                buttonStyles.base,
+                styles.darkButton,
+                styles.modalClose,
+                qtySaving && styles.dimmed,
+              ]}
+              onPress={closeQtyModal}
+              disabled={qtySaving}
+            >
+              <Text style={styles.darkButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -493,6 +627,20 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: fontSize.xs,
   },
+  qtyTap: {
+    marginTop: spacing.xs,
+    alignSelf: "flex-start",
+    backgroundColor: colors.surfaceAlt,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+  },
+  qtyHint: {
+    marginTop: 2,
+    color: colors.primary,
+    fontWeight: fontWeight.heavy,
+    fontSize: fontSize.xs,
+  },
   storeRow: {
     marginTop: spacing.sm,
     flexDirection: "row",
@@ -535,6 +683,10 @@ const styles = StyleSheet.create({
   },
   modalSub: {
     color: colors.textMuted,
+    marginBottom: spacing.md,
+  },
+  modalInput: {
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
   modalRow: {
