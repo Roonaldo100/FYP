@@ -22,6 +22,17 @@ export function formatDisplayDate(value: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
+export function formatCompactDisplayDate(value: string | null | undefined): string {
+  const normalized = normalizeExpiryDisplay(value);
+  if (!normalized) return "None";
+
+  const parts = normalized.split("-");
+  if (parts.length !== 3) return normalized.replace(/\D/g, "");
+
+  const [year, month, day] = parts;
+  return `${day}${month}${year}`;
+}
+
 export function isValidYMD(year: number, month: number, day: number): boolean {
   if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
     return false;
@@ -84,6 +95,12 @@ export function monthNameToNumber(raw: string): number | null {
   };
 
   return months[key] ?? null;
+}
+
+export function getLastDayOfMonth(year: number, month: number): number {
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return NaN;
+  if (month < 1 || month > 12) return NaN;
+  return new Date(year, month, 0).getDate();
 }
 
 export function parseCompactExpiryCandidate(raw: string): string | null {
@@ -150,6 +167,37 @@ export function parseMonthNameDate(raw: string): string | null {
   return null;
 }
 
+export function parseMonthYearWithoutDay(raw: string): string | null {
+  const match = String(raw || "").match(/\b(\d{1,2})[\/.\-](\d{4})\b(?![\/.\-]\d)/);
+  if (!match) return null;
+
+  const month = Number(match[1]);
+  const year = Number(match[2]);
+
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return null;
+
+  const lastDay = getLastDayOfMonth(year, month);
+  if (!isValidYMD(year, month, lastDay)) return null;
+
+  return toIsoDate(year, month, lastDay);
+}
+
+export function parseDayMonthWithoutYear(
+  raw: string,
+  fallbackYear: number = new Date().getFullYear()
+): string | null {
+  const match = String(raw || "").match(/\b(\d{1,2})[\/.\-](\d{1,2})\b(?![\/.\-]\d)/);
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = fallbackYear;
+
+  if (!isValidYMD(year, month, day)) return null;
+  return toIsoDate(year, month, day);
+}
+
 export function extractExpiryDateFromText(rawText: string): string | null {
   const text = String(rawText || "");
   if (!text.trim()) return null;
@@ -175,6 +223,12 @@ export function extractExpiryDateFromText(rawText: string): string | null {
     if (parsed) return parsed;
   }
 
+  const monthYearParsed = parseMonthYearWithoutDay(text);
+  if (monthYearParsed) return monthYearParsed;
+
+  const dayMonthParsed = parseDayMonthWithoutYear(text);
+  if (dayMonthParsed) return dayMonthParsed;
+
   return null;
 }
 
@@ -190,6 +244,8 @@ export function normalizeExpiryInput(raw: string): string | null {
   return (
     parseMonthNameDate(trimmed) ||
     parseSeparatedNumericDate(trimmed) ||
-    parseCompactExpiryCandidate(trimmed)
+    parseCompactExpiryCandidate(trimmed) ||
+    parseMonthYearWithoutDay(trimmed) ||
+    parseDayMonthWithoutYear(trimmed)
   );
 }

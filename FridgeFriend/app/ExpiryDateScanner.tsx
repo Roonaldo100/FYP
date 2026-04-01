@@ -13,7 +13,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { commonStyles } from "../styles/common";
 import { buttonStyles } from "../styles/buttons";
 import { colors, fontWeight, radius, spacing } from "../styles/tokens";
-import { extractExpiryDateFromText } from "../lib/dateUtils";
+import {
+  extractExpiryDateFromText,
+  formatCompactDisplayDate,
+} from "../lib/dateUtils";
 
 let extractTextFromImage: ((uri: string) => Promise<string[]>) | null = null;
 
@@ -78,12 +81,12 @@ export default function ExpiryDateScanner() {
       if (!parsedExpiry) {
         Alert.alert(
           "No expiry found",
-          "I couldn't detect a valid expiry date. Supported examples include 20260425, 25042026, 25/04/26, 25/04/2026, and 04 APR 2026."
+          "I couldn't detect a valid expiry date. Supported examples include 20260425, 25042026, 25/04/26, 25/04/2026, 04 APR 2026, 11.2028, and 31.08."
         );
         return;
       }
 
-      Alert.alert("Expiry found", `Detected expiry: ${parsedExpiry}`, [
+      Alert.alert("Expiry found", `Detected expiry: ${formatCompactDisplayDate(parsedExpiry)}`, [
         {
           text: "Use date",
           onPress: () => {
@@ -138,33 +141,42 @@ export default function ExpiryDateScanner() {
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
 
       <View style={styles.overlay}>
-        <Text style={styles.title}>Scan expiry date</Text>
-        <Text style={styles.helpText}>Aim the camera at the printed expiry.</Text>
-        <Text style={styles.helpText}>
-          Supported examples: 20260425, 25042026, 25/04/26, 25/04/2026, 04 APR 2026
-        </Text>
+        <View>
+          <Text style={styles.title}>Scan expiry date</Text>
+          <Text style={styles.helpText}>Aim the camera at the printed expiry.</Text>
+          <Text style={styles.helpText}>
+            Supported examples: 20260425, 25042026, 25/04/26, 25/04/2026, 04 APR 2026, 11.2028, 31.08
+          </Text>
+        </View>
 
-        <View style={styles.guideBox} />
+        <View style={styles.guideWrap}>
+          <View style={styles.guideBox} />
+        </View>
 
-        {busy ? (
-          <ActivityIndicator size="large" color={colors.primaryTextOn} />
-        ) : (
-          <>
-            <TouchableOpacity
-              style={[buttonStyles.base, buttonStyles.accent, styles.captureBtn]}
-              onPress={handleCapture}
-            >
-              <Text style={buttonStyles.accentText}>Capture</Text>
-            </TouchableOpacity>
+        <View style={styles.actionsWrap}>
+          {busy ? (
+            <View style={styles.busyWrap}>
+              <ActivityIndicator size="large" color={colors.primaryTextOn} />
+              <Text style={styles.busyText}>Scanning…</Text>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[buttonStyles.base, buttonStyles.accent, styles.captureBtn]}
+                onPress={handleCapture}
+              >
+                <Text style={buttonStyles.accentText}>Capture</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[buttonStyles.base, buttonStyles.light]}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.backText}>Cancel</Text>
-            </TouchableOpacity>
-          </>
-        )}
+              <TouchableOpacity
+                style={[buttonStyles.base, buttonStyles.light]}
+                onPress={() => router.back()}
+              >
+                <Text style={styles.backText}>Cancel</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -177,30 +189,46 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    justifyContent: "flex-end",
     padding: spacing.lg,
     backgroundColor: "rgba(0,0,0,0.18)",
+    justifyContent: "space-between",
   },
   title: {
     color: colors.primaryTextOn,
     fontSize: 22,
     fontWeight: fontWeight.black,
     marginBottom: spacing.sm,
+    marginTop: spacing.xl,
   },
   helpText: {
     color: colors.primaryTextOn,
     marginBottom: spacing.xs,
   },
+  guideWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   guideBox: {
-    alignSelf: "center",
     width: "88%",
     height: 150,
     borderWidth: 2,
     borderColor: "#fff",
     borderRadius: radius.md,
-    marginTop: spacing.lg,
-    marginBottom: spacing.xl,
     backgroundColor: "transparent",
+  },
+  actionsWrap: {
+    minHeight: 120,
+    justifyContent: "flex-end",
+  },
+  busyWrap: {
+    minHeight: 120,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  busyText: {
+    color: colors.primaryTextOn,
+    marginTop: spacing.sm,
   },
   captureBtn: {
     marginBottom: spacing.md,

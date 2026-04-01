@@ -307,7 +307,7 @@ export default function AddItemToFridge() {
       if (!expiryToSend) {
         Alert.alert(
           "Invalid expiry date",
-          "Use YYYY-MM-DD, yyyymmdd, ddmmyyyy, 25/04/26, 25/04/2026, or 04 APR 2026."
+          "Use YYYY-MM-DD, yyyymmdd, ddmmyyyy, 25/04/26, 25/04/2026, 04 APR 2026, 11.2028, or 31.08."
         );
         return;
       }
@@ -593,7 +593,7 @@ export default function AddItemToFridge() {
 
             <TextInput
               style={formStyles.inputAlt}
-              placeholder="YYYY-MM-DD, yyyymmdd, 25/04/26, or 04 APR 2026"
+              placeholder="YYYY-MM-DD, yyyymmdd, 25/04/26, 04 APR 2026, 11.2028, or 31.08"
               value={expiryDate}
               onChangeText={setExpiryDate}
               autoCapitalize="characters"
