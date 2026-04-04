@@ -34,6 +34,16 @@ function toValidId(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function normalizeExpiryForApi(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return s;
+}
+
 export default function ExpiringSoon() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string }>();
@@ -44,9 +54,16 @@ export default function ExpiringSoon() {
   const [items, setItems] = useState<ExpiringSoonRow[]>([]);
   const [removeQtyByKey, setRemoveQtyByKey] = useState<Record<string, number>>({});
 
-  const getItemKey = useCallback((it: ExpiringSoonRow) => {
-    return `${it.product_id}-${it.store_id ?? "null"}-${it.nearest_expiry}`;
+  const getExpiry = useCallback((it: ExpiringSoonRow) => {
+    return normalizeExpiryForApi(it.nearest_expiry);
   }, []);
+
+  const getItemKey = useCallback(
+    (it: ExpiringSoonRow) => {
+      return `${it.product_id}-${it.store_id ?? "null"}-${getExpiry(it) ?? "null"}`;
+    },
+    [getExpiry]
+  );
 
   const clampRemoveQty = useCallback((qty: number, max: number) => {
     if (!Number.isFinite(qty)) return 1;
@@ -83,7 +100,11 @@ export default function ExpiringSoon() {
       }
 
       const data = await res.json();
-      const rows = Array.isArray(data) ? data : [];
+      const rows = (Array.isArray(data) ? data : []).map((row) => ({
+        ...row,
+        nearest_expiry: normalizeExpiryForApi(row?.nearest_expiry) ?? "",
+      }));
+
       setItems(rows);
 
       setRemoveQtyByKey((prev) => {
@@ -131,12 +152,13 @@ export default function ExpiringSoon() {
     const selectedQty = getSelectedRemoveQty(it);
     const key = getItemKey(it);
     const removeAll = selectedQty >= it.quantity;
+    const expiry = getExpiry(it);
 
     Alert.alert(
       removeAll ? "Remove all items?" : "Remove items?",
       removeAll
-        ? `Remove all ${it.quantity} "${it.product_name}" from the bucket expiring on ${it.nearest_expiry}?`
-        : `Remove ${selectedQty} "${it.product_name}" from the bucket expiring on ${it.nearest_expiry}?`,
+        ? `Remove all ${it.quantity} "${it.product_name}" from the bucket expiring on ${expiry ?? "No expiry date"}?`
+        : `Remove ${selectedQty} "${it.product_name}" from the bucket expiring on ${expiry ?? "No expiry date"}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -153,7 +175,7 @@ export default function ExpiringSoon() {
                   userId,
                   productId: it.product_id,
                   storeId: it.store_id,
-                  expiryDate: it.nearest_expiry,
+                  expiryDate: expiry,
                   quantity: selectedQty,
                 }),
               });
@@ -206,6 +228,7 @@ export default function ExpiringSoon() {
             const isBusy = busyKey === key;
             const canDecrease = selectedQty > 1 && !isBusy;
             const canIncrease = selectedQty < item.quantity && !isBusy;
+            const expiry = getExpiry(item);
 
             return (
               <View style={[commonStyles.card, styles.card]}>
@@ -220,7 +243,7 @@ export default function ExpiringSoon() {
                     Store: {item.store_name ?? "No store"} • Qty: {item.quantity}
                   </Text>
                   <Text style={styles.meta}>
-                    Expires: {formatDisplayDate(item.nearest_expiry)} • In {item.days_left} day(s) • Window:{" "}
+                    Expires: {expiry ? formatDisplayDate(expiry) : "No expiry date"} • In {item.days_left} day(s) • Window:{" "}
                     {item.effective_period_days} day(s)
                   </Text>
                   <Text style={styles.tapHint}>Tap to manage expiry buckets →</Text>

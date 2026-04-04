@@ -152,7 +152,7 @@ export async function getExpiringSoon(userId) {
       g.store_id,
       s.name AS store_name,
       g.quantity,
-      g.nearest_expiry,
+      TO_CHAR(g.nearest_expiry, 'YYYY-MM-DD') AS nearest_expiry,
       (g.nearest_expiry::date - CURRENT_DATE) AS days_left,
       CASE
         WHEN COALESCE(f.expiry_period_days, 0) > 0 THEN f.expiry_period_days
