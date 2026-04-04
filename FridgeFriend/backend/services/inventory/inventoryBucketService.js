@@ -31,7 +31,10 @@ export async function getBuckets({ userId, productId, storeId }) {
   const r = await pool.query(
     `
     SELECT
-      expiry_date,
+      CASE
+        WHEN expiry_date IS NULL THEN NULL
+        ELSE TO_CHAR(expiry_date, 'YYYY-MM-DD')
+      END AS expiry_date,
       COUNT(*)::int AS quantity
     FROM user_products
     WHERE user_id = $1
@@ -43,7 +46,10 @@ export async function getBuckets({ userId, productId, storeId }) {
     [uid, pid, sid],
   );
 
-  return r.rows;
+  return r.rows.map((row) => ({
+    expiry_date: row.expiry_date,
+    quantity: Number(row.quantity),
+  }));
 }
 
 export async function removeByExpiry({

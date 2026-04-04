@@ -67,11 +67,12 @@ function makeNextDaysOptions(count: number) {
   return out;
 }
 
-function normalizeExpiryForApi(v: string | null): string | null {
-  if (v === null) return null;
+function normalizeExpiryForApi(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
   const s = String(v).trim();
   if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
   return s;
 }
 
@@ -89,6 +90,91 @@ function parseNonNegativeMoney(s: string): number | null {
   const n = Number(t);
   if (!Number.isFinite(n) || n < 0) return null;
   return n;
+}
+
+function sortBuckets(list: Bucket[]) {
+  return [...list].sort((a, b) => {
+    if (a.expiry_date === null && b.expiry_date === null) return 0;
+    if (a.expiry_date === null) return 1;
+    if (b.expiry_date === null) return -1;
+    return a.expiry_date.localeCompare(b.expiry_date);
+  });
+}
+
+function upsertBucketQuantity(
+  prev: Bucket[],
+  expiryDate: string | null,
+  delta: number
+): Bucket[] {
+  const exp = normalizeExpiryForApi(expiryDate);
+  const idx = prev.findIndex(
+    (b) => normalizeExpiryForApi(b.expiry_date) === exp
+  );
+
+  if (idx === -1) {
+    if (delta <= 0) return prev;
+    return sortBuckets([
+      ...prev,
+      { expiry_date: exp, quantity: delta },
+    ]);
+  }
+
+  const next = [...prev];
+  const current = next[idx];
+  const qty = current.quantity + delta;
+
+  if (qty <= 0) {
+    next.splice(idx, 1);
+    return sortBuckets(next);
+  }
+
+  next[idx] = {
+    ...current,
+    expiry_date: exp,
+    quantity: qty,
+  };
+
+  return sortBuckets(next);
+}
+
+function moveBucketLocally(
+  prev: Bucket[],
+  fromExpiry: string | null,
+  toExpiry: string | null
+): Bucket[] {
+  const fromExp = normalizeExpiryForApi(fromExpiry);
+  const toExp = normalizeExpiryForApi(toExpiry);
+
+  if (fromExp === toExp) return prev;
+
+  const source = prev.find(
+    (b) => normalizeExpiryForApi(b.expiry_date) === fromExp
+  );
+  if (!source) return prev;
+
+  const withoutSource = prev.filter(
+    (b) => normalizeExpiryForApi(b.expiry_date) !== fromExp
+  );
+
+  const targetIndex = withoutSource.findIndex(
+    (b) => normalizeExpiryForApi(b.expiry_date) === toExp
+  );
+
+  if (targetIndex === -1) {
+    return sortBuckets([
+      ...withoutSource,
+      { expiry_date: toExp, quantity: source.quantity },
+    ]);
+  }
+
+  const next = [...withoutSource];
+  next[targetIndex] = {
+    ...next[targetIndex],
+    expiry_date: toExp,
+    quantity: next[targetIndex].quantity + source.quantity,
+  };
+
+  return sortBuckets(next);
 }
 
 export default function ExpiryBuckets() {
@@ -149,7 +235,15 @@ export default function ExpiryBuckets() {
 
       const r = await fetch(`${API_BASE_URL}/user_products/buckets?${qs}`);
       const data = await r.json();
-      setBuckets(Array.isArray(data) ? data : []);
+
+      const normalized = Array.isArray(data)
+        ? data.map((row) => ({
+            expiry_date: normalizeExpiryForApi(row?.expiry_date),
+            quantity: Number(row?.quantity ?? 0),
+          }))
+        : [];
+
+      setBuckets(sortBuckets(normalized));
     } catch (e) {
       console.error("fetchBuckets error:", e);
       Alert.alert("Error", "Could not load expiry buckets.");
@@ -201,6 +295,8 @@ export default function ExpiryBuckets() {
   const addToBucket = async (expiryDate: string | null) => {
     if (!userId || !productId) return;
 
+    const exp = normalizeExpiryForApi(expiryDate);
+
     try {
       const resp = await fetch(`${API_BASE_URL}/user/addProduct`, {
         method: "POST",
@@ -209,13 +305,18 @@ export default function ExpiryBuckets() {
           userId,
           productId: Number(productId),
           storeId: storeId === "" ? null : Number(storeId),
-          expiryDate,
+          expiryDate: exp,
           price: null,
         }),
       });
 
-      if (!resp.ok) throw new Error("Add failed");
-      await fetchBuckets();
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("addToBucket failed:", resp.status, txt);
+        throw new Error("Add failed");
+      }
+
+      setBuckets((prev) => upsertBucketQuantity(prev, exp, 1));
     } catch (e) {
       console.error("addToBucket error:", e);
       Alert.alert("Error", "Could not add item to this expiry bucket.");
@@ -225,6 +326,8 @@ export default function ExpiryBuckets() {
   const removeFromBucket = async (expiryDate: string | null, qty: number = 1) => {
     if (!userId || !productId) return;
 
+    const exp = normalizeExpiryForApi(expiryDate);
+
     try {
       const resp = await fetch(`${API_BASE_URL}/user_products/removeByExpiry`, {
         method: "POST",
@@ -233,13 +336,18 @@ export default function ExpiryBuckets() {
           userId,
           productId: Number(productId),
           storeId: storeId === "" ? null : Number(storeId),
-          expiryDate,
+          expiryDate: exp,
           quantity: qty,
         }),
       });
 
-      if (!resp.ok) throw new Error("Remove failed");
-      await fetchBuckets();
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        console.error("removeFromBucket failed:", resp.status, txt);
+        throw new Error("Remove failed");
+      }
+
+      setBuckets((prev) => upsertBucketQuantity(prev, exp, -qty));
     } catch (e) {
       console.error("removeFromBucket error:", e);
       Alert.alert("Error", "Could not remove item(s) from this expiry bucket.");
@@ -266,7 +374,7 @@ export default function ExpiryBuckets() {
   };
 
   const openChangeExpiry = (fromExpiry: string | null) => {
-    setEditingFromExpiry(fromExpiry);
+    setEditingFromExpiry(normalizeExpiryForApi(fromExpiry));
     setExpiryMenuOpen(true);
   };
 
@@ -305,9 +413,9 @@ export default function ExpiryBuckets() {
         return;
       }
 
+      setBuckets((prev) => moveBucketLocally(prev, fromExpiryNorm, toExpiryNorm));
       setExpiryMenuOpen(false);
       setEditingFromExpiry(null);
-      await fetchBuckets();
     } catch (e) {
       console.error("changeBucketExpiry error:", e);
       Alert.alert("Error", "Could not change expiry for this bucket.");
@@ -317,7 +425,7 @@ export default function ExpiryBuckets() {
   };
 
   const openSetQuantity = (expiryDate: string | null, currentQty: number) => {
-    setQtyEditingExpiry(expiryDate);
+    setQtyEditingExpiry(normalizeExpiryForApi(expiryDate));
     setQtyCurrent(currentQty);
     setQtyInput(String(currentQty));
     setQtyModalOpen(true);
@@ -346,29 +454,48 @@ export default function ExpiryBuckets() {
 
       if (desired < current) {
         const diff = current - desired;
-        await removeFromBucket(expiry, diff);
+        const resp = await fetch(`${API_BASE_URL}/user_products/removeByExpiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            productId: Number(productId),
+            storeId: storeId === "" ? null : Number(storeId),
+            expiryDate: expiry,
+            quantity: diff,
+          }),
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          console.error("removeByExpiry (set qty) failed:", resp.status, txt);
+          throw new Error("Remove failed");
+        }
+
+        setBuckets((prev) => upsertBucketQuantity(prev, expiry, -diff));
       } else {
         const diff = desired - current;
-        for (let i = 0; i < diff; i++) {
-          const resp = await fetch(`${API_BASE_URL}/user/addProduct`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId,
-              productId: Number(productId),
-              storeId: storeId === "" ? null : Number(storeId),
-              expiryDate: expiry,
-              price: null,
-            }),
-          });
 
-          if (!resp.ok) {
-            const txt = await resp.text().catch(() => "");
-            console.error("addProduct (set qty) failed:", resp.status, txt);
-            throw new Error("Add failed");
-          }
+        const resp = await fetch(`${API_BASE_URL}/user/addProduct`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            productId: Number(productId),
+            storeId: storeId === "" ? null : Number(storeId),
+            expiryDate: expiry,
+            price: null,
+            quantity: diff,
+          }),
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          console.error("addProduct (set qty) failed:", resp.status, txt);
+          throw new Error("Add failed");
         }
-        await fetchBuckets();
+
+        setBuckets((prev) => upsertBucketQuantity(prev, expiry, diff));
       }
 
       setQtyModalOpen(false);
@@ -553,7 +680,7 @@ export default function ExpiryBuckets() {
           {buckets.map((b, i) => {
             const expNorm = normalizeExpiryForApi(b.expiry_date);
             return (
-              <View key={`${String(b.expiry_date)}-${i}`} style={[commonStyles.card, styles.bucketRow]}>
+              <View key={`${String(expNorm)}-${i}`} style={[commonStyles.card, styles.bucketRow]}>
                 <View style={styles.bucketMain}>
                   <Text style={styles.bucketTitle}>
                     {expNorm ? `Expires: ${formatDisplayDate(expNorm)}` : "No expiry date"}
