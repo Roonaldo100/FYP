@@ -1,4 +1,5 @@
 export const MAX_SHOPPING_LIST_NAME_LENGTH = 40;
+export const MAX_SHOPPING_LIST_ITEMS = 100;
 
 export function cleanListName(name) {
   const s = String(name || "").trim();

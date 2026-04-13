@@ -2,6 +2,7 @@ import pool from "../../db.js";
 import {
   cleanListName,
   cleanCustomItemName,
+  MAX_SHOPPING_LIST_ITEMS,
 } from "../../utils/shopping/shoppingUtils.js";
 
 class HttpError extends Error {
@@ -261,6 +262,7 @@ export async function addShoppingListItem(userId, listId, body) {
     err.statusCode = 400;
     throw err;
   }
+
   if (productId && customName) {
     const err = new Error("Provide either productId OR customName, not both");
     err.statusCode = 400;
@@ -293,6 +295,30 @@ export async function addShoppingListItem(userId, listId, body) {
         `,
         [productId, storeId],
       );
+    }
+
+    // Cap TOTAL quantity across the whole list, not just row count.
+    const totalQtyRes = await pool.query(
+      `
+      SELECT COALESCE(SUM(quantity), 0)::int AS total_quantity
+      FROM shopping_list_items
+      WHERE list_id = $1
+      `,
+      [lid],
+    );
+
+    const currentTotalQuantity = Number(totalQtyRes.rows[0]?.total_quantity ?? 0);
+    const nextTotalQuantity = currentTotalQuantity + quantity;
+
+    if (nextTotalQuantity > MAX_SHOPPING_LIST_ITEMS) {
+      const remaining = Math.max(0, MAX_SHOPPING_LIST_ITEMS - currentTotalQuantity);
+      const err = new Error(
+        remaining > 0
+          ? `This shopping list can hold a maximum of ${MAX_SHOPPING_LIST_ITEMS} items. You can add ${remaining} more.`
+          : `This shopping list already has the maximum of ${MAX_SHOPPING_LIST_ITEMS} items.`
+      );
+      err.statusCode = 400;
+      throw err;
     }
 
     let existing = null;
@@ -390,6 +416,7 @@ export async function addShoppingListItem(userId, listId, body) {
       throw e;
     }
     if (e.statusCode) throw e;
+
     console.error("add shopping list item error:", e);
     const err = new Error("Server error adding item");
     err.statusCode = 500;
@@ -551,7 +578,7 @@ export async function updateShoppingListItem(userId, listId, itemId, payload) {
 
     const currentRes = await pool.query(
       `
-      SELECT id, product_id
+      SELECT id, product_id, quantity
       FROM shopping_list_items
       WHERE id = $1 AND list_id = $2
       LIMIT 1
@@ -565,9 +592,40 @@ export async function updateShoppingListItem(userId, listId, itemId, payload) {
     }
 
     const productId = current.product_id != null ? Number(current.product_id) : null;
+    const currentQuantity = Number(current.quantity ?? 0);
 
     if (storeProvided && storeId !== null) {
       await assertStoreVisibleToUser(uid, storeId);
+    }
+
+    // Enforce total-item cap when quantity is being changed.
+    // We remove this row's current quantity from the list total,
+    // then add the requested new quantity.
+    if (quantityProvided) {
+      const totalQtyRes = await pool.query(
+        `
+        SELECT COALESCE(SUM(quantity), 0)::int AS total_quantity
+        FROM shopping_list_items
+        WHERE list_id = $1
+        `,
+        [lid],
+      );
+
+      const currentTotalQuantity = Number(totalQtyRes.rows[0]?.total_quantity ?? 0);
+      const nextTotalQuantity = currentTotalQuantity - currentQuantity + quantity;
+
+      if (nextTotalQuantity > MAX_SHOPPING_LIST_ITEMS) {
+        const maxForThisRow = Math.max(
+          0,
+          MAX_SHOPPING_LIST_ITEMS - (currentTotalQuantity - currentQuantity)
+        );
+
+        const err = new Error(
+          `This shopping list can hold a maximum of ${MAX_SHOPPING_LIST_ITEMS} items. This item can be set to at most ${maxForThisRow}.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
     }
 
     const updates = [];
