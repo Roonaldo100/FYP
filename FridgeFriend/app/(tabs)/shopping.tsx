@@ -60,11 +60,20 @@ export default function ShoppingTab() {
     }, [loadLists])
   );
 
+  const MAX_SHOPPING_LIST_NAME_LENGTH = 40;
+
   const createList = async () => {
     if (!userId) return;
     const name = newName.trim();
     if (!name) {
       Alert.alert("Missing name", "Enter a list name.");
+      return;
+    }
+    if (name.length > MAX_SHOPPING_LIST_NAME_LENGTH) {
+      Alert.alert(
+        "Name too long",
+        `Shopping list names can be at most ${MAX_SHOPPING_LIST_NAME_LENGTH} characters.`
+      );
       return;
     }
 

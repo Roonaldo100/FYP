@@ -1,24 +1,14 @@
 import pool from "../../db.js";
+import {
+  cleanListName,
+  cleanCustomItemName,
+} from "../../utils/shopping/shoppingUtils.js";
 
 class HttpError extends Error {
   constructor(status, message) {
     super(message);
     this.status = status;
   }
-}
-
-function cleanListName(name) {
-  const s = String(name || "").trim();
-  if (!s) return null;
-  if (s.length > 80) return s.slice(0, 80);
-  return s;
-}
-
-function cleanCustomItemName(name) {
-  const s = String(name || "").trim();
-  if (!s) return null;
-  if (s.length > 80) return s.slice(0, 80);
-  return s;
 }
 
 function toPositiveInt(v, fallback = null) {
