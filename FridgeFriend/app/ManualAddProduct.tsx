@@ -58,7 +58,6 @@ export default function ManualAddProduct() {
   }, [params.prefill_store_id]);
 
   const [name, setName] = useState("");
-  const [barcode, setBarcode] = useState("");
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
@@ -195,8 +194,6 @@ export default function ManualAddProduct() {
 
     setLoading(true);
 
-    const trimmedBarcode = barcode.trim() ? barcode.trim() : null;
-
     try {
       const createResp = await fetch(`${API_BASE_URL}/products/create`, {
         method: "POST",
@@ -204,7 +201,6 @@ export default function ManualAddProduct() {
         body: JSON.stringify({
           userId: Number(userId),
           name,
-          barcode: trimmedBarcode,
           foodTypeId: selectedFoodType.id,
           storeId: prefillStoreId,
           allowExisting: false,
@@ -219,69 +215,6 @@ export default function ManualAddProduct() {
       }
 
       const created = await createResp.json();
-
-      if (created.barcode_conflict) {
-        Alert.alert(
-          "Barcode recognised",
-          `This barcode is recognised as "${created.existing_product_name}" in the database.\n\nWould you like to use the recognised product?`,
-          [
-            { text: "Go back", style: "cancel" },
-            {
-              text: "Use recognised product",
-              onPress: async () => {
-                try {
-                  setLoading(true);
-
-                  const confirmResp = await fetch(`${API_BASE_URL}/products/create`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      userId: Number(userId),
-                      name,
-                      barcode: trimmedBarcode,
-                      foodTypeId: selectedFoodType.id,
-                      storeId: prefillStoreId,
-                      allowExisting: true,
-                    }),
-                  });
-
-                  if (!confirmResp.ok) {
-                    const txt = await confirmResp.text().catch(() => "");
-                    console.error("Confirm existing failed:", confirmResp.status, txt);
-                    Alert.alert("Error", "Failed to use recognised product.");
-                    return;
-                  }
-
-                  const confirmed = await confirmResp.json();
-                  const pid = Number(confirmed.product_id);
-
-                  if (fromShopping) {
-                    await markShoppingItemAsResolved(pid);
-                    await addToInventoryQty(pid);
-                    router.back();
-                    return;
-                  }
-
-                  router.push({
-                    pathname: "/AddItemToFridge",
-                    params: {
-                      user_id: String(userId),
-                      product_id: String(pid),
-                      product_name: String(confirmed.product_name ?? name),
-                    },
-                  });
-                } catch (e) {
-                  console.error("Confirm existing error:", e);
-                  Alert.alert("Error", "Unable to proceed.");
-                } finally {
-                  setLoading(false);
-                }
-              },
-            },
-          ]
-        );
-        return;
-      }
 
       const pid = Number(created.product_id);
 
@@ -365,19 +298,6 @@ export default function ManualAddProduct() {
 
             <Text style={commonStyles.helperText}>
               This is the name that will appear in your fridge
-            </Text>
-
-            <Text style={[commonStyles.label, styles.subLabel]}>Barcode (optional)</Text>
-            <TextInput
-              style={[formStyles.input, formStyles.inputWide]}
-              placeholder="Leave blank if unknown"
-              value={barcode}
-              onChangeText={setBarcode}
-              keyboardType="number-pad"
-            />
-
-            <Text style={commonStyles.helperText}>
-              Only needed if you want to scan this product in the future
             </Text>
 
             {fromShopping && (
