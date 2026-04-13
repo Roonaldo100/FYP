@@ -192,6 +192,12 @@ export default function ManualAddProduct() {
       return;
     }
 
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      Alert.alert("Missing information", "Please enter a product name.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -200,23 +206,43 @@ export default function ManualAddProduct() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: Number(userId),
-          name,
+          name: trimmedName,
           foodTypeId: selectedFoodType.id,
           storeId: prefillStoreId,
           allowExisting: false,
         }),
       });
 
+      const txt = await createResp.text().catch(() => "");
+      let created: any = null;
+      try {
+        created = txt ? JSON.parse(txt) : null;
+      } catch {
+        created = null;
+      }
+
       if (!createResp.ok) {
-        const txt = await createResp.text().catch(() => "");
         console.error("Create product failed:", createResp.status, txt);
-        Alert.alert("Error", "Failed to create product.");
+        Alert.alert("Error", created?.message || "Failed to create product.");
         return;
       }
 
-      const created = await createResp.json();
+      // For manual creation, a duplicate-name response should NOT reuse and rename
+      // the existing product. The user must pick a different name here.
+      if (created?.name_conflict) {
+        Alert.alert(
+          "Name already in use",
+          "Product name in use already. Please choose another product name."
+        );
+        return;
+      }
 
-      const pid = Number(created.product_id);
+      const pid = Number(created?.product_id);
+
+      if (!Number.isFinite(pid) || pid <= 0) {
+        Alert.alert("Error", "Product was not created correctly.");
+        return;
+      }
 
       if (fromShopping) {
         await markShoppingItemAsResolved(pid);
@@ -230,7 +256,8 @@ export default function ManualAddProduct() {
         params: {
           user_id: String(userId),
           product_id: String(pid),
-          product_name: String(created.product_name ?? name),
+          product_name: String(created?.product_name ?? trimmedName),
+          ...(prefillStoreId ? { store_id: String(prefillStoreId) } : {}),
         },
       });
     } catch (e) {

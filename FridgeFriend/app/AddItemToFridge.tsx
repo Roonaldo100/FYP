@@ -67,12 +67,22 @@ function makeNextDaysOptions(count: number) {
 
 export default function AddItemToFridge() {
   const router = useRouter();
-  const { user_id, product_id, product_name, scanned_expiry, store_id } = useLocalSearchParams<{
+  const {
+    user_id,
+    product_id,
+    product_name,
+    scanned_expiry,
+    store_id,
+    duplicate_name_warning,
+    requested_name,
+  } = useLocalSearchParams<{
     user_id?: string;
     product_id?: string;
     product_name?: string;
     scanned_expiry?: string;
     store_id?: string;
+    duplicate_name_warning?: string;
+    requested_name?: string;
   }>();
 
   const [editableProductName, setEditableProductName] = useState(
@@ -94,8 +104,12 @@ export default function AddItemToFridge() {
   const dateOptions = useMemo(() => makeNextDaysOptions(60), []);
 
   useEffect(() => {
-    setEditableProductName(String(product_name ?? ""));
-  }, [product_name]);
+    if (duplicate_name_warning === "1" && requested_name) {
+      setEditableProductName(String(requested_name));
+    } else {
+      setEditableProductName(String(product_name ?? ""));
+    }
+  }, [duplicate_name_warning, requested_name, product_name]);
 
   useEffect(() => {
     const sidRaw = String(store_id ?? "").trim();
@@ -252,37 +266,53 @@ export default function AddItemToFridge() {
       throw new Error("Missing product name");
     }
 
-    if (trimmed === original) return;
-
-    try {
-      const resp = await fetch(
-        `${API_BASE_URL}/user/${encodeURIComponent(String(user_id))}/products/${encodeURIComponent(
-          String(product_id)
-        )}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: trimmed,
-          }),
-        }
-      );
-
-      if (!resp.ok) {
-        const txt = await resp.text().catch(() => "");
-        console.error("Update product name failed:", resp.status, txt);
-
+    if (trimmed === original) {
+      if (duplicate_name_warning === "1") {
         Alert.alert(
-          "Couldn't rename product",
-          "This product name couldn't be updated. The item will still be added to your fridge using the existing product."
+          "Choose another name",
+          "Product name in use already. Please choose another product name."
         );
+        throw new Error("handled_duplicate_name");
       }
-    } catch (e) {
-      console.error("Update product name error:", e);
+      return;
+    }
+
+    const resp = await fetch(
+      `${API_BASE_URL}/user/${encodeURIComponent(String(user_id))}/products/${encodeURIComponent(
+        String(product_id)
+      )}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+        }),
+      }
+    );
+
+    const txt = await resp.text().catch(() => "");
+    let data: any = null;
+    try {
+      data = txt ? JSON.parse(txt) : null;
+    } catch {
+      data = null;
+    }
+
+    if (!resp.ok) {
+      if (resp.status === 409) {
+        Alert.alert(
+          "Choose another name",
+          data?.message || "Product name in use already. Please choose another product name."
+        );
+        throw new Error("handled_duplicate_name");
+      }
+
+      console.error("Update product name failed:", resp.status, txt);
       Alert.alert(
         "Couldn't rename product",
-        "This product name couldn't be updated. The item will still be added to your fridge using the existing product."
+        data?.message || "This product name couldn't be updated."
       );
+      throw new Error("handled_rename_failure");
     }
   };
 
@@ -411,7 +441,14 @@ export default function AddItemToFridge() {
         pathname: "/(tabs)",
         params: { user_id: String(user_id) },
       });
-    } catch (e) {
+    }  catch (e: any) {
+      if (
+        e?.message === "handled_duplicate_name" ||
+        e?.message === "handled_rename_failure"
+      ) {
+        return;
+      }
+
       console.error("Confirm add error:", e);
       Alert.alert("Error", "Unable to add item.");
     } finally {
@@ -433,8 +470,18 @@ export default function AddItemToFridge() {
           <View style={commonStyles.section}>
             <Text style={commonStyles.sectionTitle}>Product details</Text>
             <Text style={commonStyles.label}>Product name</Text>
+            {duplicate_name_warning === "1" && (
+              <View style={styles.warningBox}>
+                <Text style={styles.warningText}>
+                  Product name in use already. Please choose another product name.
+                </Text>
+              </View>
+            )}
             <TextInput
-              style={formStyles.inputAlt}
+              style={[
+                formStyles.inputAlt,
+                duplicate_name_warning === "1" && styles.warningInput,
+              ]}
               placeholder="e.g. Milk"
               value={editableProductName}
               onChangeText={setEditableProductName}
@@ -770,5 +817,21 @@ const styles = StyleSheet.create({
   },
   modalCloseButton: {
     marginTop: spacing.lg,
+  },
+  warningBox: {
+    backgroundColor: "#fff3cd",
+    borderWidth: 1,
+    borderColor: "#f0ad4e",
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  warningText: {
+    color: "#8a6d3b",
+    fontWeight: fontWeight.black,
+  },
+  warningInput: {
+    borderWidth: 2,
+    borderColor: colors.danger,
   },
 });

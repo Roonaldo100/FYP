@@ -160,8 +160,8 @@ export async function createProduct({
         if (!allowExistingFlag) {
           return {
             barcode_conflict: true,
-            existing_product_id: existing.rows[0].id,
-            existing_product_name: existing.rows[0].name,
+            existing_product_id: Number(existing.rows[0].id),
+            existing_product_name: String(existing.rows[0].name),
           };
         }
 
@@ -175,12 +175,32 @@ export async function createProduct({
         }
 
         return {
-          product_id: existing.rows[0].id,
-          product_name: existing.rows[0].name,
+          product_id: Number(existing.rows[0].id),
+          product_name: String(existing.rows[0].name),
           store_id: storeId ?? null,
           store_name: storeName,
         };
       }
+    }
+
+    const existingByName = await pool.query(
+      `
+      SELECT id, name
+      FROM products
+      WHERE owner_user_id = $1
+        AND is_system = false
+        AND LOWER(name) = LOWER($2)
+      LIMIT 1
+      `,
+      [uid, normalizedName],
+    );
+
+    if (existingByName.rows.length > 0) {
+      return {
+        name_conflict: true,
+        existing_product_id: Number(existingByName.rows[0].id),
+        existing_product_name: String(existingByName.rows[0].name),
+      };
     }
 
     const insertProduct = await pool.query(
@@ -192,7 +212,7 @@ export async function createProduct({
       [normalizedName, barcode ?? null, foodTypeId, uid],
     );
 
-    const newProductId = insertProduct.rows[0].id;
+    const newProductId = Number(insertProduct.rows[0].id);
 
     if (storeId) {
       const storeOk = await pool.query(
@@ -237,6 +257,14 @@ export async function createProduct({
   } catch (err) {
     console.error("Create product error:", err);
     if (err.statusCode) throw err;
+
+    if (err?.code === "23505" && err?.constraint === "products_user_unique") {
+      const error = new Error(
+        "Product name in use already. Please choose another product name.",
+      );
+      error.statusCode = 409;
+      throw error;
+    }
 
     const error = new Error("Server error creating product");
     error.statusCode = 500;

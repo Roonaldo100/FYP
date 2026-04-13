@@ -13,6 +13,12 @@ function parseOptionalUserId(raw) {
   return n;
 }
 
+function normalizeProductName(name) {
+  const s = String(name || "").trim();
+  if (!s) return null;
+  return s.slice(0, 30);
+}
+
 async function getTescoStoreId() {
   try {
     const r = await pool.query(
@@ -305,32 +311,34 @@ export async function updateUserOwnedProduct(userId, productId, payload) {
   const uid = Number(userId);
   const pid = Number(productId);
 
+  const rawName = payload?.name;
+  const name =
+    rawName === undefined ? undefined : normalizeProductName(rawName);
+
+  const foodTypeRaw = payload?.food_type;
+  const foodType =
+    foodTypeRaw === undefined || foodTypeRaw === null || String(foodTypeRaw).trim() === ""
+      ? null
+      : Number(foodTypeRaw);
+
   if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(pid) || pid <= 0) {
     const err = new Error("Invalid userId or productId");
     err.statusCode = 400;
     throw err;
   }
 
-  const name = String(payload?.name || "").trim().slice(0, 30) || null;
-
-  const foodTypeProvided = Object.prototype.hasOwnProperty.call(payload ?? {}, "food_type");
-  const foodTypeRaw = payload?.food_type;
-  const foodType =
-    !foodTypeProvided ||
-    foodTypeRaw === undefined ||
-    foodTypeRaw === null ||
-    String(foodTypeRaw).trim() === ""
-      ? null
-      : Number(foodTypeRaw);
-
-  if (!name) {
-    const err = new Error("Missing name");
+  if (name !== undefined && !name) {
+    const err = new Error("Missing product name");
     err.statusCode = 400;
     throw err;
   }
 
-  if (foodTypeProvided && foodType !== null && (!Number.isInteger(foodType) || foodType <= 0)) {
-    const err = new Error("Invalid food_type");
+  if (
+    foodType !== null &&
+    foodType !== undefined &&
+    (!Number.isInteger(foodType) || foodType <= 0)
+  ) {
+    const err = new Error("Invalid food type");
     err.statusCode = 400;
     throw err;
   }
@@ -341,45 +349,67 @@ export async function updateUserOwnedProduct(userId, productId, payload) {
       SELECT id, name, food_type, is_system, owner_user_id
       FROM products
       WHERE id = $1
-        AND is_system = false
-        AND owner_user_id = $2
       LIMIT 1
       `,
-      [pid, uid]
+      [pid],
     );
 
-    if (!currentRes.rows.length) {
+    const current = currentRes.rows[0] || null;
+
+    if (!current) {
       const err = new Error("Product not found");
       err.statusCode = 404;
       throw err;
     }
 
-    const current = currentRes.rows[0];
-    const originalName = String(current.name);
+    if (current.is_system === true || Number(current.owner_user_id) !== uid) {
+      const err = new Error("You can only edit your own custom products");
+      err.statusCode = 403;
+      throw err;
+    }
 
-    let finalFoodType = current.food_type;
+    const finalName = name !== undefined ? name : String(current.name);
+    const finalFoodType =
+      foodTypeRaw === undefined ? current.food_type : foodType;
 
-    if (foodTypeProvided) {
-      if (foodType !== null) {
-        const ftOk = await pool.query(
-          `
-          SELECT id
-          FROM food_types
-          WHERE id = $1
-            AND (is_system = true OR owner_user_id = $2)
-          LIMIT 1
-          `,
-          [foodType, uid]
-        );
+    if (finalFoodType !== null) {
+      const ft = await pool.query(
+        `
+        SELECT id
+        FROM food_types
+        WHERE id = $1
+          AND (is_system = true OR owner_user_id = $2)
+        LIMIT 1
+        `,
+        [finalFoodType, uid],
+      );
 
-        if (!ftOk.rows.length) {
-          const err = new Error("Invalid food_type for this user");
-          err.statusCode = 400;
-          throw err;
-        }
+      if (!ft.rows.length) {
+        const err = new Error("Invalid food type for this user");
+        err.statusCode = 400;
+        throw err;
       }
+    }
 
-      finalFoodType = foodType;
+    const dupRes = await pool.query(
+      `
+      SELECT id
+      FROM products
+      WHERE owner_user_id = $1
+        AND is_system = false
+        AND LOWER(name) = LOWER($2)
+        AND id <> $3
+      LIMIT 1
+      `,
+      [uid, finalName, pid],
+    );
+
+    if (dupRes.rows.length > 0) {
+      const err = new Error(
+        "Product name in use already. Please choose another product name.",
+      );
+      err.statusCode = 409;
+      throw err;
     }
 
     const upd = await pool.query(
@@ -387,12 +417,12 @@ export async function updateUserOwnedProduct(userId, productId, payload) {
       UPDATE products
       SET name = $1,
           food_type = $2
-      WHERE name = $3
+      WHERE id = $3
         AND is_system = false
         AND owner_user_id = $4
       RETURNING id, name, food_type, is_system, owner_user_id
       `,
-      [name, finalFoodType, originalName, uid]
+      [finalName, finalFoodType, pid, uid],
     );
 
     if (!upd.rows.length) {
@@ -401,17 +431,25 @@ export async function updateUserOwnedProduct(userId, productId, payload) {
       throw err;
     }
 
-    return {
-      message: "Updated",
-      updated_count: upd.rowCount,
-      product: upd.rows.find((row) => Number(row.id) === pid) || upd.rows[0],
-    };
-  } catch (e) {
-    if (e.statusCode) throw e;
-    console.error("update product error:", e);
-    const err = new Error("Server error updating product");
-    err.statusCode = 500;
-    throw err;
+    return upd.rows[0];
+  } catch (err) {
+    if (err?.statusCode) {
+      throw err;
+    }
+
+    if (err?.code === "23505" && err?.constraint === "products_user_unique") {
+      const error = new Error(
+        "Product name in use already. Please choose another product name.",
+      );
+      error.statusCode = 409;
+      throw error;
+    }
+
+    console.error("update product error:", err);
+
+    const error = new Error("Server error updating product");
+    error.statusCode = 500;
+    throw error;
   }
 }
 
