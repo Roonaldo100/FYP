@@ -12,9 +12,13 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 function toValidId(v: unknown): number | null {
   const n = Number(v);
@@ -39,6 +43,9 @@ export default function ShoppingListCustomItems() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string; listId?: string }>();
 
+  const { colors, commonStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
   const listId = useMemo(() => toValidId(params.listId), [params.listId]);
 
@@ -57,6 +64,7 @@ export default function ShoppingListCustomItems() {
 
   const load = useCallback(async () => {
     if (!userId || !listId) return;
+
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/user/${userId}/shoppingLists/${listId}`);
@@ -121,29 +129,15 @@ export default function ShoppingListCustomItems() {
     }
   };
 
-  const goBackToShoppingTab = () => {
-    if (!userId) return;
+  const onDone = async () => {
+    const ok = await deleteList();
+    if (!ok || !userId) return;
+
     router.replace({
       pathname: "/(tabs)/shopping",
       params: { user_id: String(userId) },
     });
   };
-
-  const onDone = () => {
-    Alert.alert("Delete shopping list?", "Would you like to delete this shopping list now?", [
-      { text: "No", style: "cancel", onPress: goBackToShoppingTab },
-      {
-        text: "Yes (delete)",
-        style: "destructive",
-        onPress: async () => {
-          const ok = await deleteList();
-          if (ok) goBackToShoppingTab();
-        },
-      },
-    ]);
-  };
-
-  const header = data?.list?.name ?? "Shopping List";
 
   return (
     <View style={commonStyles.screenPrimary}>
@@ -157,23 +151,22 @@ export default function ShoppingListCustomItems() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[buttonStyles.base, buttonStyles.accent]}
+          style={[buttonStyles.base, buttonStyles.primary]}
           onPress={onDone}
           disabled={loading}
         >
-          <Text style={buttonStyles.accentText}>Done</Text>
+          <Text style={buttonStyles.primaryText}>Done</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.title}>Custom items from: {header}</Text>
+      <Text style={styles.title}>Custom items</Text>
       <Text style={styles.subtitle}>
-        Tap any item below to create a product for it (this creates historical data). When created,
-        the item quantity will be added to your fridge automatically.
+        These items are not linked to known products yet. Tap one to create a product from it.
       </Text>
 
-      {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
-
-      {!loading && (
+      {loading ? (
+        <ActivityIndicator size="large" color={colors.primaryTextOn} />
+      ) : (
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {!customItems.length ? (
             <View style={[commonStyles.card, styles.card]}>
@@ -207,53 +200,55 @@ export default function ShoppingListCustomItems() {
   );
 }
 
-const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  backText: {
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-  },
-  title: {
-    marginTop: spacing.lg,
-    color: colors.primaryTextOn,
-    fontSize: 20,
-    fontWeight: fontWeight.black,
-  },
-  subtitle: {
-    marginTop: spacing.sm,
-    color: colors.primaryTextOn,
-    opacity: 0.9,
-  },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  itemRow: {
-    marginBottom: spacing.md,
-  },
-  itemMain: {
-    flex: 1,
-  },
-  itemName: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  itemMeta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-  },
-  card: {
-    marginTop: spacing.lg,
-  },
-  emptyText: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  doneBtn2: {
-    marginTop: spacing.md,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    topRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    backText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+    title: {
+      marginTop: spacing.lg,
+      color: colors.primaryTextOn,
+      fontSize: 20,
+      fontWeight: fontWeight.black,
+    },
+    subtitle: {
+      marginTop: spacing.sm,
+      color: colors.primaryTextOn,
+      opacity: 0.9,
+    },
+    scrollContent: {
+      paddingBottom: 30,
+    },
+    itemRow: {
+      marginBottom: spacing.md,
+    },
+    itemMain: {
+      flex: 1,
+    },
+    itemName: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    itemMeta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    card: {
+      marginTop: spacing.lg,
+    },
+    emptyText: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    doneBtn2: {
+      marginTop: spacing.md,
+    },
+  });
+}

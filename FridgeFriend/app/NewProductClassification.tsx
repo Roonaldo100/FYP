@@ -11,9 +11,13 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number };
@@ -26,6 +30,9 @@ export default function NewProductClassification() {
       barcode?: string;
       product_name?: string;
     }>();
+
+  const { colors, commonStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
@@ -258,81 +265,84 @@ export default function NewProductClassification() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    ...commonStyles.screenPrimary,
-    alignItems: "center",
-    justifyContent: "flex-start",
-    paddingTop: spacing.xxxl,
-    paddingHorizontal: spacing.xl,
-  },
-  topRow: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  topButton: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
-  topButtonText: {
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-    fontSize: fontSize.sm,
-  },
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 18,
-    marginBottom: spacing.lg,
-    textAlign: "center",
-  },
-  meta: {
-    marginBottom: spacing.lg,
-    alignItems: "center",
-  },
-  metaText: {
-    color: colors.primaryTextOn,
-    fontSize: fontSize.sm,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    width: 320,
-  },
-  gridButtonText: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.medium,
-    textAlign: "center",
-  },
-  confirmCard: {
-    width: 320,
-    marginBottom: spacing.md,
-  },
-  confirmText: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.medium,
-  },
-  confirmButton: {
-    marginTop: spacing.sm,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  confirmButtonText: {
-    color: colors.primary,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
-  },
-  backButton: {
-    marginTop: spacing.xxl,
-  },
-  backButtonText: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "flex-start",
+      paddingTop: spacing.xxxl,
+      paddingHorizontal: spacing.xl,
+    },
+    topRow: {
+      width: "100%",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: spacing.md,
+    },
+    topButton: {
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xl,
+    },
+    topButtonText: {
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+      fontSize: fontSize.sm,
+    },
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 18,
+      marginBottom: spacing.lg,
+      textAlign: "center",
+    },
+    meta: {
+      marginBottom: spacing.lg,
+      alignItems: "center",
+    },
+    metaText: {
+      color: colors.primaryTextOn,
+      fontSize: fontSize.sm,
+    },
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      width: 320,
+    },
+    gridButtonText: {
+      color: colors.text,
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.medium,
+      textAlign: "center",
+    },
+    confirmCard: {
+      marginBottom: spacing.lg,
+      width: "100%",
+    },
+    confirmText: {
+      color: colors.text,
+      fontWeight: fontWeight.heavy,
+      marginBottom: spacing.sm,
+    },
+    confirmButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      marginBottom: spacing.xl,
+    },
+    confirmButtonText: {
+      color: colors.primary,
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.bold,
+    },
+    backButton: {
+      marginTop: spacing.lg,
+      alignSelf: "flex-start",
+    },
+    backButtonText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+  });
+}

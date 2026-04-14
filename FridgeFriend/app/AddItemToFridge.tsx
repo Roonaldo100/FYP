@@ -1,3 +1,4 @@
+// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\AddItemToFridge.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,11 +20,13 @@ import {
   sendExpiryNotification,
 } from "../lib/notifications";
 
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { modalStyles } from "../styles/modals";
-import { colors, fontWeight, radius, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 import { formatDisplayDate, normalizeExpiryInput } from "../lib/dateUtils";
 
@@ -67,6 +70,9 @@ function makeNextDaysOptions(count: number) {
 
 export default function AddItemToFridge() {
   const router = useRouter();
+  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const {
     user_id,
     product_id,
@@ -441,7 +447,7 @@ export default function AddItemToFridge() {
         pathname: "/(tabs)",
         params: { user_id: String(user_id) },
       });
-    }  catch (e: any) {
+    } catch (e: any) {
       if (
         e?.message === "handled_duplicate_name" ||
         e?.message === "handled_rename_failure"
@@ -470,6 +476,7 @@ export default function AddItemToFridge() {
           <View style={commonStyles.section}>
             <Text style={commonStyles.sectionTitle}>Product details</Text>
             <Text style={commonStyles.label}>Product name</Text>
+
             {duplicate_name_warning === "1" && (
               <View style={styles.warningBox}>
                 <Text style={styles.warningText}>
@@ -477,16 +484,19 @@ export default function AddItemToFridge() {
                 </Text>
               </View>
             )}
+
             <TextInput
               style={[
                 formStyles.inputAlt,
                 duplicate_name_warning === "1" && styles.warningInput,
               ]}
               placeholder="e.g. Milk"
+              placeholderTextColor={colors.textLight}
               value={editableProductName}
               onChangeText={setEditableProductName}
               autoCapitalize="words"
             />
+
             <Text style={commonStyles.helperText}>
               Edit the name before adding this item to your fridge
             </Text>
@@ -494,6 +504,7 @@ export default function AddItemToFridge() {
 
           <View style={commonStyles.section}>
             <Text style={commonStyles.sectionTitle}>Quantity</Text>
+
             <View style={styles.qtyRow}>
               <TouchableOpacity
                 style={styles.qtyBtn}
@@ -505,6 +516,7 @@ export default function AddItemToFridge() {
               <TextInput
                 style={styles.qtyInput}
                 placeholder="1"
+                placeholderTextColor={colors.textLight}
                 keyboardType="number-pad"
                 value={quantityText}
                 onChangeText={(v) => setQuantityText(v.replace(/[^0-9]/g, ""))}
@@ -560,6 +572,7 @@ export default function AddItemToFridge() {
             <TextInput
               style={formStyles.inputAlt}
               placeholder="e.g. Aldi"
+              placeholderTextColor={colors.textLight}
               value={newStoreName}
               onChangeText={setNewStoreName}
             />
@@ -577,6 +590,7 @@ export default function AddItemToFridge() {
             <TextInput
               style={formStyles.inputAlt}
               placeholder="e.g. 1.50"
+              placeholderTextColor={colors.textLight}
               keyboardType="decimal-pad"
               value={price}
               onChangeText={setPrice}
@@ -641,6 +655,7 @@ export default function AddItemToFridge() {
             <TextInput
               style={formStyles.inputAlt}
               placeholder="YYYY-MM-DD, yyyymmdd, 25/04/26, 04 APR 2026, 11.2028, or 31.08"
+              placeholderTextColor={colors.textLight}
               value={expiryDate}
               onChangeText={setExpiryDate}
               autoCapitalize="characters"
@@ -654,6 +669,7 @@ export default function AddItemToFridge() {
             <TextInput
               style={formStyles.inputAlt}
               placeholder="Days before expiry to notify (blank = use Settings)"
+              placeholderTextColor={colors.textLight}
               keyboardType="number-pad"
               value={expiryPeriodText}
               onChangeText={setExpiryPeriodText}
@@ -721,117 +737,119 @@ export default function AddItemToFridge() {
   );
 }
 
-const styles = StyleSheet.create({
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 18,
-    marginBottom: spacing.lg,
-  },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  qtyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  qtyBtn: {
-    width: 40,
-    height: 40,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.sm,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  qtyBtnText: {
-    fontSize: 20,
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  qtyInput: {
-    minWidth: 72,
-    backgroundColor: colors.surfaceAlt,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
-    textAlign: "center",
-    color: colors.text,
-  },
-  storeListWrap: {
-    maxHeight: 180,
-  },
-  storeButton: {
-    backgroundColor: colors.surfaceAlt,
-    padding: spacing.md,
-    borderRadius: radius.sm,
-    marginBottom: 6,
-  },
-  storeButtonSelected: {
-    backgroundColor: colors.accent,
-  },
-  storeButtonText: {
-    color: colors.text,
-  },
-  subSectionTitle: {
-    marginTop: spacing.md,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  flexButton: {
-    flex: 1,
-  },
-  quickTitle: {
-    marginTop: spacing.md,
-    fontWeight: fontWeight.heavy,
-    color: colors.text,
-  },
-  quickRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  quickBtn: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  confirmButton: {
-    marginTop: spacing.sm,
-  },
-  confirmButtonText: {
-    color: colors.primary,
-    fontWeight: fontWeight.bold,
-  },
-  noExpiryText: {
-    fontWeight: fontWeight.black,
-    color: colors.danger,
-  },
-  modalSpacer: {
-    height: 12,
-  },
-  modalList: {
-    maxHeight: 360,
-  },
-  modalCloseButton: {
-    marginTop: spacing.lg,
-  },
-  warningBox: {
-    backgroundColor: "#fff3cd",
-    borderWidth: 1,
-    borderColor: "#f0ad4e",
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  warningText: {
-    color: "#8a6d3b",
-    fontWeight: fontWeight.black,
-  },
-  warningInput: {
-    borderWidth: 2,
-    borderColor: colors.danger,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 18,
+      marginBottom: spacing.lg,
+    },
+    scrollContent: {
+      paddingBottom: 30,
+    },
+    qtyRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    qtyBtn: {
+      width: 40,
+      height: 40,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.sm,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    qtyBtnText: {
+      fontSize: 20,
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    qtyInput: {
+      minWidth: 72,
+      backgroundColor: colors.surfaceAlt,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.sm,
+      textAlign: "center",
+      color: colors.text,
+    },
+    storeListWrap: {
+      maxHeight: 180,
+    },
+    storeButton: {
+      backgroundColor: colors.surfaceAlt,
+      padding: spacing.md,
+      borderRadius: radius.sm,
+      marginBottom: 6,
+    },
+    storeButtonSelected: {
+      backgroundColor: colors.accent,
+    },
+    storeButtonText: {
+      color: colors.text,
+    },
+    subSectionTitle: {
+      marginTop: spacing.md,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    flexButton: {
+      flex: 1,
+    },
+    quickTitle: {
+      marginTop: spacing.md,
+      fontWeight: fontWeight.heavy,
+      color: colors.text,
+    },
+    quickRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+      marginTop: spacing.sm,
+    },
+    quickBtn: {
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+    },
+    confirmButton: {
+      marginTop: spacing.sm,
+    },
+    confirmButtonText: {
+      color: colors.primary,
+      fontWeight: fontWeight.bold,
+    },
+    noExpiryText: {
+      fontWeight: fontWeight.black,
+      color: colors.danger,
+    },
+    modalSpacer: {
+      height: 12,
+    },
+    modalList: {
+      maxHeight: 360,
+    },
+    modalCloseButton: {
+      marginTop: spacing.lg,
+    },
+    warningBox: {
+      backgroundColor: colors.accent,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.sm,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+    },
+    warningText: {
+      color: colors.accentText,
+      fontWeight: fontWeight.black,
+    },
+    warningInput: {
+      borderWidth: 2,
+      borderColor: colors.danger,
+    },
+  });
+}

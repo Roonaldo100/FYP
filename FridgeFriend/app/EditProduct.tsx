@@ -1,3 +1,4 @@
+// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\EditProduct.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,9 +15,8 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontWeight, radius, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import { fontWeight, radius, spacing, type AppColors } from "../styles/tokens";
 
 function toValidId(v: string | string[] | undefined): number | null {
   const raw = Array.isArray(v) ? v[0] : v;
@@ -45,6 +45,9 @@ type FoodTypeIndexRow = {
 export default function EditProduct() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string; product_id?: string }>();
+
+  const { colors, commonStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
   const productId = useMemo(() => toValidId(params.product_id), [params.product_id]);
@@ -359,10 +362,10 @@ export default function EditProduct() {
         <Text style={styles.errorText}>Missing user_id or product_id.</Text>
 
         <TouchableOpacity
-          style={[buttonStyles.base, styles.darkButton, styles.backButton]}
+          style={[buttonStyles.base, buttonStyles.primary, styles.backButton]}
           onPress={() => router.back()}
         >
-          <Text style={styles.darkButtonText}>← Back</Text>
+          <Text style={buttonStyles.primaryText}>← Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -380,21 +383,21 @@ export default function EditProduct() {
 
         <View style={styles.rightActions}>
           <TouchableOpacity
-            style={[buttonStyles.base, styles.deleteButton, deleting && styles.dimmed]}
+            style={[buttonStyles.base, buttonStyles.danger, deleting && styles.dimmed]}
             onPress={onDelete}
             disabled={saving || deleting}
           >
-            <Text style={styles.deleteButtonText}>
+            <Text style={buttonStyles.dangerText}>
               {deleting ? "Deleting…" : "Delete"}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[buttonStyles.base, styles.darkButton, saving && styles.dimmed]}
+            style={[buttonStyles.base, buttonStyles.primary, saving && styles.dimmed]}
             onPress={onSave}
             disabled={saving || deleting}
           >
-            <Text style={styles.darkButtonText}>{saving ? "Saving…" : "Save"}</Text>
+            <Text style={buttonStyles.primaryText}>{saving ? "Saving…" : "Save"}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -403,7 +406,7 @@ export default function EditProduct() {
 
       {loading && (
         <View style={styles.loaderWrap}>
-          <ActivityIndicator />
+          <ActivityIndicator color={colors.primaryTextOn} />
         </View>
       )}
 
@@ -416,6 +419,7 @@ export default function EditProduct() {
               value={name}
               onChangeText={setName}
               placeholder="e.g. Milk"
+              placeholderTextColor={colors.textLight}
               autoCapitalize="words"
             />
           </View>
@@ -486,10 +490,10 @@ export default function EditProduct() {
             />
 
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton]}
+              style={[buttonStyles.base, buttonStyles.primary]}
               onPress={() => setCategoryModalOpen(false)}
             >
-              <Text style={styles.darkButtonText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -519,10 +523,10 @@ export default function EditProduct() {
             />
 
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton]}
+              style={[buttonStyles.base, buttonStyles.primary]}
               onPress={() => setFoodTypeModalOpen(false)}
             >
-              <Text style={styles.darkButtonText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -531,141 +535,129 @@ export default function EditProduct() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    padding: spacing.lg,
-  },
-  topRow: {
-    marginTop: spacing.md,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  rightActions: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    alignItems: "center",
-  },
-  inlineBackBtn: {
-    paddingHorizontal: spacing.md,
-  },
-  inlineBackText: {
-    color: colors.primary,
-    fontWeight: fontWeight.bold,
-  },
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 22,
-    fontWeight: fontWeight.black,
-    marginTop: spacing.md,
-  },
-  errorText: {
-    color: colors.primaryTextOn,
-    marginTop: spacing.md,
-  },
-  loaderWrap: {
-    marginTop: spacing.xl,
-    alignItems: "center",
-  },
-  scrollContent: {
-    paddingTop: spacing.lg,
-    paddingBottom: 40,
-  },
-  card: {
-    marginBottom: spacing.lg,
-  },
-  input: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    color: colors.text,
-  },
-  pickerBtn: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  pickerText: {
-    color: colors.text,
-    fontWeight: fontWeight.medium,
-  },
-  pickerChev: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: fontWeight.bold,
-  },
-  disabledPicker: {
-    opacity: 0.5,
-  },
-  secondLabel: {
-    marginTop: spacing.lg,
-  },
-  clearBtn: {
-    marginTop: spacing.md,
-    alignSelf: "flex-start",
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-  },
-  clearBtnText: {
-    color: colors.text,
-    fontWeight: fontWeight.bold,
-  },
-  darkButton: {
-    backgroundColor: "#1f1f1f",
-  },
-  darkButtonText: {
-    color: "#fff",
-    fontWeight: fontWeight.bold,
-  },
-  deleteButton: {
-    backgroundColor: colors.danger,
-  },
-  deleteButtonText: {
-    color: "#fff",
-    fontWeight: fontWeight.bold,
-  },
-  backButton: {
-    marginTop: spacing.lg,
-    alignSelf: "flex-start",
-  },
-  dimmed: {
-    opacity: 0.6,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    padding: spacing.lg,
-  },
-  modalCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    maxHeight: "70%",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: fontWeight.black,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  modalRow: {
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  modalRowText: {
-    color: colors.text,
-    fontWeight: fontWeight.medium,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.primary,
+      padding: spacing.lg,
+    },
+    topRow: {
+      marginTop: spacing.md,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    rightActions: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      alignItems: "center",
+    },
+    inlineBackBtn: {
+      paddingHorizontal: spacing.md,
+    },
+    inlineBackText: {
+      color: colors.primary,
+      fontWeight: fontWeight.bold,
+    },
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 22,
+      fontWeight: fontWeight.black,
+      marginTop: spacing.md,
+    },
+    errorText: {
+      color: colors.primaryTextOn,
+      marginTop: spacing.md,
+    },
+    loaderWrap: {
+      marginTop: spacing.xl,
+      alignItems: "center",
+    },
+    scrollContent: {
+      paddingTop: spacing.lg,
+      paddingBottom: 40,
+    },
+    card: {
+      marginBottom: spacing.lg,
+    },
+    input: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      color: colors.text,
+    },
+    pickerBtn: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    pickerText: {
+      color: colors.text,
+      fontWeight: fontWeight.medium,
+    },
+    pickerChev: {
+      color: colors.text,
+      fontSize: 22,
+      fontWeight: fontWeight.bold,
+    },
+    disabledPicker: {
+      opacity: 0.5,
+    },
+    secondLabel: {
+      marginTop: spacing.lg,
+    },
+    clearBtn: {
+      marginTop: spacing.md,
+      alignSelf: "flex-start",
+      backgroundColor: colors.surfaceAlt,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.sm,
+    },
+    clearBtnText: {
+      color: colors.text,
+      fontWeight: fontWeight.bold,
+    },
+    backButton: {
+      marginTop: spacing.lg,
+      alignSelf: "flex-start",
+    },
+    dimmed: {
+      opacity: 0.6,
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.45)",
+      justifyContent: "center",
+      padding: spacing.lg,
+    },
+    modalCard: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.lg,
+      maxHeight: "70%",
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: fontWeight.black,
+      color: colors.text,
+      marginBottom: spacing.md,
+    },
+    modalRow: {
+      paddingVertical: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    modalRowText: {
+      color: colors.text,
+      fontWeight: fontWeight.medium,
+    },
+  });
+}

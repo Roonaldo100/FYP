@@ -14,11 +14,14 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { modalStyles } from "../styles/modals";
-import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 type Category = {
   id: number;
@@ -61,6 +64,9 @@ function sortProductsAlphabetically(rows: Product[]) {
 export default function ManageCategoriesFoodTypes() {
   const router = useRouter();
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
+
+  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const userIdNum = useMemo(() => Number(user_id), [user_id]);
 
@@ -544,7 +550,7 @@ export default function ManageCategoriesFoodTypes() {
         </TouchableOpacity>
       </View>
 
-      {loading && <ActivityIndicator size="large" />}
+      {loading && <ActivityIndicator size="large" color={colors.primaryTextOn} />}
 
       {!loading && mode === "categories" && (
         <>
@@ -553,14 +559,15 @@ export default function ManageCategoriesFoodTypes() {
             <TextInput
               style={[formStyles.inputAlt, styles.input]}
               placeholder="e.g. Snacks"
+              placeholderTextColor={colors.textLight}
               value={newCategoryName}
               onChangeText={setNewCategoryName}
             />
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton]}
+              style={[buttonStyles.base, buttonStyles.primary]}
               onPress={createCategory}
             >
-              <Text style={styles.darkButtonText}>Add Category</Text>
+              <Text style={buttonStyles.primaryText}>Add Category</Text>
             </TouchableOpacity>
           </View>
 
@@ -639,14 +646,15 @@ export default function ManageCategoriesFoodTypes() {
             <TextInput
               style={[formStyles.inputAlt, styles.input]}
               placeholder="e.g. Yogurt"
+              placeholderTextColor={colors.textLight}
               value={newFoodTypeName}
               onChangeText={setNewFoodTypeName}
             />
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton]}
+              style={[buttonStyles.base, buttonStyles.primary]}
               onPress={createFoodType}
             >
-              <Text style={styles.darkButtonText}>Add Food Type</Text>
+              <Text style={buttonStyles.primaryText}>Add Food Type</Text>
             </TouchableOpacity>
           </View>
 
@@ -679,6 +687,7 @@ export default function ManageCategoriesFoodTypes() {
             <TextInput
               style={[formStyles.inputAlt, styles.input]}
               placeholder="Search products..."
+              placeholderTextColor={colors.textLight}
               value={productQuery}
               onChangeText={setProductQuery}
               autoCapitalize="none"
@@ -703,18 +712,18 @@ export default function ManageCategoriesFoodTypes() {
             </View>
 
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton]}
+              style={[buttonStyles.base, buttonStyles.primary]}
               onPress={() => {
                 loadFoodTypesIndex();
                 loadProducts();
               }}
             >
-              <Text style={styles.darkButtonText}>Load Products</Text>
+              <Text style={buttonStyles.primaryText}>Load Products</Text>
             </TouchableOpacity>
           </View>
 
           {productsLoading ? (
-            <ActivityIndicator size="large" style={styles.productsLoader} />
+            <ActivityIndicator size="large" style={styles.productsLoader} color={colors.primaryTextOn} />
           ) : (
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
               {visibleProducts.length ? (
@@ -788,10 +797,10 @@ export default function ManageCategoriesFoodTypes() {
             </ScrollView>
 
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton, styles.modalCloseBtn]}
+              style={[buttonStyles.base, buttonStyles.primary, styles.modalCloseBtn]}
               onPress={() => setFoodTypeFilterModalOpen(false)}
             >
-              <Text style={styles.darkButtonText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -800,162 +809,155 @@ export default function ManageCategoriesFoodTypes() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: spacing.xl,
-    paddingTop: 18,
-    backgroundColor: colors.surfaceMuted,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: fontWeight.black,
-    marginBottom: spacing.md,
-    color: colors.text,
-  },
-  toggleRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    alignItems: "center",
-    marginBottom: spacing.md,
-    flexWrap: "wrap",
-  },
-  toggleBtn: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
-  toggleBtnInactive: {
-    backgroundColor: colors.surfaceAlt,
-  },
-  toggleBtnActive: {
-    backgroundColor: "#111",
-  },
-  toggleTextInactive: {
-    fontWeight: fontWeight.black,
-    color: "#111",
-  },
-  toggleTextActive: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.black,
-  },
-  card: {
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  cardTitle: {
-    fontWeight: fontWeight.black,
-    marginBottom: spacing.sm,
-    color: colors.text,
-  },
-  input: {
-    marginBottom: 0,
-  },
-  darkButton: {
-    backgroundColor: "#111",
-    marginTop: spacing.md,
-  },
-  darkButtonText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.black,
-    textAlign: "center",
-  },
-  list: {
-    marginTop: spacing.md,
-  },
-  listContent: {
-    paddingBottom: spacing.xxxl,
-  },
-  row: {
-    marginBottom: spacing.sm,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  rowText: {
-    fontWeight: fontWeight.heavy,
-    flex: 1,
-    color: colors.text,
-  },
-  productsLoader: {
-    marginTop: spacing.xxl,
-  },
-  productCard: {
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  productName: {
-    fontWeight: fontWeight.black,
-    color: "#111",
-    fontSize: 15,
-  },
-  productMeta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-  },
-  productHint: {
-    marginTop: spacing.sm,
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-    fontSize: fontSize.xs,
-  },
-  emptyText: {
-    marginTop: spacing.lg,
-    color: colors.textMuted,
-  },
-  categoryPickerList: {
-    maxHeight: 220,
-  },
-  categoryPickerListContent: {
-    paddingBottom: spacing.sm,
-  },
-  categoryPickerRow: {
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  categoryPickerRowSelected: {
-    backgroundColor: "#111",
-    borderColor: "#111",
-  },
-  categoryPickerText: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  categoryPickerTextSelected: {
-    color: colors.primaryTextOn,
-  },
-  rowMain: {
-    flex: 1,
-  },
-  rowHint: {
-    marginTop: spacing.xs,
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-    fontSize: fontSize.xs,
-  },
-  productToolsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    flexWrap: "wrap",
-    marginTop: spacing.md,
-  },
-  filterBtn: {
-    flexShrink: 1,
-  },
-  filterBtnText: {
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-  },
-  modalList: {
-    maxHeight: 320,
-  },
-  modalCloseBtn: {
-    marginTop: spacing.md,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: spacing.xl,
+      paddingTop: 18,
+      backgroundColor: colors.surfaceMuted,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: fontWeight.black,
+      marginBottom: spacing.md,
+      color: colors.text,
+    },
+    toggleRow: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      alignItems: "center",
+      marginBottom: spacing.md,
+      flexWrap: "wrap",
+    },
+    toggleBtn: {
+      borderRadius: radius.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+    },
+    toggleBtnInactive: {
+      backgroundColor: colors.surfaceAlt,
+    },
+    toggleBtnActive: {
+      backgroundColor: colors.primary,
+    },
+    toggleTextInactive: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    toggleTextActive: {
+      color: colors.primaryTextOn,
+      fontWeight: fontWeight.black,
+    },
+    card: {
+      marginTop: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    cardTitle: {
+      fontWeight: fontWeight.black,
+      marginBottom: spacing.sm,
+      color: colors.text,
+    },
+    input: {
+      marginBottom: 0,
+    },
+    list: {
+      marginTop: spacing.md,
+    },
+    listContent: {
+      paddingBottom: spacing.xxxl,
+    },
+    row: {
+      marginBottom: spacing.sm,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    rowText: {
+      fontWeight: fontWeight.heavy,
+      flex: 1,
+      color: colors.text,
+    },
+    productsLoader: {
+      marginTop: spacing.xxl,
+    },
+    productCard: {
+      marginBottom: spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    productName: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+      fontSize: 15,
+    },
+    productMeta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    productHint: {
+      marginTop: spacing.sm,
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+      fontSize: fontSize.xs,
+    },
+    emptyText: {
+      marginTop: spacing.lg,
+      color: colors.textMuted,
+    },
+    categoryPickerList: {
+      maxHeight: 220,
+    },
+    categoryPickerListContent: {
+      paddingBottom: spacing.sm,
+    },
+    categoryPickerRow: {
+      marginBottom: spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    categoryPickerRowSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    categoryPickerText: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    categoryPickerTextSelected: {
+      color: colors.primaryTextOn,
+    },
+    rowMain: {
+      flex: 1,
+    },
+    rowHint: {
+      marginTop: spacing.xs,
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+      fontSize: fontSize.xs,
+    },
+    productToolsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      flexWrap: "wrap",
+      marginTop: spacing.md,
+    },
+    filterBtn: {
+      flexShrink: 1,
+    },
+    filterBtnText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+    modalList: {
+      maxHeight: 320,
+    },
+    modalCloseBtn: {
+      marginTop: spacing.md,
+    },
+  });
+}

@@ -12,10 +12,8 @@ import {
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontWeight, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import { fontWeight, spacing, type AppColors } from "../styles/tokens";
 
 type Store = {
   id: number;
@@ -32,6 +30,9 @@ function toValidId(v: unknown): number | null {
 export default function ManageStores() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string }>();
+
+  const { colors, commonStyles, formStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
 
@@ -215,16 +216,22 @@ export default function ManageStores() {
           value={newName}
           onChangeText={setNewName}
           placeholder="e.g. Dunnes"
+          placeholderTextColor={colors.textLight}
           style={[formStyles.inputAlt, styles.input]}
           editable={!creating}
         />
         <TouchableOpacity
-          style={[buttonStyles.base, buttonStyles.accent, styles.primaryBtn, creating && styles.dimmed]}
+          style={[
+            buttonStyles.base,
+            buttonStyles.accent,
+            styles.primaryBtn,
+            creating && styles.dimmed,
+          ]}
           onPress={createStore}
           disabled={creating}
         >
           {creating ? (
-            <ActivityIndicator />
+            <ActivityIndicator color={colors.text} />
           ) : (
             <Text style={buttonStyles.accentText}>Create</Text>
           )}
@@ -235,7 +242,7 @@ export default function ManageStores() {
         <Text style={styles.label}>All stores</Text>
 
         {loading ? (
-          <ActivityIndicator />
+          <ActivityIndicator color={colors.primaryTextOn} />
         ) : (
           <FlatList
             data={stores}
@@ -256,65 +263,67 @@ export default function ManageStores() {
   );
 }
 
-const styles = StyleSheet.create({
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 22,
-    fontWeight: fontWeight.black,
-    marginBottom: spacing.lg,
-  },
-  card: {},
-  listCard: {
-    marginTop: spacing.lg,
-    flex: 1,
-  },
-  label: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  input: {
-    marginBottom: 0,
-  },
-  primaryBtn: {
-    marginTop: spacing.md,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 12,
-    padding: spacing.lg,
-    marginTop: spacing.md,
-  },
-  rowMain: {
-    flex: 1,
-  },
-  name: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  meta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-    fontWeight: fontWeight.bold,
-  },
-  listContent: {
-    paddingBottom: spacing.xxxl,
-  },
-  backBtn: {
-    marginTop: spacing.lg,
-    alignSelf: "flex-start",
-  },
-  backText: {
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-  },
-  missingText: {
-    color: colors.text,
-    fontWeight: fontWeight.heavy,
-  },
-  dimmed: {
-    opacity: 0.7,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 22,
+      fontWeight: fontWeight.black,
+      marginBottom: spacing.lg,
+    },
+    card: {},
+    listCard: {
+      marginTop: spacing.lg,
+      flex: 1,
+    },
+    label: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+      marginBottom: spacing.sm,
+    },
+    input: {
+      marginBottom: 0,
+    },
+    primaryBtn: {
+      marginTop: spacing.md,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: 12,
+      padding: spacing.lg,
+      marginTop: spacing.md,
+    },
+    rowMain: {
+      flex: 1,
+    },
+    name: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    meta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontWeight: fontWeight.bold,
+    },
+    listContent: {
+      paddingBottom: spacing.xxxl,
+    },
+    backBtn: {
+      marginTop: spacing.lg,
+      alignSelf: "flex-start",
+    },
+    backText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+    missingText: {
+      color: colors.text,
+      fontWeight: fontWeight.heavy,
+    },
+    dimmed: {
+      opacity: 0.7,
+    },
+  });
+}

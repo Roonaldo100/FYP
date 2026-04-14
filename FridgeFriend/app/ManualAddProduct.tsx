@@ -13,10 +13,13 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 type Category = { id: number; name: string };
 type FoodType = { id: number; name: string; category: number };
@@ -38,6 +41,9 @@ export default function ManualAddProduct() {
     listId?: string;
     itemId?: string;
   }>();
+
+  const { colors, commonStyles, formStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
 
@@ -227,8 +233,6 @@ export default function ManualAddProduct() {
         return;
       }
 
-      // For manual creation, a duplicate-name response should NOT reuse and rename
-      // the existing product. The user must pick a different name here.
       if (created?.name_conflict) {
         Alert.alert(
           "Name already in use",
@@ -319,6 +323,7 @@ export default function ManualAddProduct() {
             <TextInput
               style={[formStyles.input, formStyles.inputWide]}
               placeholder="e.g. Strawberries"
+              placeholderTextColor={colors.textLight}
               value={name}
               onChangeText={setName}
             />
@@ -372,67 +377,70 @@ export default function ManualAddProduct() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    ...commonStyles.screenPrimary,
-  },
-  scroll: {
-    flex: 1,
-    width: "100%",
-  },
-  scrollContent: {
-    alignItems: "center",
-    paddingTop: spacing.xxxl,
-    paddingBottom: 40,
-    paddingHorizontal: spacing.xl,
-  },
-  topRow: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  topButton: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
-  topButtonText: {
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-    fontSize: fontSize.sm,
-  },
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 20,
-    marginBottom: spacing.lg,
-    textAlign: "center",
-  },
-  subLabel: {
-    marginTop: spacing.lg,
-  },
-  shoppingPrefill: {
-    marginTop: spacing.md,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    width: 320,
-  },
-  gridButtonText: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.medium,
-    textAlign: "center",
-  },
-  confirmButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-  },
-  confirmButtonText: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.primary,
+    },
+    scroll: {
+      flex: 1,
+      width: "100%",
+    },
+    scrollContent: {
+      alignItems: "center",
+      paddingTop: spacing.xxxl,
+      paddingBottom: 40,
+      paddingHorizontal: spacing.xl,
+    },
+    topRow: {
+      width: "100%",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: spacing.md,
+    },
+    topButton: {
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xl,
+    },
+    topButtonText: {
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+      fontSize: fontSize.sm,
+    },
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 20,
+      marginBottom: spacing.lg,
+      textAlign: "center",
+    },
+    subLabel: {
+      marginTop: spacing.lg,
+    },
+    shoppingPrefill: {
+      marginTop: spacing.md,
+    },
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      width: 320,
+    },
+    gridButtonText: {
+      color: colors.text,
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.medium,
+      textAlign: "center",
+    },
+    confirmButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+    },
+    confirmButtonText: {
+      color: colors.primary,
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.bold,
+    },
+  });
+}

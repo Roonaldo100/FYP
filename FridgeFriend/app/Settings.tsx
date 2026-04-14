@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -15,15 +16,20 @@ import {
   registerForLocalNotificationsAsync,
   sendExpiryNotification,
 } from "../lib/notifications";
-
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontWeight, spacing } from "../styles/tokens";
+import { useTheme } from "../lib/theme";
+import { makeCommonStyles } from "../styles/common";
+import { makeFormStyles } from "../styles/forms";
+import { makeButtonStyles } from "../styles/buttons";
+import { fontWeight, spacing } from "../styles/tokens";
 
 export default function Settings() {
   const router = useRouter();
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
+
+  const { colors, isDark, setMode } = useTheme();
+  const commonStyles = useMemo(() => makeCommonStyles(colors), [colors]);
+  const formStyles = useMemo(() => makeFormStyles(colors), [colors]);
+  const buttonStyles = useMemo(() => makeButtonStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(false);
   const [periodText, setPeriodText] = useState("0");
@@ -95,21 +101,11 @@ export default function Settings() {
 
       if (!resp.ok) {
         const data = await resp.json().catch(() => null);
-        console.error("Save settings failed:", resp.status, data);
         Alert.alert("Error", data?.message || "Failed to save settings.");
         return;
       }
 
-      const data: {
-        notification_period_preference: number;
-        overrideExisting: boolean;
-        pending: {
-          user_product_id: number;
-          product_name: string;
-          days_left: number;
-          effective_period_days?: number;
-        }[];
-      } = await resp.json();
+      const data = await resp.json();
 
       if (Array.isArray(data.pending) && data.pending.length > 0) {
         const ok = await registerForLocalNotificationsAsync();
@@ -132,7 +128,7 @@ export default function Settings() {
         }
       }
 
-      Alert.alert("Saved", "Notification preference updated.");
+      Alert.alert("Saved", "Settings updated.");
       router.back();
     } catch (e) {
       console.error("Save settings error:", e);
@@ -178,46 +174,71 @@ export default function Settings() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Settings</Text>
+    <View style={[commonStyles.screenPrimary, styles.container]}>
+      <Text style={[styles.title, { color: colors.primaryTextOn }]}>Settings</Text>
 
       {loading ? (
         <ActivityIndicator size="large" color={colors.primaryTextOn} />
       ) : (
-        <View style={[commonStyles.card, styles.card]}>
-          <Text style={styles.label}>Notify me this many days before expiry</Text>
+        <View
+          style={[
+            commonStyles.card,
+            styles.card,
+            { borderColor: colors.borderSoft },
+          ]}
+        >
+          <View style={styles.themeRow}>
+            <View style={styles.themeTextCol}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
+                Dark mode
+              </Text>
+              <Text style={[styles.settingHint, { color: colors.textMuted }]}>
+                Toggle dark mode for the whole app
+              </Text>
+            </View>
+
+            <Switch
+              value={isDark}
+              onValueChange={(value) => setMode(value ? "dark" : "light")}
+            />
+          </View>
+
+          <Text style={[styles.settingLabel, styles.sectionGap, { color: colors.text }]}>
+            Notify me this many days before expiry
+          </Text>
 
           <TextInput
             value={periodText}
             onChangeText={setPeriodText}
             placeholder="0"
+            placeholderTextColor={colors.textMuted}
             keyboardType="number-pad"
             style={[formStyles.inputAlt, styles.input]}
           />
 
           <TouchableOpacity
-            style={[buttonStyles.base, buttonStyles.primary, styles.buttonSpacing]}
+            style={[buttonStyles.base, buttonStyles.primary, styles.buttonGap]}
             onPress={onPressSave}
           >
-            <Text style={buttonStyles.primaryText}>Save</Text>
+            <Text style={buttonStyles.primaryText}>Save notifications</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[buttonStyles.base, buttonStyles.accent, styles.buttonSpacing]}
+            style={[buttonStyles.base, buttonStyles.accent, styles.buttonGap]}
             onPress={goManageStores}
           >
             <Text style={buttonStyles.accentText}>Manage stores</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[buttonStyles.base, buttonStyles.danger, styles.buttonSpacing]}
+            style={[buttonStyles.base, buttonStyles.danger, styles.buttonGap]}
             onPress={logout}
           >
             <Text style={buttonStyles.dangerText}>Log out</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[buttonStyles.base, buttonStyles.secondary]}
+            style={[buttonStyles.base, buttonStyles.secondary, styles.buttonGap]}
             onPress={() => router.back()}
           >
             <Text style={buttonStyles.secondaryText}>Back</Text>
@@ -230,30 +251,41 @@ export default function Settings() {
 
 const styles = StyleSheet.create({
   container: {
-    ...commonStyles.screenPrimary,
     alignItems: "center",
     justifyContent: "center",
   },
   title: {
-    color: colors.primaryTextOn,
     fontSize: 22,
-    marginBottom: spacing.xxl,
-    fontWeight: fontWeight.black,
+    fontWeight: fontWeight.heavy,
+    marginBottom: spacing.lg,
   },
   card: {
     width: "100%",
-    maxWidth: 360,
+    borderWidth: 1,
   },
-  label: {
-    fontSize: 14,
+  themeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  themeTextCol: {
+    flex: 1,
+    paddingRight: spacing.md,
+  },
+  settingLabel: {
     fontWeight: fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
+  },
+  settingHint: {
+    marginTop: spacing.xs,
+  },
+  sectionGap: {
+    marginTop: spacing.xl,
   },
   input: {
+    marginTop: spacing.sm,
     marginBottom: 0,
   },
-  buttonSpacing: {
-    marginBottom: spacing.md,
+  buttonGap: {
+    marginTop: spacing.md,
   },
 });

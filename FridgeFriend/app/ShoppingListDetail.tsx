@@ -14,11 +14,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { buttonStyles } from "../styles/buttons";
-import { formStyles } from "../styles/forms";
-import { modalStyles } from "../styles/modals";
-import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 function toValidId(v: unknown): number | null {
   const n = Number(v);
@@ -57,6 +60,9 @@ type DetailResponse = {
 export default function ShoppingListDetail() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string; listId?: string }>();
+
+  const { colors, commonStyles, buttonStyles, formStyles, modalStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
   const listId = useMemo(() => toValidId(params.listId), [params.listId]);
@@ -326,16 +332,16 @@ export default function ShoppingListDetail() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[buttonStyles.base, styles.darkButton, styles.topButton]}
+          style={[buttonStyles.base, buttonStyles.primary, styles.topButton]}
           onPress={goAddItems}
         >
-          <Text style={styles.darkButtonText}>+ Add items</Text>
+          <Text style={buttonStyles.primaryText}>+ Add items</Text>
         </TouchableOpacity>
       </View>
 
       <Text style={styles.title}>{header}</Text>
 
-      {loading && <ActivityIndicator />}
+      {loading && <ActivityIndicator color={colors.primaryTextOn} />}
 
       {!loading && data && (
         <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -424,7 +430,7 @@ export default function ShoppingListDetail() {
       )}
 
       <TouchableOpacity
-        style={[buttonStyles.base, styles.darkButton, styles.bottomAddBtn]}
+        style={[buttonStyles.base, buttonStyles.primary, styles.bottomAddBtn]}
         onPress={() =>
           router.push({
             pathname: "/ShoppingListAddKnownToFridge",
@@ -432,7 +438,7 @@ export default function ShoppingListDetail() {
           })
         }
       >
-        <Text style={styles.darkButtonText}>Add to fridge</Text>
+        <Text style={buttonStyles.primaryText}>Add to fridge</Text>
       </TouchableOpacity>
 
       <Modal
@@ -481,10 +487,10 @@ export default function ShoppingListDetail() {
             </ScrollView>
 
             <TouchableOpacity
-              style={[buttonStyles.base, styles.darkButton, styles.modalClose]}
+              style={[buttonStyles.base, buttonStyles.primary, styles.modalClose]}
               onPress={closeStoreModal}
             >
-              <Text style={styles.darkButtonText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -508,6 +514,7 @@ export default function ShoppingListDetail() {
               value={qtyInput}
               onChangeText={(v) => setQtyInput(v.replace(/[^0-9]/g, ""))}
               placeholder="Enter quantity"
+              placeholderTextColor={colors.textLight}
               keyboardType="number-pad"
               style={[formStyles.inputAlt, styles.modalInput]}
               editable={!qtySaving}
@@ -530,14 +537,14 @@ export default function ShoppingListDetail() {
             <TouchableOpacity
               style={[
                 buttonStyles.base,
-                styles.darkButton,
+                buttonStyles.primary,
                 styles.modalClose,
                 qtySaving && styles.dimmed,
               ]}
               onPress={closeQtyModal}
               disabled={qtySaving}
             >
-              <Text style={styles.darkButtonText}>Close</Text>
+              <Text style={buttonStyles.primaryText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -546,176 +553,168 @@ export default function ShoppingListDetail() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surfaceMuted,
-    padding: spacing.xl,
-    paddingTop: 18,
-  },
-  topRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  topButton: {
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  backText: {
-    fontWeight: fontWeight.heavy,
-    color: colors.text,
-  },
-  darkButton: {
-    backgroundColor: "#111",
-  },
-  darkButtonText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.heavy,
-  },
-  title: {
-    marginTop: spacing.lg,
-    fontSize: 22,
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  summary: {
-    marginTop: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  summaryLine: {
-    fontWeight: fontWeight.heavy,
-    marginTop: spacing.xs,
-    color: colors.text,
-  },
-  groupCard: {
-    marginTop: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  groupTitle: {
-    fontSize: 18,
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  groupMeta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-  },
-  itemRow: {
-    marginTop: spacing.md,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-  },
-  itemMain: {
-    flex: 1,
-  },
-  itemName: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  itemMeta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-  },
-  qtyTap: {
-    marginTop: spacing.xs,
-    alignSelf: "flex-start",
-    backgroundColor: colors.surfaceAlt,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-  },
-  qtyHint: {
-    marginTop: 2,
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-    fontSize: fontSize.xs,
-  },
-  storeRow: {
-    marginTop: spacing.sm,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    flexWrap: "wrap",
-  },
-  storeLabel: {
-    color: colors.text,
-    fontWeight: fontWeight.heavy,
-    fontSize: fontSize.xs,
-  },
-  changeStoreBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: spacing.md,
-  },
-  qtyCol: {
-    alignItems: "flex-end",
-    gap: 6,
-  },
-  qtyBtn: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 8,
-  },
-  qtyBtnText: {
-    fontWeight: fontWeight.black,
-    fontSize: 16,
-    color: colors.text,
-  },
-  removeBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-  },
-  bottomAddBtn: {
-    marginTop: spacing.md,
-    alignSelf: "stretch",
-    alignItems: "center",
-  },
-  modalSub: {
-    color: colors.textMuted,
-    marginBottom: spacing.md,
-  },
-  modalInput: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  modalRow: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  modalRowText: {
-    fontWeight: fontWeight.black,
-    color: "#111",
-  },
-  modalEmpty: {
-    color: colors.textMuted,
-    marginTop: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  modalSpacer: {
-    height: 8,
-  },
-  modalScroll: {
-    maxHeight: 320,
-  },
-  modalClose: {
-    marginTop: spacing.sm,
-    alignItems: "center",
-  },
-  dimmed: {
-    opacity: 0.4,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.surfaceMuted,
+      padding: spacing.xl,
+      paddingTop: 18,
+    },
+    topRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    topButton: {
+      paddingHorizontal: spacing.lg,
+    },
+    backText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+    title: {
+      marginTop: spacing.lg,
+      color: colors.text,
+      fontSize: 22,
+      fontWeight: fontWeight.black,
+    },
+    scrollContent: {
+      paddingBottom: spacing.xxxl,
+    },
+    summary: {
+      marginTop: spacing.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    summaryLine: {
+      color: colors.text,
+      fontWeight: fontWeight.heavy,
+      marginBottom: spacing.xs,
+    },
+    groupCard: {
+      marginTop: spacing.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    groupTitle: {
+      color: colors.text,
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.black,
+    },
+    groupMeta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    itemRow: {
+      marginTop: spacing.lg,
+      paddingTop: spacing.lg,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSoft,
+      flexDirection: "row",
+      gap: spacing.md,
+      alignItems: "flex-start",
+    },
+    itemMain: {
+      flex: 1,
+    },
+    itemName: {
+      color: colors.text,
+      fontWeight: fontWeight.black,
+      fontSize: fontSize.md,
+    },
+    itemMeta: {
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    qtyTap: {
+      marginTop: spacing.sm,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.md,
+      padding: spacing.md,
+    },
+    qtyHint: {
+      marginTop: spacing.xs,
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+      fontSize: fontSize.xs,
+    },
+    storeRow: {
+      marginTop: spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: spacing.md,
+      flexWrap: "wrap",
+    },
+    storeLabel: {
+      color: colors.text,
+      fontWeight: fontWeight.medium,
+    },
+    changeStoreBtn: {
+      alignSelf: "flex-start",
+    },
+    qtyCol: {
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    qtyBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.sm,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    qtyBtnText: {
+      color: colors.text,
+      fontSize: 20,
+      fontWeight: fontWeight.black,
+      lineHeight: 22,
+    },
+    removeBtn: {
+      minWidth: 88,
+      alignItems: "center",
+    },
+    bottomAddBtn: {
+      marginTop: spacing.lg,
+    },
+    modalSub: {
+      marginTop: spacing.sm,
+      color: colors.textMuted,
+      fontWeight: fontWeight.bold,
+    },
+    modalRow: {
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    modalRowText: {
+      color: colors.text,
+      fontWeight: fontWeight.medium,
+    },
+    modalSpacer: {
+      height: 12,
+    },
+    modalScroll: {
+      maxHeight: 320,
+    },
+    modalEmpty: {
+      color: colors.textMuted,
+      marginTop: spacing.sm,
+    },
+    modalInput: {
+      marginTop: spacing.lg,
+      marginBottom: 0,
+    },
+    modalClose: {
+      marginTop: spacing.lg,
+    },
+    dimmed: {
+      opacity: 0.6,
+    },
+  });
+}

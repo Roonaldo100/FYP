@@ -12,9 +12,14 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 import { formatDisplayDate } from "../lib/dateUtils";
 
@@ -48,6 +53,9 @@ export default function ExpiringSoon() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
+
+  const { colors, commonStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -282,7 +290,7 @@ export default function ExpiringSoon() {
                     onPress={() => removeQuantity(item)}
                     disabled={isBusy}
                   >
-                    <Text style={styles.removeText}>
+                    <Text style={buttonStyles.dangerText}>
                       {isBusy
                         ? "Removing..."
                         : selectedQty >= item.quantity
@@ -300,106 +308,103 @@ export default function ExpiringSoon() {
   );
 }
 
-const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.lg,
-    gap: spacing.md,
-  },
-  backText: {
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-  },
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 20,
-    fontWeight: fontWeight.black,
-  },
-  empty: {
-    color: colors.primaryTextOn,
-    marginTop: spacing.md,
-    opacity: 0.9,
-  },
-  listContent: {
-    paddingBottom: spacing.xxxl,
-  },
-  card: {
-    marginBottom: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  cardMain: {
-    flex: 1,
-  },
-  name: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-    fontSize: fontSize.md,
-  },
-  meta: {
-    marginTop: spacing.sm,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-  },
-  tapHint: {
-    marginTop: spacing.sm,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-    color: colors.primary,
-  },
-  controlsColumn: {
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 110,
-  },
-  removeLabel: {
-    color: colors.text,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.heavy,
-    marginBottom: spacing.sm,
-  },
-  qtyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  qtyBtn: {
-    backgroundColor: "#e7def5",
-    borderRadius: radius.sm,
-    width: 30,
-    height: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  qtyBtnText: {
-    color: colors.primary,
-    fontSize: 18,
-    fontWeight: fontWeight.black,
-    lineHeight: 20,
-  },
-  qtyValue: {
-    minWidth: 24,
-    textAlign: "center",
-    color: colors.text,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.black,
-  },
-  disabledBtn: {
-    opacity: 0.45,
-  },
-  removeBtn: {
-    minWidth: 92,
-    alignItems: "center",
-  },
-  disabledRemoveBtn: {
-    opacity: 0.6,
-  },
-  removeText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.black,
-    fontSize: fontSize.xs,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    topRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.lg,
+      gap: spacing.md,
+    },
+    backText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 20,
+      fontWeight: fontWeight.black,
+    },
+    empty: {
+      color: colors.primaryTextOn,
+      marginTop: spacing.md,
+      opacity: 0.9,
+    },
+    listContent: {
+      paddingBottom: spacing.xxxl,
+    },
+    card: {
+      marginBottom: spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    cardMain: {
+      flex: 1,
+    },
+    name: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+      fontSize: fontSize.md,
+    },
+    meta: {
+      marginTop: spacing.sm,
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    tapHint: {
+      marginTop: spacing.sm,
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.bold,
+      color: colors.primary,
+    },
+    controlsColumn: {
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 110,
+    },
+    removeLabel: {
+      color: colors.text,
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.heavy,
+      marginBottom: spacing.sm,
+    },
+    qtyRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.sm,
+      gap: spacing.sm,
+    },
+    qtyBtn: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.sm,
+      width: 30,
+      height: 30,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    qtyBtnText: {
+      color: colors.primary,
+      fontSize: 18,
+      fontWeight: fontWeight.black,
+      lineHeight: 20,
+    },
+    qtyValue: {
+      minWidth: 24,
+      textAlign: "center",
+      color: colors.text,
+      fontSize: fontSize.sm,
+      fontWeight: fontWeight.black,
+    },
+    disabledBtn: {
+      opacity: 0.45,
+    },
+    removeBtn: {
+      minWidth: 92,
+      alignItems: "center",
+    },
+    disabledRemoveBtn: {
+      opacity: 0.6,
+    },
+  });
+}

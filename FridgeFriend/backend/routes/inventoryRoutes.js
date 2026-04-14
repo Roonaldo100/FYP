@@ -56,8 +56,11 @@ router.put("/user/:userId/products/:productId", async (req, res) => {
     );
     return res.json(result);
   } catch (err) {
-    console.error("update product error:", err);
-    return res.status(err.statusCode || 500).json({
+    if ((err.statusCode || err.status) >= 500 || !(err.statusCode || err.status)) {
+      console.error("update product error:", err);
+    }
+
+    return res.status(err.statusCode || err.status || 500).json({
       message: err.message || "Server error updating product",
     });
   }

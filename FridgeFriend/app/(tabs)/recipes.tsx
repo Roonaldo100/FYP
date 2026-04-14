@@ -12,10 +12,14 @@ import {
 } from "react-native";
 import { useFocusEffect, useGlobalSearchParams } from "expo-router";
 import { API_BASE_URL } from "../../config/apiConfig";
-import { commonStyles } from "../../styles/common";
-import { formStyles } from "../../styles/forms";
-import { buttonStyles } from "../../styles/buttons";
-import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
+import { useAppStyles } from "../../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../../styles/tokens";
 
 function toValidUserId(v: unknown): number | null {
   const n = Number(v);
@@ -59,6 +63,9 @@ type NutritionResponse = {
 export default function RecipesTab() {
   const params = useGlobalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidUserId(params.user_id), [params.user_id]);
+
+  const { colors, commonStyles, formStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(false);
   const [recipes, setRecipes] = useState<SavedRecipe[]>([]);
@@ -209,7 +216,9 @@ export default function RecipesTab() {
     setProductSearchLoading(true);
     try {
       const res = await fetch(
-        `${API_BASE_URL}/products/search?q=${encodeURIComponent(query)}&userId=${encodeURIComponent(String(userId))}`
+        `${API_BASE_URL}/products/search?q=${encodeURIComponent(
+          query
+        )}&userId=${encodeURIComponent(String(userId))}`
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ProductHit[] = await res.json();
@@ -296,7 +305,6 @@ export default function RecipesTab() {
 
       setEditTitle(String(details.title || ""));
       setEditUrl(String(details.url || ""));
-
       setEditIngredients(
         Array.isArray(details.ingredients)
           ? details.ingredients.map((i: any) => String(i?.name ?? "")).filter(Boolean)
@@ -453,9 +461,14 @@ export default function RecipesTab() {
 
         <TouchableOpacity
           onPress={() => setCreateOpen((v) => !v)}
-          style={[buttonStyles.base, styles.darkButton, styles.inlineAction]}
+          style={[
+            buttonStyles.base,
+            buttonStyles.primary,
+            styles.inlineAction,
+            styles.outlinedPrimaryButton,
+          ]}
         >
-          <Text style={styles.darkButtonText}>
+          <Text style={buttonStyles.primaryText}>
             {createOpen ? "Close create" : "Create recipe"}
           </Text>
         </TouchableOpacity>
@@ -468,6 +481,7 @@ export default function RecipesTab() {
               value={newTitle}
               onChangeText={setNewTitle}
               placeholder="Recipe title"
+              placeholderTextColor={colors.textLight}
               style={[formStyles.inputAlt, styles.inputSpacing]}
             />
 
@@ -475,6 +489,7 @@ export default function RecipesTab() {
               value={newUrl}
               onChangeText={setNewUrl}
               placeholder="Optional source URL"
+              placeholderTextColor={colors.textLight}
               style={[formStyles.inputAlt, styles.inputSpacing]}
             />
 
@@ -485,6 +500,7 @@ export default function RecipesTab() {
                 value={ingredientInput}
                 onChangeText={searchProducts}
                 placeholder="Type ingredient (min 3 chars)"
+                placeholderTextColor={colors.textLight}
                 style={[formStyles.inputAlt, styles.flexInput]}
               />
               <TouchableOpacity
@@ -493,16 +509,20 @@ export default function RecipesTab() {
                 style={[
                   buttonStyles.base,
                   styles.smallActionButton,
-                  canAddIngredient ? styles.darkButton : styles.disabledButton,
+                  canAddIngredient ? buttonStyles.primary : styles.disabledButton,
                 ]}
               >
-                <Text style={styles.darkButtonText}>Add</Text>
+                <Text
+                  style={canAddIngredient ? buttonStyles.primaryText : styles.disabledButtonText}
+                >
+                  Add
+                </Text>
               </TouchableOpacity>
             </View>
 
             {productSearchLoading ? (
               <View style={styles.loaderWrap}>
-                <ActivityIndicator />
+                <ActivityIndicator color={colors.primaryTextOn} />
               </View>
             ) : null}
 
@@ -539,9 +559,9 @@ export default function RecipesTab() {
 
             <TouchableOpacity
               onPress={createRecipe}
-              style={[buttonStyles.base, styles.darkButton, styles.saveButton]}
+              style={[buttonStyles.base, buttonStyles.primary, styles.saveButton]}
             >
-              <Text style={styles.darkButtonText}>Save recipe</Text>
+              <Text style={buttonStyles.primaryText}>Save recipe</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -552,7 +572,7 @@ export default function RecipesTab() {
 
             {editLoading ? (
               <View style={styles.loaderWrap}>
-                <ActivityIndicator />
+                <ActivityIndicator color={colors.primaryTextOn} />
               </View>
             ) : (
               <>
@@ -560,6 +580,7 @@ export default function RecipesTab() {
                   value={editTitle}
                   onChangeText={setEditTitle}
                   placeholder="Recipe title"
+                  placeholderTextColor={colors.textLight}
                   style={[formStyles.inputAlt, styles.inputSpacing]}
                 />
 
@@ -567,6 +588,7 @@ export default function RecipesTab() {
                   value={editUrl}
                   onChangeText={setEditUrl}
                   placeholder="Optional source URL"
+                  placeholderTextColor={colors.textLight}
                   style={[formStyles.inputAlt, styles.inputSpacing]}
                 />
 
@@ -577,6 +599,7 @@ export default function RecipesTab() {
                     value={editIngredientInput}
                     onChangeText={setEditIngredientInput}
                     placeholder="Type ingredient (min 3 chars)"
+                    placeholderTextColor={colors.textLight}
                     style={[formStyles.inputAlt, styles.flexInput]}
                   />
                   <TouchableOpacity
@@ -585,10 +608,16 @@ export default function RecipesTab() {
                     style={[
                       buttonStyles.base,
                       styles.smallActionButton,
-                      canAddEditIngredient ? styles.darkButton : styles.disabledButton,
+                      canAddEditIngredient ? buttonStyles.primary : styles.disabledButton,
                     ]}
                   >
-                    <Text style={styles.darkButtonText}>Add</Text>
+                    <Text
+                      style={
+                        canAddEditIngredient ? buttonStyles.primaryText : styles.disabledButtonText
+                      }
+                    >
+                      Add
+                    </Text>
                   </TouchableOpacity>
                 </View>
 
@@ -612,9 +641,9 @@ export default function RecipesTab() {
                 <View style={styles.editActions}>
                   <TouchableOpacity
                     onPress={saveEdit}
-                    style={[buttonStyles.base, styles.darkButton, styles.editSaveButton]}
+                    style={[buttonStyles.base, buttonStyles.primary, styles.editSaveButton]}
                   >
-                    <Text style={styles.darkButtonText}>Save</Text>
+                    <Text style={buttonStyles.primaryText}>Save</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -636,7 +665,7 @@ export default function RecipesTab() {
       <View style={styles.listArea}>
         {loading ? (
           <View style={styles.loaderWrap}>
-            <ActivityIndicator />
+            <ActivityIndicator color={colors.primaryTextOn} />
           </View>
         ) : (
           <FlatList
@@ -664,16 +693,16 @@ export default function RecipesTab() {
                   <View style={styles.cardActions}>
                     <TouchableOpacity
                       onPress={() => showMissing(item.id)}
-                      style={[buttonStyles.base, styles.darkButton]}
+                      style={[buttonStyles.base, buttonStyles.primary]}
                     >
-                      <Text style={styles.darkButtonText}>What am I missing?</Text>
+                      <Text style={buttonStyles.primaryText}>What am I missing?</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={() => showNutrition(item.id)}
-                      style={[buttonStyles.base, styles.darkButton]}
+                      style={[buttonStyles.base, buttonStyles.primary]}
                     >
-                      <Text style={styles.darkButtonText}>Show nutrition</Text>
+                      <Text style={buttonStyles.primaryText}>Show nutrition</Text>
                     </TouchableOpacity>
 
                     {item.source === "custom" && (
@@ -697,7 +726,7 @@ export default function RecipesTab() {
 
                   {missingLoading && isMissingThis ? (
                     <View style={styles.loaderWrapSmall}>
-                      <ActivityIndicator />
+                      <ActivityIndicator color={colors.primaryTextOn} />
                     </View>
                   ) : null}
 
@@ -719,7 +748,7 @@ export default function RecipesTab() {
 
                   {nutritionLoading && isNutritionThis ? (
                     <View style={styles.loaderWrapSmall}>
-                      <ActivityIndicator />
+                      <ActivityIndicator color={colors.primaryTextOn} />
                     </View>
                   ) : null}
 
@@ -775,181 +804,184 @@ export default function RecipesTab() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surfaceMuted,
-  },
-  headerArea: {
-    padding: spacing.xl,
-    paddingBottom: spacing.sm,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-  },
-  inlineAction: {
-    marginTop: spacing.md,
-    alignSelf: "flex-start",
-  },
-  panelCard: {
-    marginTop: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  sectionHeading: {
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
-    color: colors.text,
-  },
-  subHeading: {
-    marginTop: spacing.lg,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-  },
-  inputSpacing: {
-    marginTop: spacing.md,
-    marginBottom: 0,
-  },
-  inputRow: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  flexInput: {
-    flex: 1,
-    marginBottom: 0,
-  },
-  smallActionButton: {
-    paddingHorizontal: spacing.lg,
-    justifyContent: "center",
-  },
-  searchHits: {
-    marginTop: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    borderRadius: radius.md,
-    overflow: "hidden",
-  },
-  searchHitRow: {
-    padding: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-  },
-  searchHitText: {
-    color: colors.text,
-  },
-  ingredientList: {
-    marginTop: spacing.sm,
-    gap: spacing.sm,
-  },
-  ingredientRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    padding: spacing.md,
-    borderRadius: radius.md,
-  },
-  ingredientName: {
-    color: colors.text,
-  },
-  removeText: {
-    color: colors.danger,
-    fontWeight: fontWeight.bold,
-  },
-  saveButton: {
-    marginTop: spacing.xl,
-  },
-  editActions: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.xl,
-  },
-  editSaveButton: {
-    flex: 1,
-  },
-  listArea: {
-    flex: 1,
-    paddingHorizontal: spacing.xl,
-  },
-  listContent: {
-    paddingBottom: spacing.xxxl,
-  },
-  recipeCard: {
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    marginTop: spacing.md,
-  },
-  recipeTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-  },
-  linkText: {
-    marginTop: spacing.sm,
-    fontSize: fontSize.xs,
-    color: "#1a73e8",
-    textDecorationLine: "underline",
-  },
-  cardActions: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.md,
-    flexWrap: "wrap",
-  },
-  infoPanel: {
-    marginTop: spacing.md,
-  },
-  infoTitle: {
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-  },
-  infoTitleSpacing: {
-    marginTop: spacing.md,
-  },
-  infoText: {
-    marginTop: spacing.xs,
-    color: colors.text,
-  },
-  subtleText: {
-    marginTop: spacing.xs,
-    color: "#444",
-  },
-  nutrientList: {
-    marginTop: spacing.sm,
-    gap: spacing.xs,
-  },
-  nutrientText: {
-    color: colors.text,
-  },
-  updatedText: {
-    marginTop: spacing.sm,
-    fontSize: fontSize.xs,
-    color: "#777",
-  },
-  emptyInline: {
-    marginTop: spacing.sm,
-    color: colors.textMuted,
-  },
-  loaderWrap: {
-    marginTop: spacing.sm,
-  },
-  loaderWrapSmall: {
-    marginTop: spacing.md,
-  },
-  darkButton: {
-    backgroundColor: "#111",
-  },
-  disabledButton: {
-    backgroundColor: "#999",
-    opacity: 0.7,
-  },
-  darkButtonText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.bold,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.surfaceMuted,
+    },
+    headerArea: {
+      padding: spacing.xl,
+      paddingBottom: spacing.sm,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: fontWeight.bold,
+      color: colors.text,
+    },
+    inlineAction: {
+      marginTop: spacing.md,
+      alignSelf: "flex-start",
+    },
+    panelCard: {
+      marginTop: spacing.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    sectionHeading: {
+      fontWeight: fontWeight.bold,
+      fontSize: fontSize.md,
+      color: colors.text,
+    },
+    subHeading: {
+      marginTop: spacing.lg,
+      fontWeight: fontWeight.bold,
+      color: colors.text,
+    },
+    inputSpacing: {
+      marginTop: spacing.md,
+      marginBottom: 0,
+    },
+    inputRow: {
+      flexDirection: "row",
+      gap: spacing.md,
+      marginTop: spacing.sm,
+    },
+    flexInput: {
+      flex: 1,
+      marginBottom: 0,
+    },
+    smallActionButton: {
+      paddingHorizontal: spacing.lg,
+      justifyContent: "center",
+    },
+    searchHits: {
+      marginTop: spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+      borderRadius: radius.md,
+      overflow: "hidden",
+    },
+    searchHitRow: {
+      padding: spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSoft,
+    },
+    searchHitText: {
+      color: colors.text,
+    },
+    ingredientList: {
+      marginTop: spacing.sm,
+      gap: spacing.sm,
+    },
+    ingredientRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      backgroundColor: colors.surfaceMuted,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+      padding: spacing.md,
+      borderRadius: radius.md,
+    },
+    ingredientName: {
+      color: colors.text,
+    },
+    removeText: {
+      color: colors.danger,
+      fontWeight: fontWeight.bold,
+    },
+    saveButton: {
+      marginTop: spacing.xl,
+    },
+    editActions: {
+      flexDirection: "row",
+      gap: spacing.md,
+      marginTop: spacing.xl,
+    },
+    editSaveButton: {
+      flex: 1,
+    },
+    listArea: {
+      flex: 1,
+      paddingHorizontal: spacing.xl,
+    },
+    listContent: {
+      paddingBottom: spacing.xxxl,
+    },
+    recipeCard: {
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+      marginTop: spacing.md,
+    },
+    recipeTitle: {
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.bold,
+      color: colors.text,
+    },
+    linkText: {
+      marginTop: spacing.sm,
+      fontSize: fontSize.xs,
+      color: colors.accent,
+      textDecorationLine: "underline",
+    },
+    cardActions: {
+      flexDirection: "row",
+      gap: spacing.md,
+      marginTop: spacing.md,
+      flexWrap: "wrap",
+    },
+    infoPanel: {
+      marginTop: spacing.md,
+    },
+    infoTitle: {
+      fontWeight: fontWeight.bold,
+      color: colors.text,
+    },
+    infoTitleSpacing: {
+      marginTop: spacing.md,
+    },
+    infoText: {
+      marginTop: spacing.xs,
+      color: colors.text,
+    },
+    subtleText: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+    },
+    nutrientList: {
+      marginTop: spacing.sm,
+      gap: spacing.xs,
+    },
+    nutrientText: {
+      color: colors.text,
+    },
+    updatedText: {
+      marginTop: spacing.sm,
+      fontSize: fontSize.xs,
+      color: colors.textMuted,
+    },
+    emptyInline: {
+      marginTop: spacing.sm,
+      color: colors.textMuted,
+    },
+    loaderWrap: {
+      marginTop: spacing.sm,
+    },
+    loaderWrapSmall: {
+      marginTop: spacing.md,
+    },
+    disabledButton: {
+      backgroundColor: colors.surfaceAlt,
+      opacity: 0.7,
+    },
+    disabledButtonText: {
+      color: colors.textMuted,
+      fontWeight: fontWeight.bold,
+    },
+    outlinedPrimaryButton: {
+      borderWidth: 1,
+      borderColor: colors.primaryTextOn,
+    },
+  });
+}

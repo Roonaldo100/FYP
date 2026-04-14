@@ -15,11 +15,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
 import { formatDisplayDate } from "../lib/dateUtils";
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { modalStyles } from "../styles/modals";
-import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 function toValidId(v: unknown): number | null {
   const n = Number(v);
@@ -93,6 +96,9 @@ export default function ShoppingListAddKnownToFridge() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string; listId?: string }>();
 
+  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
   const listId = useMemo(() => toValidId(params.listId), [params.listId]);
 
@@ -129,7 +135,9 @@ export default function ShoppingListAddKnownToFridge() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/user/${userId}/shoppingLists/${listId}`);
+      const res = await fetch(
+        `${API_BASE_URL}/user/${userId}/shoppingLists/${listId}`
+      );
       if (!res.ok) {
         const t = await res.text().catch(() => "");
         throw new Error(t || `HTTP ${res.status}`);
@@ -436,6 +444,7 @@ export default function ShoppingListAddKnownToFridge() {
               value={editQtyText}
               onChangeText={(v) => setEditQtyText(v.replace(/[^0-9]/g, ""))}
               placeholder="Enter quantity"
+              placeholderTextColor={colors.textLight}
               keyboardType="number-pad"
               style={[formStyles.inputAlt, styles.modalInput]}
               editable={!savingEdit}
@@ -444,7 +453,7 @@ export default function ShoppingListAddKnownToFridge() {
             <Text style={styles.modalLabel}>Store</Text>
 
             {storesLoading ? (
-              <ActivityIndicator />
+              <ActivityIndicator color={colors.primaryTextOn} />
             ) : (
               <View style={styles.storeListWrap}>
                 <TouchableOpacity
@@ -506,6 +515,7 @@ export default function ShoppingListAddKnownToFridge() {
               value={editExpiryDate}
               onChangeText={setEditExpiryDate}
               placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textLight}
               autoCapitalize="none"
               style={[formStyles.inputAlt, styles.modalInput]}
               editable={!savingEdit}
@@ -603,147 +613,149 @@ export default function ShoppingListAddKnownToFridge() {
   );
 }
 
-const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  backText: {
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-  },
-  title: {
-    marginTop: spacing.lg,
-    color: colors.primaryTextOn,
-    fontSize: 20,
-    fontWeight: fontWeight.black,
-  },
-  subtitle: {
-    marginTop: spacing.sm,
-    color: colors.primaryTextOn,
-    opacity: 0.9,
-  },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  actionsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  smallBtnText: {
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-  },
-  card: {
-    marginTop: spacing.lg,
-  },
-  emptyText: {
-    color: colors.text,
-    fontWeight: fontWeight.heavy,
-  },
-  primaryBtn2: {
-    marginTop: spacing.md,
-    alignSelf: "flex-start",
-  },
-  itemRow: {
-    marginTop: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: radius.sm,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  checkboxOn: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  itemMain: {
-    flex: 1,
-  },
-  itemName: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  itemMeta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-  },
-  itemHint: {
-    marginTop: spacing.xs,
-    color: colors.primary,
-    fontWeight: fontWeight.black,
-    fontSize: fontSize.xs,
-  },
-  modalSub: {
-    marginTop: spacing.sm,
-    color: colors.textMuted,
-    fontWeight: fontWeight.bold,
-  },
-  modalLabel: {
-    marginTop: spacing.lg,
-    marginBottom: spacing.xs,
-    color: colors.text,
-    fontWeight: fontWeight.black,
-  },
-  modalLabelTop: {
-    marginTop: spacing.md,
-  },
-  modalInput: {
-    marginBottom: 0,
-  },
-  expiryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  flexButton: {
-    flex: 1,
-  },
-  storeListWrap: {
-    marginTop: spacing.sm,
-  },
-  storeList: {
-    maxHeight: 220,
-  },
-  storeChoice: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  storeChoiceSelected: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  storeChoiceText: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  modalSpacer: {
-    height: 12,
-  },
-  modalList: {
-    maxHeight: 320,
-  },
-  noExpiryText: {
-    fontWeight: fontWeight.black,
-    color: colors.danger,
-  },
-  modalCloseBtn: {
-    marginTop: spacing.lg,
-  },
-  dimmed: {
-    opacity: 0.6,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    topRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    backText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+    title: {
+      marginTop: spacing.lg,
+      color: colors.primaryTextOn,
+      fontSize: 20,
+      fontWeight: fontWeight.black,
+    },
+    subtitle: {
+      marginTop: spacing.sm,
+      color: colors.primaryTextOn,
+      opacity: 0.9,
+    },
+    scrollContent: {
+      paddingBottom: 30,
+    },
+    actionsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+    },
+    smallBtnText: {
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+    },
+    card: {
+      marginTop: spacing.lg,
+    },
+    emptyText: {
+      color: colors.text,
+      fontWeight: fontWeight.heavy,
+    },
+    primaryBtn2: {
+      marginTop: spacing.md,
+      alignSelf: "flex-start",
+    },
+    itemRow: {
+      marginTop: spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: radius.sm,
+      borderWidth: 2,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    checkboxOn: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    itemMain: {
+      flex: 1,
+    },
+    itemName: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    itemMeta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    itemHint: {
+      marginTop: spacing.xs,
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+      fontSize: fontSize.xs,
+    },
+    modalSub: {
+      marginTop: spacing.sm,
+      color: colors.textMuted,
+      fontWeight: fontWeight.bold,
+    },
+    modalLabel: {
+      marginTop: spacing.lg,
+      marginBottom: spacing.xs,
+      color: colors.text,
+      fontWeight: fontWeight.black,
+    },
+    modalLabelTop: {
+      marginTop: spacing.md,
+    },
+    modalInput: {
+      marginBottom: 0,
+    },
+    expiryRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    flexButton: {
+      flex: 1,
+    },
+    storeListWrap: {
+      marginTop: spacing.sm,
+    },
+    storeList: {
+      maxHeight: 220,
+    },
+    storeChoice: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+      marginBottom: spacing.sm,
+    },
+    storeChoiceSelected: {
+      borderWidth: 2,
+      borderColor: colors.primary,
+    },
+    storeChoiceText: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    modalSpacer: {
+      height: 12,
+    },
+    modalList: {
+      maxHeight: 320,
+    },
+    noExpiryText: {
+      fontWeight: fontWeight.black,
+      color: colors.danger,
+    },
+    modalCloseBtn: {
+      marginTop: spacing.lg,
+    },
+    dimmed: {
+      opacity: 0.6,
+    },
+  });
+}

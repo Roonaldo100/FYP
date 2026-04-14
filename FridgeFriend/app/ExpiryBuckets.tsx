@@ -14,11 +14,14 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { modalStyles } from "../styles/modals";
-import { colors, fontSize, fontWeight, radius, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 import { formatDisplayDate, normalizeExpiryDisplay } from "../lib/dateUtils";
 
@@ -187,6 +190,9 @@ export default function ExpiryBuckets() {
     storeName?: string;
     foodTypeId?: string;
   }>();
+
+  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const userId = params.user_id;
   const productId = params.productId;
@@ -648,7 +654,7 @@ export default function ExpiryBuckets() {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.primaryTextOn} />
       ) : (
         <ScrollView
           style={styles.scroll}
@@ -665,6 +671,7 @@ export default function ExpiryBuckets() {
               value={overrideText}
               onChangeText={setOverrideText}
               placeholder="e.g. 3"
+              placeholderTextColor={colors.textLight}
               keyboardType="number-pad"
               style={[formStyles.inputAlt, styles.overrideInput]}
             />
@@ -797,7 +804,7 @@ export default function ExpiryBuckets() {
 
             {changing && (
               <View style={styles.modalLoader}>
-                <ActivityIndicator />
+                <ActivityIndicator color={colors.primaryTextOn} />
               </View>
             )}
           </View>
@@ -827,6 +834,7 @@ export default function ExpiryBuckets() {
               value={qtyInput}
               onChangeText={setQtyInput}
               placeholder="Enter quantity"
+              placeholderTextColor={colors.textLight}
               keyboardType="number-pad"
               style={[formStyles.inputAlt, styles.modalInput]}
               editable={!qtySaving}
@@ -837,7 +845,7 @@ export default function ExpiryBuckets() {
               onPress={saveSetQuantity}
               disabled={qtySaving}
             >
-              {qtySaving ? <ActivityIndicator /> : <Text style={buttonStyles.accentText}>Save</Text>}
+              {qtySaving ? <ActivityIndicator color={colors.text} /> : <Text style={buttonStyles.accentText}>Save</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -871,7 +879,7 @@ export default function ExpiryBuckets() {
             <Text style={styles.modalSub}>Store</Text>
 
             {storesLoading ? (
-              <ActivityIndicator />
+              <ActivityIndicator color={colors.primaryTextOn} />
             ) : (
               <View style={styles.storeListWrap}>
                 <TouchableOpacity
@@ -910,6 +918,7 @@ export default function ExpiryBuckets() {
               value={priceText}
               onChangeText={setPriceText}
               placeholder="e.g. 2.49"
+              placeholderTextColor={colors.textLight}
               keyboardType="decimal-pad"
               style={[formStyles.inputAlt, styles.modalInput]}
               editable={!savingMeta}
@@ -920,7 +929,7 @@ export default function ExpiryBuckets() {
               onPress={saveEditMeta}
               disabled={savingMeta}
             >
-              {savingMeta ? <ActivityIndicator /> : <Text style={buttonStyles.accentText}>Save</Text>}
+              {savingMeta ? <ActivityIndicator color={colors.text} /> : <Text style={buttonStyles.accentText}>Save</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -940,165 +949,167 @@ export default function ExpiryBuckets() {
   );
 }
 
-const styles = StyleSheet.create({
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 22,
-    fontWeight: fontWeight.heavy,
-  },
-  subtitle: {
-    color: colors.primaryTextOn,
-    marginTop: spacing.sm,
-    opacity: 0.9,
-  },
-  headerButtonsRow: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.md,
-    alignItems: "center",
-  },
-  backBtnText: {
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-  },
-  scroll: {
-    width: "100%",
-    marginTop: spacing.md,
-  },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  overrideCard: {
-    marginBottom: spacing.md,
-  },
-  overrideTitle: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  overrideHint: {
-    marginTop: spacing.sm,
-    color: colors.textMuted,
-  },
-  overrideInput: {
-    marginTop: spacing.md,
-    marginBottom: 0,
-  },
-  bucketRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  bucketMain: {
-    flex: 1,
-  },
-  bucketTitle: {
-    color: colors.text,
-    fontWeight: fontWeight.heavy,
-  },
-  qtyTap: {
-    marginTop: spacing.sm,
-    alignSelf: "flex-start",
-    backgroundColor: colors.surfaceAlt,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-  },
-  bucketQty: {
-    color: colors.text,
-    fontWeight: fontWeight.black,
-  },
-  qtyHint: {
-    marginTop: 2,
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-    fontSize: fontSize.xs,
-  },
-  bucketActionsRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    flexWrap: "wrap",
-  },
-  ctrlBtn: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    marginLeft: spacing.md,
-  },
-  ctrlBtnDisabled: {
-    opacity: 0.5,
-  },
-  ctrlBtnText: {
-    fontSize: 18,
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  modalSub: {
-    marginTop: spacing.sm,
-    color: colors.textMuted,
-    fontWeight: fontWeight.bold,
-  },
-  quickTitle: {
-    marginTop: spacing.lg,
-    fontWeight: fontWeight.heavy,
-    color: colors.text,
-  },
-  quickRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  quickBtn: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  noExpiryText: {
-    fontWeight: fontWeight.black,
-    color: colors.danger,
-  },
-  modalSpacer: {
-    height: 12,
-  },
-  modalList: {
-    maxHeight: 320,
-  },
-  modalLoader: {
-    marginTop: spacing.md,
-  },
-  modalInput: {
-    marginTop: spacing.lg,
-    marginBottom: 0,
-  },
-  modalCloseBtn: {
-    marginTop: spacing.lg,
-  },
-  dimmed: {
-    opacity: 0.6,
-  },
-  storeListWrap: {
-    marginTop: spacing.sm,
-  },
-  storeList: {
-    maxHeight: 220,
-  },
-  storeChoice: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  storeChoiceSelected: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  storeChoiceText: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  modalSubSpacing: {
-    marginTop: spacing.lg,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 22,
+      fontWeight: fontWeight.heavy,
+    },
+    subtitle: {
+      color: colors.primaryTextOn,
+      marginTop: spacing.sm,
+      opacity: 0.9,
+    },
+    headerButtonsRow: {
+      flexDirection: "row",
+      gap: spacing.md,
+      marginTop: spacing.md,
+      alignItems: "center",
+    },
+    backBtnText: {
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+    },
+    scroll: {
+      width: "100%",
+      marginTop: spacing.md,
+    },
+    scrollContent: {
+      paddingBottom: 30,
+    },
+    overrideCard: {
+      marginBottom: spacing.md,
+    },
+    overrideTitle: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    overrideHint: {
+      marginTop: spacing.sm,
+      color: colors.textMuted,
+    },
+    overrideInput: {
+      marginTop: spacing.md,
+      marginBottom: 0,
+    },
+    bucketRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.md,
+    },
+    bucketMain: {
+      flex: 1,
+    },
+    bucketTitle: {
+      color: colors.text,
+      fontWeight: fontWeight.heavy,
+    },
+    qtyTap: {
+      marginTop: spacing.sm,
+      alignSelf: "flex-start",
+      backgroundColor: colors.surfaceAlt,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.md,
+    },
+    bucketQty: {
+      color: colors.text,
+      fontWeight: fontWeight.black,
+    },
+    qtyHint: {
+      marginTop: 2,
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+      fontSize: fontSize.xs,
+    },
+    bucketActionsRow: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      marginTop: spacing.md,
+      flexWrap: "wrap",
+    },
+    ctrlBtn: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.sm,
+      marginLeft: spacing.md,
+    },
+    ctrlBtnDisabled: {
+      opacity: 0.5,
+    },
+    ctrlBtnText: {
+      fontSize: 18,
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    modalSub: {
+      marginTop: spacing.sm,
+      color: colors.textMuted,
+      fontWeight: fontWeight.bold,
+    },
+    quickTitle: {
+      marginTop: spacing.lg,
+      fontWeight: fontWeight.heavy,
+      color: colors.text,
+    },
+    quickRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+      marginTop: spacing.sm,
+    },
+    quickBtn: {
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+    },
+    noExpiryText: {
+      fontWeight: fontWeight.black,
+      color: colors.danger,
+    },
+    modalSpacer: {
+      height: 12,
+    },
+    modalList: {
+      maxHeight: 320,
+    },
+    modalLoader: {
+      marginTop: spacing.md,
+    },
+    modalInput: {
+      marginTop: spacing.lg,
+      marginBottom: 0,
+    },
+    modalCloseBtn: {
+      marginTop: spacing.lg,
+    },
+    dimmed: {
+      opacity: 0.6,
+    },
+    storeListWrap: {
+      marginTop: spacing.sm,
+    },
+    storeList: {
+      maxHeight: 220,
+    },
+    storeChoice: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+      marginBottom: spacing.sm,
+    },
+    storeChoiceSelected: {
+      borderWidth: 2,
+      borderColor: colors.primary,
+    },
+    storeChoiceText: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    modalSubSpacing: {
+      marginTop: spacing.lg,
+    },
+  });
+}

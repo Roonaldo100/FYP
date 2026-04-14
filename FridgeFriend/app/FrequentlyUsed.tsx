@@ -12,9 +12,13 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 type FrequentRow = {
   product_id: number;
@@ -35,6 +39,9 @@ export default function FrequentlyUsed() {
   const router = useRouter();
   const params = useLocalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidId(params.user_id), [params.user_id]);
+
+  const { colors, commonStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<FrequentRow[]>([]);
@@ -209,78 +216,83 @@ export default function FrequentlyUsed() {
         />
       )}
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity
+        style={[buttonStyles.base, buttonStyles.light, styles.backBtn]}
+        onPress={() => router.back()}
+      >
         <Text style={styles.backText}>← Back</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 18,
-    fontWeight: fontWeight.black,
-    marginBottom: spacing.lg,
-  },
-  listContent: {
-    paddingBottom: spacing.xxxl,
-  },
-  row: {
-    marginBottom: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  rowMain: {
-    flex: 1,
-  },
-  name: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-  },
-  meta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.xs,
-  },
-  subMeta: {
-    marginTop: spacing.xs,
-    color: "#777",
-    fontWeight: fontWeight.medium,
-    fontSize: 11,
-  },
-  actions: {
-    alignItems: "flex-end",
-    gap: spacing.sm,
-  },
-  addBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  addText: {
-    fontWeight: fontWeight.black,
-    color: colors.primary,
-  },
-  disabledBtn: {
-    opacity: 0.5,
-  },
-  disabledDeleteBtn: {
-    opacity: 0.6,
-  },
-  empty: {
-    color: colors.primaryTextOn,
-    opacity: 0.9,
-    marginTop: spacing.md,
-    fontWeight: fontWeight.heavy,
-  },
-  backBtn: {
-    marginTop: spacing.md,
-    alignSelf: "flex-start",
-  },
-  backText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.black,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 18,
+      fontWeight: fontWeight.black,
+      marginBottom: spacing.lg,
+    },
+    listContent: {
+      paddingBottom: spacing.xxxl,
+    },
+    row: {
+      marginBottom: spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    rowMain: {
+      flex: 1,
+    },
+    name: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+    },
+    meta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontWeight: fontWeight.bold,
+      fontSize: fontSize.xs,
+    },
+    subMeta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontWeight: fontWeight.medium,
+      fontSize: 11,
+    },
+    actions: {
+      alignItems: "flex-end",
+      gap: spacing.sm,
+    },
+    addBtn: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 6,
+    },
+    addText: {
+      fontWeight: fontWeight.black,
+      color: colors.primary,
+    },
+    disabledBtn: {
+      opacity: 0.5,
+    },
+    disabledDeleteBtn: {
+      opacity: 0.6,
+    },
+    empty: {
+      color: colors.primaryTextOn,
+      opacity: 0.9,
+      marginTop: spacing.md,
+      fontWeight: fontWeight.heavy,
+    },
+    backBtn: {
+      marginTop: spacing.md,
+      alignSelf: "flex-start",
+    },
+    backText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+  });
+}

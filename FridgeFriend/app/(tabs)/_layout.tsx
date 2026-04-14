@@ -3,17 +3,24 @@ import { Tabs, useLocalSearchParams } from "expo-router";
 
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Colors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useTheme } from "../../lib/theme";
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { colors } = useTheme();
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.borderSoft,
+        },
+        sceneStyle: {
+          backgroundColor: colors.surfaceMuted,
+        },
         headerShown: false,
         tabBarButton: HapticTab,
       }}

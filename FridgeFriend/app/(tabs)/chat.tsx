@@ -14,14 +14,16 @@ import {
 } from "react-native";
 import { useGlobalSearchParams } from "expo-router";
 import { API_BASE_URL } from "../../config/apiConfig";
-import { commonStyles } from "../../styles/common";
-import { formStyles } from "../../styles/forms";
-import { buttonStyles } from "../../styles/buttons";
-import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
+import { useAppStyles } from "../../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  type AppColors,
+} from "../../styles/tokens";
 
 type ChatRole = "user" | "assistant";
-
-//type RecipeIngredient = string | { name: string; productId?: number | null };
 
 type NutritionSummary = {
   calories: number | null;
@@ -59,10 +61,12 @@ export default function ChatTab() {
   const params = useGlobalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidUserId(params.user_id), [params.user_id]);
 
-  //initial message given to the user
+  const { colors, commonStyles, formStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      id: "seed-1", //for persistence
+      id: "seed-1",
       role: "assistant",
       text:
         'Ask for a dish like "apple pie". I’ll fetch its ingredients and compare them to your inventory.',
@@ -72,7 +76,7 @@ export default function ChatTab() {
   const [loading, setLoading] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
-  const listRef = useRef<FlatList<ChatMessage>>(null); //useRef allows for later auto-scroll to bottom mechanics n
+  const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const appendMessage = (msg: ChatMessage) => {
     setMessages((prev) => [...prev, msg]);
@@ -249,14 +253,15 @@ export default function ChatTab() {
                       disabled={saving}
                       style={[
                         buttonStyles.base,
+                        buttonStyles.primary,
                         styles.actionButton,
-                        saving ? styles.disabledDarkButton : styles.darkButton,
+                        saving && styles.disabledButton,
                       ]}
                     >
                       {saving ? (
                         <ActivityIndicator color={colors.primaryTextOn} />
                       ) : (
-                        <Text style={styles.darkButtonText}>Save</Text>
+                        <Text style={buttonStyles.primaryText}>Save</Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -288,6 +293,7 @@ export default function ChatTab() {
           value={input}
           onChangeText={setInput}
           placeholder='Try: "I want to make an apple pie"'
+          placeholderTextColor={colors.textLight}
           style={[formStyles.inputAlt, styles.input]}
           editable={!loading}
           onSubmitEditing={onSend}
@@ -299,14 +305,15 @@ export default function ChatTab() {
           disabled={loading}
           style={[
             buttonStyles.base,
+            buttonStyles.primary,
             styles.sendButton,
-            loading ? styles.disabledDarkButton : styles.darkButton,
+            loading && styles.disabledButton,
           ]}
         >
           {loading ? (
             <ActivityIndicator color={colors.primaryTextOn} />
           ) : (
-            <Text style={styles.darkButtonText}>Send</Text>
+            <Text style={buttonStyles.primaryText}>Send</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -314,96 +321,91 @@ export default function ChatTab() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surfaceMuted,
-  },
-  listContent: {
-    padding: spacing.xl,
-    paddingBottom: 90,
-  },
-  messageWrap: {
-    paddingVertical: spacing.sm,
-  },
-  bubble: {
-    padding: spacing.xl,
-    borderRadius: radius.lg,
-    maxWidth: "85%",
-  },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: "#DCF8C6",
-  },
-  assistantBubble: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.surfaceAlt,
-  },
-  bubbleText: {
-    fontSize: fontSize.md,
-    color: colors.text,
-  },
-  recipeList: {
-    marginTop: spacing.md,
-    gap: spacing.md,
-  },
-  recipeCard: {
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  recipeTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.medium,
-    color: colors.text,
-  },
-  recipeMeta: {
-    marginTop: spacing.sm,
-    fontSize: fontSize.sm,
-    color: colors.text,
-  },
-  linkText: {
-    marginTop: spacing.sm,
-    fontSize: fontSize.xs,
-    color: "#1a73e8",
-    textDecorationLine: "underline",
-  },
-  recipeActions: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.md,
-  },
-  actionButton: {
-    paddingHorizontal: spacing.lg,
-  },
-  inputBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSoft,
-    backgroundColor: colors.surface,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  input: {
-    flex: 1,
-    marginBottom: 0,
-    fontSize: fontSize.md,
-  },
-  sendButton: {
-    paddingHorizontal: spacing.xl,
-  },
-  darkButton: {
-    backgroundColor: "#111",
-  },
-  disabledDarkButton: {
-    backgroundColor: "#ccc",
-  },
-  darkButtonText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.medium,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.surfaceMuted,
+    },
+    listContent: {
+      padding: spacing.xl,
+      paddingBottom: 90,
+    },
+    messageWrap: {
+      paddingVertical: spacing.sm,
+    },
+    bubble: {
+      padding: spacing.xl,
+      borderRadius: radius.lg,
+      maxWidth: "85%",
+    },
+    userBubble: {
+      alignSelf: "flex-end",
+      backgroundColor: colors.accent,
+    },
+    assistantBubble: {
+      alignSelf: "flex-start",
+      backgroundColor: colors.surfaceAlt,
+    },
+    bubbleText: {
+      fontSize: fontSize.md,
+      color: colors.text,
+    },
+    recipeList: {
+      marginTop: spacing.md,
+      gap: spacing.md,
+    },
+    recipeCard: {
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    recipeTitle: {
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.medium,
+      color: colors.text,
+    },
+    recipeMeta: {
+      marginTop: spacing.sm,
+      fontSize: fontSize.sm,
+      color: colors.text,
+    },
+    linkText: {
+      marginTop: spacing.sm,
+      fontSize: fontSize.xs,
+      color: colors.accent,
+      textDecorationLine: "underline",
+    },
+    recipeActions: {
+      flexDirection: "row",
+      gap: spacing.md,
+      marginTop: spacing.md,
+    },
+    actionButton: {
+      paddingHorizontal: spacing.lg,
+    },
+    inputBar: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      padding: spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSoft,
+      backgroundColor: colors.surface,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    input: {
+      flex: 1,
+      marginBottom: 0,
+      fontSize: fontSize.md,
+    },
+    sendButton: {
+      paddingHorizontal: spacing.xl,
+    },
+    disabledButton: {
+      opacity: 0.6,
+    },
+  });
+}

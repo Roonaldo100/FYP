@@ -1,27 +1,31 @@
+// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\BarcodeScanner.tsx
 import {
   BarcodeScanningResult,
   CameraView,
   useCameraPermissions,
 } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Button,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
 import { registerForLocalNotificationsAsync } from "../lib/notifications";
-import { commonStyles } from "../styles/common";
-import { colors, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import { spacing, fontWeight, type AppColors } from "../styles/tokens";
 
 export default function BarcodeScanner() {
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
   const router = useRouter();
+
+  const { colors, commonStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -30,7 +34,7 @@ export default function BarcodeScanner() {
   useEffect(() => {
     if (!permission) return;
     if (!permission.granted) requestPermission();
-  }, [permission]);
+  }, [permission, requestPermission]);
 
   useEffect(() => {
     registerForLocalNotificationsAsync().catch(() => {});
@@ -109,7 +113,7 @@ export default function BarcodeScanner() {
   if (!permission) {
     return (
       <View style={commonStyles.centered}>
-        <Text>Requesting camera permission…</Text>
+        <Text style={styles.infoText}>Requesting camera permission…</Text>
       </View>
     );
   }
@@ -117,9 +121,14 @@ export default function BarcodeScanner() {
   if (!permission.granted) {
     return (
       <View style={commonStyles.centered}>
-        <Text>No access to camera.</Text>
+        <Text style={styles.infoText}>No access to camera.</Text>
         <View style={styles.permissionButtonWrap}>
-          <Button title="Grant Permission" onPress={requestPermission} />
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.accent]}
+            onPress={requestPermission}
+          >
+            <Text style={buttonStyles.accentText}>Grant Permission</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -144,23 +153,38 @@ export default function BarcodeScanner() {
 
       {scanned && (
         <View style={styles.scanAgainContainer}>
-          <Button title="Scan Again" onPress={() => setScanned(false)} />
+          <TouchableOpacity
+            style={[buttonStyles.base, buttonStyles.light]}
+            onPress={() => setScanned(false)}
+          >
+            <Text style={styles.scanAgainText}>Scan Again</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  permissionButtonWrap: {
-    marginTop: spacing.md,
-  },
-  scanAgainContainer: {
-    position: "absolute",
-    bottom: 40,
-    alignSelf: "center",
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    infoText: {
+      color: colors.text,
+      fontWeight: fontWeight.medium,
+    },
+    permissionButtonWrap: {
+      marginTop: spacing.md,
+    },
+    scanAgainContainer: {
+      position: "absolute",
+      bottom: 40,
+      alignSelf: "center",
+    },
+    scanAgainText: {
+      color: colors.primary,
+      fontWeight: fontWeight.black,
+    },
+  });
+}

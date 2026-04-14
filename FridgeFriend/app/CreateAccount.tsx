@@ -1,5 +1,6 @@
+// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\CreateAccount.tsx
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,13 +12,19 @@ import {
 } from "react-native";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontSize, fontWeight, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import {
+  fontSize,
+  fontWeight,
+  spacing,
+  type AppColors,
+} from "../styles/tokens";
 
 export default function CreateAccount() {
   const router = useRouter();
+  const { colors, commonStyles, formStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -117,40 +124,44 @@ export default function CreateAccount() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    ...commonStyles.screenPrimary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 26,
-    fontWeight: fontWeight.bold,
-    marginBottom: 30,
-  },
-  input: {
-    width: "80%",
-    height: 50,
-    marginVertical: spacing.md,
-    marginBottom: 0,
-  },
-  createButton: {
-    marginTop: spacing.xxxl,
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-  },
-  createButtonText: {
-    fontSize: 18,
-    fontWeight: fontWeight.medium,
-    color: colors.text,
-  },
-  linkBtn: {
-    marginTop: spacing.xxl,
-  },
-  linkText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.heavy,
-    textDecorationLine: "underline",
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: spacing.xl,
+    },
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 26,
+      fontWeight: fontWeight.bold,
+      marginBottom: 30,
+    },
+    input: {
+      width: "80%",
+      height: 50,
+      marginVertical: spacing.md,
+      marginBottom: 0,
+    },
+    createButton: {
+      marginTop: spacing.xxxl,
+      paddingVertical: 15,
+      paddingHorizontal: 40,
+    },
+    createButtonText: {
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.medium,
+      color: colors.text,
+    },
+    linkBtn: {
+      marginTop: spacing.xxl,
+    },
+    linkText: {
+      color: colors.primaryTextOn,
+      fontWeight: fontWeight.heavy,
+      textDecorationLine: "underline",
+    },
+  });
+}

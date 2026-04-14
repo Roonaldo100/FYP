@@ -10,11 +10,10 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect, useGlobalSearchParams, useRouter } from "expo-router";
+
 import { API_BASE_URL } from "../../config/apiConfig";
-import { commonStyles } from "../../styles/common";
-import { formStyles } from "../../styles/forms";
-import { buttonStyles } from "../../styles/buttons";
-import { colors, fontSize, fontWeight, spacing } from "../../styles/tokens";
+import { useAppStyles } from "../../lib/useAppStyles";
+import { fontSize, fontWeight, spacing } from "../../styles/tokens";
 
 function toValidUserId(v: unknown): number | null {
   const n = Number(v);
@@ -28,10 +27,15 @@ type ListRow = {
   updated_at?: string;
 };
 
+const MAX_SHOPPING_LIST_NAME_LENGTH = 40;
+
 export default function ShoppingTab() {
   const params = useGlobalSearchParams<{ user_id?: string }>();
   const userId = useMemo(() => toValidUserId(params.user_id), [params.user_id]);
   const router = useRouter();
+
+  const { colors, commonStyles, formStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(false);
   const [lists, setLists] = useState<ListRow[]>([]);
@@ -39,10 +43,12 @@ export default function ShoppingTab() {
 
   const loadLists = useCallback(async () => {
     if (!userId) return;
+
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/user/${userId}/shoppingLists`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
       const data: ListRow[] = await res.json();
       setLists(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -60,15 +66,16 @@ export default function ShoppingTab() {
     }, [loadLists])
   );
 
-  const MAX_SHOPPING_LIST_NAME_LENGTH = 40;
-
   const createList = async () => {
     if (!userId) return;
+
     const name = newName.trim();
+
     if (!name) {
       Alert.alert("Missing name", "Enter a list name.");
       return;
     }
+
     if (name.length > MAX_SHOPPING_LIST_NAME_LENGTH) {
       Alert.alert(
         "Name too long",
@@ -79,18 +86,20 @@ export default function ShoppingTab() {
 
     try {
       setLoading(true);
+
       const res = await fetch(`${API_BASE_URL}/user/${userId}/shoppingLists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
 
-      //avoids crashing if JSON parsing fails.
       const text = await res.text().catch(() => "");
       let data: any = null;
       try {
         data = JSON.parse(text);
-      } catch {}
+      } catch {
+        data = null;
+      }
 
       if (!res.ok) {
         Alert.alert("Error", data?.message || "Could not create list.");
@@ -117,6 +126,7 @@ export default function ShoppingTab() {
 
   const openList = (l: ListRow) => {
     if (!userId) return;
+
     router.push({
       pathname: "../ShoppingListDetail",
       params: { user_id: String(userId), listId: String(l.id) },
@@ -125,6 +135,7 @@ export default function ShoppingTab() {
 
   const deleteList = (l: ListRow) => {
     if (!userId) return;
+
     Alert.alert("Delete list?", `Delete "${l.name}"?`, [
       { text: "Cancel", style: "cancel" },
       {
@@ -133,13 +144,19 @@ export default function ShoppingTab() {
         onPress: async () => {
           try {
             setLoading(true);
-            const res = await fetch(`${API_BASE_URL}/user/${userId}/shoppingLists/${l.id}`, {
-              method: "DELETE",
-            });
+
+            const res = await fetch(
+              `${API_BASE_URL}/user/${userId}/shoppingLists/${l.id}`,
+              {
+                method: "DELETE",
+              }
+            );
+
             if (!res.ok) {
               const t = await res.text().catch(() => "");
               throw new Error(t || `HTTP ${res.status}`);
             }
+
             await loadLists();
           } catch (e) {
             console.warn(e);
@@ -163,6 +180,7 @@ export default function ShoppingTab() {
           value={newName}
           onChangeText={setNewName}
           placeholder="e.g. Weekly shop"
+          placeholderTextColor={colors.textMuted}
           style={[formStyles.inputAlt, styles.input]}
         />
 
@@ -180,7 +198,7 @@ export default function ShoppingTab() {
       </View>
 
       {loading ? (
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.primary} />
       ) : (
         <FlatList
           data={lists}
@@ -210,66 +228,75 @@ export default function ShoppingTab() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surfaceMuted,
-    padding: spacing.xl,
-    paddingTop: 18,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: fontWeight.heavy,
-    color: colors.text,
-  },
-  card: {
-    marginTop: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  cardTitle: {
-    fontWeight: fontWeight.heavy,
-    marginBottom: spacing.sm,
-    color: colors.text,
-  },
-  input: {
-    marginBottom: 0,
-  },
-  primaryDarkButton: {
-    marginTop: spacing.md,
-    backgroundColor: "#111",
-  },
-  primaryDarkButtonText: {
-    color: colors.primaryTextOn,
-    fontWeight: fontWeight.heavy,
-  },
-  listContent: {
-    paddingBottom: spacing.xxxl,
-  },
-  row: {
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  rowMain: {
-    flex: 1,
-  },
-  rowTitle: {
-    fontWeight: fontWeight.heavy,
-    fontSize: fontSize.md,
-    color: colors.text,
-  },
-  rowMeta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-  },
-  empty: {
-    marginTop: spacing.xxxl,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-});
+function makeStyles(colors: {
+  surfaceMuted: string;
+  text: string;
+  borderSoft: string;
+  primaryTextOn: string;
+  textMuted: string;
+  surfaceAlt: string;
+}) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.surfaceMuted,
+      padding: spacing.xl,
+      paddingTop: 18,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: fontWeight.heavy,
+      color: colors.text,
+    },
+    card: {
+      marginTop: spacing.lg,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+    },
+    cardTitle: {
+      fontWeight: fontWeight.heavy,
+      marginBottom: spacing.sm,
+      color: colors.text,
+    },
+    input: {
+      marginBottom: 0,
+    },
+    primaryDarkButton: {
+      marginTop: spacing.md,
+      backgroundColor: colors.text,
+    },
+    primaryDarkButtonText: {
+      color: colors.primaryTextOn,
+      fontWeight: fontWeight.heavy,
+    },
+    listContent: {
+      paddingBottom: spacing.xxxl,
+    },
+    row: {
+      marginTop: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+    },
+    rowMain: {
+      flex: 1,
+    },
+    rowTitle: {
+      fontWeight: fontWeight.heavy,
+      fontSize: fontSize.md,
+      color: colors.text,
+    },
+    rowMeta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    empty: {
+      marginTop: spacing.xxxl,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
+  });
+}

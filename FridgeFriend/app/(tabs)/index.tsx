@@ -17,16 +17,18 @@ import {
   registerForLocalNotificationsAsync,
   sendExpiryNotification,
 } from "../../lib/notifications";
-
-import { commonStyles } from "../../styles/common";
-import { buttonStyles } from "../../styles/buttons";
-import { colors, fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
-
+import { useAppStyles } from "../../lib/useAppStyles";
 import { formatDisplayDate } from "../../lib/dateUtils";
+import { fontSize, fontWeight, radius, spacing } from "../../styles/tokens";
 
-//types define the data shape
+// types define the data shape
 type Category = { id: number; name: string };
-type FoodType = { id: number; name: string; category: number; product_count?: number; };
+type FoodType = {
+  id: number;
+  name: string;
+  category: number;
+  product_count?: number;
+};
 type UserProduct = {
   product_id: number;
   product_name: string;
@@ -51,11 +53,13 @@ export default function Home() {
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
   const router = useRouter();
 
+  const { colors, commonStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   if (!user_id) {
     return <Redirect href="/LoginScreen" />;
   }
 
-  //create a state variable called "categories" (with a setter "setCategories") that stores a list of Category objects, initially empty
   const [categories, setCategories] = useState<Category[]>([]);
   const [foodTypes, setFoodTypes] = useState<FoodType[]>([]);
   const [userProducts, setUserProducts] = useState<UserProduct[]>([]);
@@ -79,7 +83,6 @@ export default function Home() {
     }
   }, [user_id]);
 
-  //reload on refresh
   useFocusEffect(
     useCallback(() => {
       loadCategories();
@@ -89,7 +92,6 @@ export default function Home() {
   const pollPendingNotifications = useCallback(async () => {
     if (!user_id) return;
 
-    //check that user affirmed notifications
     const ok = await registerForLocalNotificationsAsync();
     if (!ok) return;
 
@@ -104,7 +106,6 @@ export default function Home() {
         effective_period_days: number;
       }[] = await resp.json();
 
-      // send the notification and update expiry flag
       for (const row of rows) {
         await sendExpiryNotification(row.product_name, Number(row.days_left));
 
@@ -138,13 +139,11 @@ export default function Home() {
   };
 
   const handleCategoryPress = async (category: Category) => {
-    // select the tapped category and clean up for previously selected
     setLoading(true);
     setSelectedCategory(category);
     setSelectedFoodType(null);
     setUserProducts([]);
 
-    // fetch subsections for category
     try {
       const res = await fetch(`${API_BASE_URL}/categories/${category.id}/food?userId=${user_id}`);
       const data = await res.json();
@@ -181,7 +180,6 @@ export default function Home() {
         setLoading(false);
       }
     },
-    //dependency array: only callback if one changes
     [user_id, router, pollPendingNotifications]
   );
 
@@ -193,7 +191,6 @@ export default function Home() {
     }, [selectedFoodType, handleFoodTypePress])
   );
 
-  //clean backpress to products
   const handleBackPress = async () => {
     if (selectedFoodType) {
       setSelectedFoodType(null);
@@ -275,16 +272,16 @@ export default function Home() {
   };
 
   const openEditProduct = (prod: UserProduct) => {
-  if (!user_id) return;
+    if (!user_id) return;
 
-  router.push({
-    pathname: "../EditProduct",
-    params: {
-      user_id: String(user_id),
-      product_id: String(prod.product_id),
-    },
-  });
-};
+    router.push({
+      pathname: "../EditProduct",
+      params: {
+        user_id: String(user_id),
+        product_id: String(prod.product_id),
+      },
+    });
+  };
 
   const loadExpiringSoon = useCallback(async () => {
     if (!user_id) return;
@@ -307,7 +304,6 @@ export default function Home() {
     }, [loadExpiringSoon])
   );
 
-  //page title creator
   const title = useMemo(() => {
     if (selectedFoodType) return `${selectedFoodType.name} (Your Items)`;
     if (selectedCategory) return `${selectedCategory.name} Types`;
@@ -315,7 +311,6 @@ export default function Home() {
   }, [selectedCategory, selectedFoodType]);
 
   const renderButtons = (
-    //unique string identifier, text on button, optional count
     items: { key: string; label: string; count?: number }[],
     onPress: (key: string) => void
   ) => (
@@ -482,144 +477,144 @@ export default function Home() {
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    width: "100%",
-  },
-  scrollContent: {
-    alignItems: "center",
-    paddingTop: spacing.xxxl,
-    paddingBottom: 40,
-  },
-  topRow: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  topButton: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
-  topButtonText: {
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-    fontSize: fontSize.sm,
-  },
-  title: {
-    marginBottom: spacing.xxxl,
-    textAlign: "center",
-  },
-  actionButton: {
-    marginBottom: 15,
-    paddingHorizontal: spacing.xxxl,
-  },
-  actionButtonText: {
-    color: colors.primary,
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    width: 320,
-  },
-  gridButtonText: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: fontWeight.medium,
-    textAlign: "center",
-  },
-  productCard: {
-    backgroundColor: colors.surface,
-    width: 150,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    margin: 5,
-    alignItems: "center",
-  },
-  productName: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-    textAlign: "center",
-  },
-  productDetails: {
-    fontSize: fontSize.sm,
-    color: "#555",
-    textAlign: "center",
-  },
-  tapHint: {
-    marginTop: spacing.sm,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-    color: colors.primary,
-    textAlign: "center",
-  },
-  backButton: {
-    marginTop: spacing.xxxl,
-  },
-  backButtonText: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-  },
-  soonCard: {
-    width: "100%",
-    maxWidth: 360,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.xl,
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
-  },
-  soonHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  soonTitle: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-    fontSize: fontSize.md,
-  },
-  soonCount: {
-    fontWeight: fontWeight.black,
-    color: colors.text,
-    fontSize: 18,
-    backgroundColor: colors.accent,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-  },
-  soonHint: {
-    marginTop: spacing.sm,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-  },
-  typeButton: {
-  position: "relative",
-},
-
-countBadge: {
-  position: "absolute",
-  top: 8,
-  right: 8,
-  minWidth: 26,
-  height: 26,
-  borderRadius: 13,
-  backgroundColor: colors.surface,
-  alignItems: "center",
-  justifyContent: "center",
-  paddingHorizontal: 6,
-},
-
-countBadgeText: {
-  color: colors.text,
-  fontSize: fontSize.xs,
-  fontWeight: fontWeight.black,
-},
-});
+function makeStyles(colors: any) {
+  return StyleSheet.create({
+    scroll: {
+      flex: 1,
+      width: "100%",
+    },
+    scrollContent: {
+      alignItems: "center",
+      paddingTop: spacing.xxxl,
+      paddingBottom: 40,
+    },
+    topRow: {
+      width: "100%",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: spacing.sm,
+    },
+    topButton: {
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xl,
+    },
+    topButtonText: {
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+      fontSize: fontSize.sm,
+    },
+    title: {
+      marginBottom: spacing.xxxl,
+      textAlign: "center",
+    },
+    actionButton: {
+      marginBottom: 15,
+      paddingHorizontal: spacing.xxxl,
+    },
+    actionButtonText: {
+      color: colors.primary,
+      fontWeight: fontWeight.bold,
+      fontSize: fontSize.md,
+    },
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      width: 320,
+    },
+    gridButtonText: {
+      color: colors.text,
+      fontSize: 18,
+      fontWeight: fontWeight.medium,
+      textAlign: "center",
+    },
+    productCard: {
+      backgroundColor: colors.surface,
+      width: 150,
+      borderRadius: radius.md,
+      padding: spacing.md,
+      margin: 5,
+      alignItems: "center",
+    },
+    productName: {
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.bold,
+      color: colors.text,
+      textAlign: "center",
+    },
+    productDetails: {
+      fontSize: fontSize.sm,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
+    tapHint: {
+      marginTop: spacing.sm,
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.bold,
+      color: colors.primary,
+      textAlign: "center",
+    },
+    backButton: {
+      marginTop: spacing.xxxl,
+    },
+    backButtonText: {
+      color: colors.primary,
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.bold,
+    },
+    soonCard: {
+      width: "100%",
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.xl,
+      marginTop: spacing.md,
+      marginBottom: spacing.md,
+    },
+    soonHeaderRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    soonTitle: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+      fontSize: fontSize.md,
+    },
+    soonCount: {
+      fontWeight: fontWeight.black,
+      color: colors.text,
+      fontSize: 18,
+      backgroundColor: colors.accent,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.pill,
+    },
+    soonHint: {
+      marginTop: spacing.sm,
+      color: colors.textMuted,
+      fontSize: fontSize.xs,
+    },
+    typeButton: {
+      position: "relative",
+    },
+    countBadge: {
+      position: "absolute",
+      top: 8,
+      right: 8,
+      minWidth: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: colors.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 6,
+    },
+    countBadgeText: {
+      color: colors.text,
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.black,
+    },
+  });
+}

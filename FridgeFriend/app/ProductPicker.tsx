@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,10 +11,8 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { API_BASE_URL } from "../config/apiConfig";
 
-import { commonStyles } from "../styles/common";
-import { formStyles } from "../styles/forms";
-import { buttonStyles } from "../styles/buttons";
-import { colors, fontWeight, spacing } from "../styles/tokens";
+import { useAppStyles } from "../lib/useAppStyles";
+import { fontWeight, spacing, type AppColors } from "../styles/tokens";
 
 type ProductRow = {
   id: number;
@@ -27,6 +25,9 @@ type ProductRow = {
 export default function ProductPicker() {
   const router = useRouter();
   const { user_id } = useLocalSearchParams<{ user_id?: string }>();
+
+  const { colors, commonStyles, formStyles, buttonStyles } = useAppStyles();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [q, setQ] = useState("");
   const [items, setItems] = useState<ProductRow[]>([]);
@@ -145,21 +146,27 @@ export default function ProductPicker() {
         value={q}
         onChangeText={setQ}
         placeholder="Search products…"
+        placeholderTextColor={colors.textLight}
         style={[formStyles.input, styles.search]}
         autoCapitalize="none"
       />
 
       {loading ? (
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.primaryTextOn} />
       ) : (
         <FlatList
           data={items}
           keyExtractor={(it) => String(it.id)}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.6}
-          ListFooterComponent={loadingMore ? <ActivityIndicator /> : null}
+          ListFooterComponent={
+            loadingMore ? <ActivityIndicator color={colors.primaryTextOn} /> : null
+          }
           renderItem={({ item }) => (
-            <TouchableOpacity style={[commonStyles.card, styles.row]} onPress={() => onPick(item)}>
+            <TouchableOpacity
+              style={[commonStyles.card, styles.row]}
+              onPress={() => onPick(item)}
+            >
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.meta}>
                 {item.owner_user_id ? "Your product" : "System product"}
@@ -179,40 +186,42 @@ export default function ProductPicker() {
   );
 }
 
-const styles = StyleSheet.create({
-  title: {
-    color: colors.primaryTextOn,
-    fontSize: 22,
-    fontWeight: fontWeight.heavy,
-    marginBottom: spacing.lg,
-  },
-  manualBtn: {
-    marginBottom: spacing.lg,
-  },
-  manualBtnText: {
-    color: colors.text,
-    fontWeight: fontWeight.black,
-  },
-  search: {
-    marginBottom: spacing.lg,
-  },
-  row: {
-    marginBottom: spacing.md,
-  },
-  name: {
-    fontWeight: fontWeight.heavy,
-    color: colors.text,
-  },
-  meta: {
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-  },
-  backBtn: {
-    marginTop: spacing.sm,
-    alignSelf: "flex-start",
-  },
-  backText: {
-    color: colors.primary,
-    fontWeight: fontWeight.heavy,
-  },
-});
+function makeStyles(colors: AppColors) {
+  return StyleSheet.create({
+    title: {
+      color: colors.primaryTextOn,
+      fontSize: 22,
+      fontWeight: fontWeight.heavy,
+      marginBottom: spacing.lg,
+    },
+    manualBtn: {
+      marginBottom: spacing.lg,
+    },
+    manualBtnText: {
+      color: colors.text,
+      fontWeight: fontWeight.black,
+    },
+    search: {
+      marginBottom: spacing.lg,
+    },
+    row: {
+      marginBottom: spacing.md,
+    },
+    name: {
+      fontWeight: fontWeight.heavy,
+      color: colors.text,
+    },
+    meta: {
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+    },
+    backBtn: {
+      marginTop: spacing.sm,
+      alignSelf: "flex-start",
+    },
+    backText: {
+      color: colors.primary,
+      fontWeight: fontWeight.heavy,
+    },
+  });
+}
