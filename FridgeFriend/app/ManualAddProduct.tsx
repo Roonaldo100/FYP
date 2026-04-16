@@ -74,7 +74,6 @@ export default function ManualAddProduct() {
 
   useEffect(() => {
     if (params.prefill_name && !name) setName(String(params.prefill_name));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadCategories = useCallback(async () => {

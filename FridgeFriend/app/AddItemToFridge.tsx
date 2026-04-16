@@ -40,6 +40,17 @@ function formatDateYYYYMMDD(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+function formatDateDDMMYYYYWithDashes(value: string) {
+  const normalized = normalizeExpiryInput(value);
+  if (!normalized) return "";
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) return normalized;
+
+  const [, yyyy, mm, dd] = match;
+  return `${dd}-${mm}-${yyyy}`;
+}
+
 function addDays(base: Date, days: number) {
   const d = new Date(base);
   d.setHours(12, 0, 0, 0);
@@ -54,7 +65,7 @@ function makeNextDaysOptions(count: number) {
 
   for (let i = 0; i < count; i++) {
     const d = addDays(today, i);
-    const v = formatDateYYYYMMDD(d);
+    const iso = formatDateYYYYMMDD(d);
 
     const pretty = d.toLocaleDateString(undefined, {
       weekday: "short",
@@ -63,14 +74,19 @@ function makeNextDaysOptions(count: number) {
       year: "numeric",
     });
 
-    out.push({ key: v, label: pretty, value: v });
+    out.push({
+      key: iso,
+      label: pretty,
+      value: formatDateDDMMYYYYWithDashes(iso),
+    });
   }
   return out;
 }
 
 export default function AddItemToFridge() {
   const router = useRouter();
-  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } = useAppStyles();
+  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } =
+    useAppStyles();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const {
@@ -131,14 +147,15 @@ export default function AddItemToFridge() {
   useEffect(() => {
     if (!scanned_expiry) return;
 
-    const normalized = normalizeExpiryInput(String(scanned_expiry));
-    if (normalized) {
-      setExpiryDate(normalized);
+    const dashed = formatDateDDMMYYYYWithDashes(String(scanned_expiry));
+    if (dashed) {
+      setExpiryDate(dashed);
     }
   }, [scanned_expiry]);
 
   const title = useMemo(() => {
-    const displayName = editableProductName.trim() || product_name || "Unnamed Product";
+    const displayName =
+      editableProductName.trim() || product_name || "Unnamed Product";
     return `Add Item: ${displayName}`;
   }, [editableProductName, product_name]);
 
@@ -176,7 +193,9 @@ export default function AddItemToFridge() {
     const fetchLastPrice = async () => {
       try {
         const res = await fetch(
-          `${API_BASE_URL}/user/${user_id}/product/${product_id}/lastPrice?storeId=${selectedStoreId ?? ""}`
+          `${API_BASE_URL}/user/${user_id}/product/${product_id}/lastPrice?storeId=${
+            selectedStoreId ?? ""
+          }`
         );
 
         if (!res.ok) return;
@@ -238,13 +257,13 @@ export default function AddItemToFridge() {
   };
 
   const setQuickExpiry = (daysFromNow: number) => {
-    const v = formatDateYYYYMMDD(addDays(new Date(), daysFromNow));
-    setExpiryDate(v);
+    const iso = formatDateYYYYMMDD(addDays(new Date(), daysFromNow));
+    setExpiryDate(formatDateDDMMYYYYWithDashes(iso));
     setExpiryMenuOpen(false);
   };
 
   const pickExpiry = (v: string) => {
-    setExpiryDate(v);
+    setExpiryDate(formatDateDDMMYYYYWithDashes(v));
     setExpiryMenuOpen(false);
   };
 
@@ -256,7 +275,9 @@ export default function AddItemToFridge() {
   const changeQuantityBy = (delta: number) => {
     const current = Number(quantityText);
     const safeCurrent =
-      Number.isFinite(current) && Number.isInteger(current) && current > 0 ? current : 1;
+      Number.isFinite(current) && Number.isInteger(current) && current > 0
+        ? current
+        : 1;
     const next = Math.max(1, safeCurrent + delta);
     setQuantityText(String(next));
   };
@@ -284,9 +305,9 @@ export default function AddItemToFridge() {
     }
 
     const resp = await fetch(
-      `${API_BASE_URL}/user/${encodeURIComponent(String(user_id))}/products/${encodeURIComponent(
-        String(product_id)
-      )}`,
+      `${API_BASE_URL}/user/${encodeURIComponent(
+        String(user_id)
+      )}/products/${encodeURIComponent(String(product_id))}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -308,7 +329,8 @@ export default function AddItemToFridge() {
       if (resp.status === 409) {
         Alert.alert(
           "Choose another name",
-          data?.message || "Product name in use already. Please choose another product name."
+          data?.message ||
+            "Product name in use already. Please choose another product name."
         );
         throw new Error("handled_duplicate_name");
       }
@@ -343,7 +365,7 @@ export default function AddItemToFridge() {
       if (!expiryToSend) {
         Alert.alert(
           "Invalid expiry date",
-          "Use YYYY-MM-DD, yyyymmdd, ddmmyyyy, 25/04/26, 25/04/2026, 04 APR 2026, 11.2028, or 31.08."
+          "Use dd-mm-yyyy, ddmmyyyy, YYYY-MM-DD, yyyymmdd, 25/04/26, 25/04/2026, 04 APR 2026, 11.2028, or 31.08."
         );
         return;
       }
@@ -414,7 +436,8 @@ export default function AddItemToFridge() {
           : Number(inserted.days_left);
 
       const effectivePeriodDays =
-        inserted.effective_period_days === null || inserted.effective_period_days === undefined
+        inserted.effective_period_days === null ||
+        inserted.effective_period_days === undefined
           ? null
           : Number(inserted.effective_period_days);
 
@@ -428,10 +451,13 @@ export default function AddItemToFridge() {
           await sendExpiryNotification(trimmedName || product_name || "Item", daysLeft);
 
           if (userProductId) {
-            await fetch(`${API_BASE_URL}/user_products/${userProductId}/markNotified`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            });
+            await fetch(
+              `${API_BASE_URL}/user_products/${userProductId}/markNotified`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              }
+            );
           }
         }
       }
@@ -622,7 +648,7 @@ export default function AddItemToFridge() {
                 onPress={() => setExpiryMenuOpen(true)}
               >
                 <Text style={buttonStyles.secondaryText}>
-                  {expiryDate.trim() ? `Picked: ${formatDisplayDate(expiryDate)}` : "Pick a date"}
+                  {"Pick a date"}
                 </Text>
               </TouchableOpacity>
 
@@ -654,7 +680,7 @@ export default function AddItemToFridge() {
 
             <TextInput
               style={formStyles.inputAlt}
-              placeholder="YYYY-MM-DD, yyyymmdd, 25/04/26, 04 APR 2026, 11.2028, or 31.08"
+              placeholder="Use dd-mm-yyyy"
               placeholderTextColor={colors.textLight}
               value={expiryDate}
               onChangeText={setExpiryDate}
@@ -668,7 +694,7 @@ export default function AddItemToFridge() {
             </Text>
             <TextInput
               style={formStyles.inputAlt}
-              placeholder="Days before expiry to notify (blank = use Settings)"
+              placeholder="Days before expiry to notify"
               placeholderTextColor={colors.textLight}
               keyboardType="number-pad"
               value={expiryPeriodText}
@@ -699,7 +725,9 @@ export default function AddItemToFridge() {
 
             <TouchableOpacity
               style={modalStyles.topAction}
-              onPress={() => pickExpiry(formatDateYYYYMMDD(addDays(new Date(), 0)))}
+              onPress={() =>
+                pickExpiry(formatDateDDMMYYYYWithDashes(formatDateYYYYMMDD(addDays(new Date(), 0))))
+              }
             >
               <Text style={modalStyles.topActionText}>Today</Text>
             </TouchableOpacity>

@@ -156,6 +156,18 @@ router.post("/user_products/changeBucketExpiry", async (req, res) => {
   }
 });
 
+router.post("/user_products/moveByExpiryQuantity", async (req, res) => {
+  try {
+    const result = await inventoryBucketService.moveByExpiryQuantity(req.body);
+    return res.json(result);
+  } catch (err) {
+    console.error("moveByExpiryQuantity error:", err);
+    return res.status(err.statusCode || 500).json({
+      message: err.message || "Server error moving expiry items",
+    });
+  }
+});
+
 /**
  * POST: Update store for a grouped user product (moves all rows), and optionally set last price
  */

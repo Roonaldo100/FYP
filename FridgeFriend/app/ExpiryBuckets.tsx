@@ -87,6 +87,14 @@ function parseNonNegativeInt(s: string): number | null {
   return n;
 }
 
+function parsePositiveInt(s: string): number | null {
+  const t = s.trim();
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
 function parseNonNegativeMoney(s: string): number | null {
   const t = s.trim();
   if (!t) return null;
@@ -116,10 +124,7 @@ function upsertBucketQuantity(
 
   if (idx === -1) {
     if (delta <= 0) return prev;
-    return sortBuckets([
-      ...prev,
-      { expiry_date: exp, quantity: delta },
-    ]);
+    return sortBuckets([...prev, { expiry_date: exp, quantity: delta }]);
   }
 
   const next = [...prev];
@@ -180,6 +185,23 @@ function moveBucketLocally(
   return sortBuckets(next);
 }
 
+function moveBucketQuantityLocally(
+  prev: Bucket[],
+  fromExpiry: string | null,
+  toExpiry: string | null,
+  quantity: number
+): Bucket[] {
+  const fromExp = normalizeExpiryForApi(fromExpiry);
+  const toExp = normalizeExpiryForApi(toExpiry);
+
+  if (quantity <= 0) return prev;
+  if (fromExp === toExp) return prev;
+
+  let next = upsertBucketQuantity(prev, fromExp, -quantity);
+  next = upsertBucketQuantity(next, toExp, quantity);
+  return sortBuckets(next);
+}
+
 export default function ExpiryBuckets() {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -191,7 +213,8 @@ export default function ExpiryBuckets() {
     foodTypeId?: string;
   }>();
 
-  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } = useAppStyles();
+  const { colors, commonStyles, formStyles, buttonStyles, modalStyles } =
+    useAppStyles();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const userId = params.user_id;
@@ -211,6 +234,10 @@ export default function ExpiryBuckets() {
   const [expiryMenuOpen, setExpiryMenuOpen] = useState(false);
   const [editingFromExpiry, setEditingFromExpiry] = useState<string | null>(null);
   const [changing, setChanging] = useState(false);
+
+  const [moveQtyMode, setMoveQtyMode] = useState<"all" | "partial">("all");
+  const [moveQtyInput, setMoveQtyInput] = useState<string>("1");
+  const [moveQtyMax, setMoveQtyMax] = useState<number>(0);
 
   const [qtyModalOpen, setQtyModalOpen] = useState(false);
   const [qtyEditingExpiry, setQtyEditingExpiry] = useState<string | null>(null);
@@ -379,8 +406,11 @@ export default function ExpiryBuckets() {
     );
   };
 
-  const openChangeExpiry = (fromExpiry: string | null) => {
+  const openChangeExpiry = (fromExpiry: string | null, currentQty: number) => {
     setEditingFromExpiry(normalizeExpiryForApi(fromExpiry));
+    setMoveQtyMode("all");
+    setMoveQtyInput("1");
+    setMoveQtyMax(currentQty);
     setExpiryMenuOpen(true);
   };
 
@@ -400,26 +430,63 @@ export default function ExpiryBuckets() {
     try {
       setChanging(true);
 
-      const resp = await fetch(`${API_BASE_URL}/user_products/changeBucketExpiry`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          productId: Number(productId),
-          storeId: storeId === "" ? null : Number(storeId),
-          fromExpiryDate: fromExpiryNorm,
-          toExpiryDate: toExpiryNorm,
-        }),
-      });
+      if (moveQtyMode === "all") {
+        const resp = await fetch(`${API_BASE_URL}/user_products/changeBucketExpiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            productId: Number(productId),
+            storeId: storeId === "" ? null : Number(storeId),
+            fromExpiryDate: fromExpiryNorm,
+            toExpiryDate: toExpiryNorm,
+          }),
+        });
 
-      if (!resp.ok) {
-        const txt = await resp.text().catch(() => "");
-        console.error("changeBucketExpiry failed:", resp.status, txt);
-        Alert.alert("Error", "Could not change expiry for this bucket.");
-        return;
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          console.error("changeBucketExpiry failed:", resp.status, txt);
+          Alert.alert("Error", "Could not change expiry for this bucket.");
+          return;
+        }
+
+        setBuckets((prev) => moveBucketLocally(prev, fromExpiryNorm, toExpiryNorm));
+      } else {
+        const qtyToMove = parsePositiveInt(moveQtyInput);
+        if (qtyToMove === null) {
+          Alert.alert("Invalid quantity", "Enter a whole number greater than 0.");
+          return;
+        }
+        if (qtyToMove > moveQtyMax) {
+          Alert.alert("Invalid quantity", `You can move at most ${moveQtyMax} item(s).`);
+          return;
+        }
+
+        const resp = await fetch(`${API_BASE_URL}/user_products/moveByExpiryQuantity`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            productId: Number(productId),
+            storeId: storeId === "" ? null : Number(storeId),
+            fromExpiryDate: fromExpiryNorm,
+            toExpiryDate: toExpiryNorm,
+            quantity: qtyToMove,
+          }),
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          console.error("moveByExpiryQuantity failed:", resp.status, txt);
+          Alert.alert("Error", "Could not move item(s) to the new expiry date.");
+          return;
+        }
+
+        setBuckets((prev) =>
+          moveBucketQuantityLocally(prev, fromExpiryNorm, toExpiryNorm, qtyToMove)
+        );
       }
 
-      setBuckets((prev) => moveBucketLocally(prev, fromExpiryNorm, toExpiryNorm));
       setExpiryMenuOpen(false);
       setEditingFromExpiry(null);
     } catch (e) {
@@ -530,28 +597,31 @@ export default function ExpiryBuckets() {
     }
   }, [userId]);
 
-  const loadCurrentPrice = useCallback(async (sid: number | null) => {
-    if (!userId || !productId) return;
+  const loadCurrentPrice = useCallback(
+    async (sid: number | null) => {
+      if (!userId || !productId) return;
 
-    try {
-      const url =
-        `${API_BASE_URL}/user/${encodeURIComponent(userId)}/product/${encodeURIComponent(
-          productId
-        )}/lastPrice?storeId=${sid ?? ""}`;
+      try {
+        const url =
+          `${API_BASE_URL}/user/${encodeURIComponent(
+            userId
+          )}/product/${encodeURIComponent(productId)}/lastPrice?storeId=${sid ?? ""}`;
 
-      const res = await fetch(url);
-      if (!res.ok) return;
+        const res = await fetch(url);
+        if (!res.ok) return;
 
-      const data = await res.json();
-      if (data.last_price !== null && data.last_price !== undefined) {
-        setPriceText(String(data.last_price));
-      } else {
-        setPriceText("");
+        const data = await res.json();
+        if (data.last_price !== null && data.last_price !== undefined) {
+          setPriceText(String(data.last_price));
+        } else {
+          setPriceText("");
+        }
+      } catch (e) {
+        console.error("Fetch last price error:", e);
       }
-    } catch (e) {
-      console.error("Fetch last price error:", e);
-    }
-  }, [userId, productId]);
+    },
+    [userId, productId]
+  );
 
   const openEditMeta = async () => {
     const currentSid = storeId === "" ? null : Number(storeId);
@@ -607,7 +677,8 @@ export default function ExpiryBuckets() {
       setEditModalOpen(false);
 
       const newStoreIdStr = data.store_id === null ? "" : String(data.store_id);
-      const newStoreName = data.store_id === null ? "No store" : (data.store_name ?? "Store");
+      const newStoreName =
+        data.store_id === null ? "No store" : data.store_name ?? "Store";
 
       router.replace({
         pathname: "/ExpiryBuckets",
@@ -664,7 +735,8 @@ export default function ExpiryBuckets() {
           <View style={[commonStyles.card, styles.overrideCard]}>
             <Text style={styles.overrideTitle}>Expiry notification override</Text>
             <Text style={styles.overrideHint}>
-              Set days-before-expiry for this product + store. Use 0 (or blank) to follow Settings.
+              Set days-before-expiry for this product + store. Use 0 (or blank) to
+              follow Settings.
             </Text>
 
             <TextInput
@@ -687,7 +759,10 @@ export default function ExpiryBuckets() {
           {buckets.map((b, i) => {
             const expNorm = normalizeExpiryForApi(b.expiry_date);
             return (
-              <View key={`${String(expNorm)}-${i}`} style={[commonStyles.card, styles.bucketRow]}>
+              <View
+                key={`${String(expNorm)}-${i}`}
+                style={[commonStyles.card, styles.bucketRow]}
+              >
                 <View style={styles.bucketMain}>
                   <Text style={styles.bucketTitle}>
                     {expNorm ? `Expires: ${formatDisplayDate(expNorm)}` : "No expiry date"}
@@ -704,7 +779,7 @@ export default function ExpiryBuckets() {
                   <View style={styles.bucketActionsRow}>
                     <TouchableOpacity
                       style={[buttonStyles.base, buttonStyles.secondary]}
-                      onPress={() => openChangeExpiry(expNorm)}
+                      onPress={() => openChangeExpiry(expNorm, b.quantity)}
                     >
                       <Text style={buttonStyles.secondaryText}>Change date</Text>
                     </TouchableOpacity>
@@ -726,7 +801,10 @@ export default function ExpiryBuckets() {
                   <Text style={styles.ctrlBtnText}>−</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.ctrlBtn} onPress={() => addToBucket(expNorm)}>
+                <TouchableOpacity
+                  style={styles.ctrlBtn}
+                  onPress={() => addToBucket(expNorm)}
+                >
                   <Text style={styles.ctrlBtnText}>+</Text>
                 </TouchableOpacity>
               </View>
@@ -747,10 +825,69 @@ export default function ExpiryBuckets() {
       >
         <View style={modalStyles.backdrop}>
           <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>Change expiry for this bucket</Text>
+            <Text style={modalStyles.title}>Change expiry date</Text>
             <Text style={styles.modalSub}>
-              Current: {normalizeExpiryDisplay(editingFromExpiry) ? formatDisplayDate(editingFromExpiry) : "No expiry date"}
+              Current:{" "}
+              {normalizeExpiryDisplay(editingFromExpiry)
+                ? formatDisplayDate(editingFromExpiry)
+                : "No expiry date"}
             </Text>
+            <Text style={styles.modalSub}>Items in bucket: {moveQtyMax}</Text>
+
+            <Text style={styles.quickTitle}>How many items?</Text>
+            <View style={styles.modeRow}>
+              <TouchableOpacity
+                style={[
+                  buttonStyles.base,
+                  moveQtyMode === "all" ? buttonStyles.accent : buttonStyles.secondary,
+                ]}
+                onPress={() => setMoveQtyMode("all")}
+                disabled={changing}
+              >
+                <Text
+                  style={
+                    moveQtyMode === "all"
+                      ? buttonStyles.accentText
+                      : buttonStyles.secondaryText
+                  }
+                >
+                  Move all
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  buttonStyles.base,
+                  moveQtyMode === "partial"
+                    ? buttonStyles.accent
+                    : buttonStyles.secondary,
+                ]}
+                onPress={() => setMoveQtyMode("partial")}
+                disabled={changing}
+              >
+                <Text
+                  style={
+                    moveQtyMode === "partial"
+                      ? buttonStyles.accentText
+                      : buttonStyles.secondaryText
+                  }
+                >
+                  Move some
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {moveQtyMode === "partial" && (
+              <TextInput
+                value={moveQtyInput}
+                onChangeText={setMoveQtyInput}
+                placeholder={`1-${moveQtyMax}`}
+                placeholderTextColor={colors.textLight}
+                keyboardType="number-pad"
+                style={[formStyles.inputAlt, styles.modalInput]}
+                editable={!changing}
+              />
+            )}
 
             <Text style={styles.quickTitle}>Quick set</Text>
             <View style={styles.quickRow}>
@@ -758,7 +895,9 @@ export default function ExpiryBuckets() {
                 <TouchableOpacity
                   key={String(d)}
                   style={[buttonStyles.accent, buttonStyles.pill, styles.quickBtn]}
-                  onPress={() => changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))}
+                  onPress={() =>
+                    changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))
+                  }
                   disabled={changing}
                 >
                   <Text style={buttonStyles.accentText}>{d}d</Text>
@@ -825,7 +964,10 @@ export default function ExpiryBuckets() {
           <View style={modalStyles.card}>
             <Text style={modalStyles.title}>Set quantity</Text>
             <Text style={styles.modalSub}>
-              Bucket: {normalizeExpiryDisplay(qtyEditingExpiry) ? formatDisplayDate(qtyEditingExpiry) : "No expiry date"}
+              Bucket:{" "}
+              {normalizeExpiryDisplay(qtyEditingExpiry)
+                ? formatDisplayDate(qtyEditingExpiry)
+                : "No expiry date"}
             </Text>
 
             <Text style={styles.modalSub}>Current: {qtyCurrent}</Text>
@@ -845,11 +987,20 @@ export default function ExpiryBuckets() {
               onPress={saveSetQuantity}
               disabled={qtySaving}
             >
-              {qtySaving ? <ActivityIndicator color={colors.text} /> : <Text style={buttonStyles.accentText}>Save</Text>}
+              {qtySaving ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={buttonStyles.accentText}>Save</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[buttonStyles.base, buttonStyles.primary, qtySaving && styles.dimmed, styles.modalCloseBtn]}
+              style={[
+                buttonStyles.base,
+                buttonStyles.primary,
+                qtySaving && styles.dimmed,
+                styles.modalCloseBtn,
+              ]}
               onPress={() => {
                 if (qtySaving) return;
                 setQtyModalOpen(false);
@@ -913,7 +1064,9 @@ export default function ExpiryBuckets() {
               </View>
             )}
 
-            <Text style={[styles.modalSub, styles.modalSubSpacing]}>Last price (optional)</Text>
+            <Text style={[styles.modalSub, styles.modalSubSpacing]}>
+              Last price (optional)
+            </Text>
             <TextInput
               value={priceText}
               onChangeText={setPriceText}
@@ -929,11 +1082,20 @@ export default function ExpiryBuckets() {
               onPress={saveEditMeta}
               disabled={savingMeta}
             >
-              {savingMeta ? <ActivityIndicator color={colors.text} /> : <Text style={buttonStyles.accentText}>Save</Text>}
+              {savingMeta ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={buttonStyles.accentText}>Save</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[buttonStyles.base, buttonStyles.primary, savingMeta && styles.dimmed, styles.modalCloseBtn]}
+              style={[
+                buttonStyles.base,
+                buttonStyles.primary,
+                savingMeta && styles.dimmed,
+                styles.modalCloseBtn,
+              ]}
               onPress={() => {
                 if (savingMeta) return;
                 setEditModalOpen(false);
@@ -1067,6 +1229,12 @@ function makeStyles(colors: AppColors) {
     noExpiryText: {
       fontWeight: fontWeight.black,
       color: colors.danger,
+    },
+    modeRow: {
+      flexDirection: "row",
+      gap: spacing.md,
+      marginTop: spacing.sm,
+      flexWrap: "wrap",
     },
     modalSpacer: {
       height: 12,
