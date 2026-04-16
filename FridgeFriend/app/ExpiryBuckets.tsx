@@ -23,7 +23,11 @@ import {
   type AppColors,
 } from "../styles/tokens";
 
-import { formatDisplayDate, normalizeExpiryDisplay } from "../lib/dateUtils";
+import {
+  formatDisplayDate,
+  normalizeExpiryDisplay,
+  normalizeExpiryInput,
+} from "../lib/dateUtils";
 
 type Bucket = {
   expiry_date: string | null;
@@ -223,6 +227,7 @@ export default function ExpiryBuckets() {
 
   const [loading, setLoading] = useState(false);
   const [buckets, setBuckets] = useState<Bucket[]>([]);
+  const [manualExpiryInput, setManualExpiryInput] = useState("");
 
   const storeLabel = useMemo(
     () => params.storeName ?? "No store",
@@ -408,6 +413,7 @@ export default function ExpiryBuckets() {
 
   const openChangeExpiry = (fromExpiry: string | null, currentQty: number) => {
     setEditingFromExpiry(normalizeExpiryForApi(fromExpiry));
+    setManualExpiryInput("");
     setMoveQtyMode("all");
     setMoveQtyInput("1");
     setMoveQtyMax(currentQty);
@@ -424,6 +430,7 @@ export default function ExpiryBuckets() {
     if ((fromExpiryNorm ?? null) === (toExpiryNorm ?? null)) {
       setExpiryMenuOpen(false);
       setEditingFromExpiry(null);
+      setManualExpiryInput("");
       return;
     }
 
@@ -489,6 +496,7 @@ export default function ExpiryBuckets() {
 
       setExpiryMenuOpen(false);
       setEditingFromExpiry(null);
+      setManualExpiryInput("");
     } catch (e) {
       console.error("changeBucketExpiry error:", e);
       Alert.alert("Error", "Could not change expiry for this bucket.");
@@ -821,103 +829,140 @@ export default function ExpiryBuckets() {
           if (changing) return;
           setExpiryMenuOpen(false);
           setEditingFromExpiry(null);
+          setManualExpiryInput("");
         }}
       >
         <View style={modalStyles.backdrop}>
-          <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>Change expiry date</Text>
-            <Text style={styles.modalSub}>
-              Current:{" "}
-              {normalizeExpiryDisplay(editingFromExpiry)
-                ? formatDisplayDate(editingFromExpiry)
-                : "No expiry date"}
-            </Text>
-            <Text style={styles.modalSub}>Items in bucket: {moveQtyMax}</Text>
-
-            <Text style={styles.quickTitle}>How many items?</Text>
-            <View style={styles.modeRow}>
-              <TouchableOpacity
-                style={[
-                  buttonStyles.base,
-                  moveQtyMode === "all" ? buttonStyles.accent : buttonStyles.secondary,
-                ]}
-                onPress={() => setMoveQtyMode("all")}
-                disabled={changing}
-              >
-                <Text
-                  style={
-                    moveQtyMode === "all"
-                      ? buttonStyles.accentText
-                      : buttonStyles.secondaryText
-                  }
-                >
-                  Move all
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  buttonStyles.base,
-                  moveQtyMode === "partial"
-                    ? buttonStyles.accent
-                    : buttonStyles.secondary,
-                ]}
-                onPress={() => setMoveQtyMode("partial")}
-                disabled={changing}
-              >
-                <Text
-                  style={
-                    moveQtyMode === "partial"
-                      ? buttonStyles.accentText
-                      : buttonStyles.secondaryText
-                  }
-                >
-                  Move some
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {moveQtyMode === "partial" && (
-              <TextInput
-                value={moveQtyInput}
-                onChangeText={setMoveQtyInput}
-                placeholder={`1-${moveQtyMax}`}
-                placeholderTextColor={colors.textLight}
-                keyboardType="number-pad"
-                style={[formStyles.inputAlt, styles.modalInput]}
-                editable={!changing}
-              />
-            )}
-
-            <Text style={styles.quickTitle}>Quick set</Text>
-            <View style={styles.quickRow}>
-              {[1, 2, 3, 5, 7, 14].map((d) => (
-                <TouchableOpacity
-                  key={String(d)}
-                  style={[buttonStyles.accent, buttonStyles.pill, styles.quickBtn]}
-                  onPress={() =>
-                    changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))
-                  }
-                  disabled={changing}
-                >
-                  <Text style={buttonStyles.accentText}>{d}d</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={[buttonStyles.secondary, buttonStyles.pill, styles.quickBtn]}
-                onPress={() => changeBucketExpiryTo(null)}
-                disabled={changing}
-              >
-                <Text style={styles.noExpiryText}>No expiry</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalSpacer} />
-
+          <View style={[modalStyles.card, { maxHeight: "88%", width: "100%" }]}>
             <FlatList
               data={dateOptions}
               keyExtractor={(it) => it.key}
-              style={styles.modalList}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+              contentContainerStyle={{ paddingBottom: spacing.md }}
+              ListHeaderComponent={
+                <>
+                  <Text style={modalStyles.title}>Change expiry date</Text>
+
+                  <Text style={styles.modalSub}>
+                    Current:{" "}
+                    {normalizeExpiryDisplay(editingFromExpiry)
+                      ? formatDisplayDate(editingFromExpiry)
+                      : "No expiry date"}
+                  </Text>
+
+                  <Text style={styles.modalSub}>Items in bucket: {moveQtyMax}</Text>
+
+                  <Text style={styles.quickTitle}>How many items?</Text>
+                  <View style={styles.modeRow}>
+                    <TouchableOpacity
+                      style={[
+                        buttonStyles.base,
+                        moveQtyMode === "all" ? buttonStyles.accent : buttonStyles.secondary,
+                      ]}
+                      onPress={() => setMoveQtyMode("all")}
+                      disabled={changing}
+                    >
+                      <Text
+                        style={
+                          moveQtyMode === "all"
+                            ? buttonStyles.accentText
+                            : buttonStyles.secondaryText
+                        }
+                      >
+                        Move all
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        buttonStyles.base,
+                        moveQtyMode === "partial"
+                          ? buttonStyles.accent
+                          : buttonStyles.secondary,
+                      ]}
+                      onPress={() => setMoveQtyMode("partial")}
+                      disabled={changing}
+                    >
+                      <Text
+                        style={
+                          moveQtyMode === "partial"
+                            ? buttonStyles.accentText
+                            : buttonStyles.secondaryText
+                        }
+                      >
+                        Move some
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {moveQtyMode === "partial" && (
+                    <TextInput
+                      value={moveQtyInput}
+                      onChangeText={setMoveQtyInput}
+                      placeholder={`1-${moveQtyMax}`}
+                      placeholderTextColor={colors.textLight}
+                      keyboardType="number-pad"
+                      style={[formStyles.inputAlt, styles.modalInput]}
+                      editable={!changing}
+                    />
+                  )}
+
+                  <Text style={styles.quickTitle}>Type a date</Text>
+                  <TextInput
+                    value={manualExpiryInput}
+                    onChangeText={setManualExpiryInput}
+                    placeholder="dd-mm-yyyy"
+                    placeholderTextColor={colors.textLight}
+                    autoCapitalize="characters"
+                    style={[formStyles.inputAlt, styles.modalInput]}
+                    editable={!changing}
+                  />
+
+                  <TouchableOpacity
+                    style={[buttonStyles.base, buttonStyles.accent, changing && styles.dimmed]}
+                    onPress={() => {
+                      const normalized = normalizeExpiryInput(manualExpiryInput);
+                      if (!normalized) {
+                        Alert.alert(
+                          "Invalid expiry date",
+                          "Use dd-mm-yyyy, ddmmyyyy, YYYY-MM-DD, yyyymmdd, 25/04/26, 25/04/2026, 04 APR 2026, 11.2028, or 31.08."
+                        );
+                        return;
+                      }
+                      changeBucketExpiryTo(normalized);
+                    }}
+                    disabled={changing}
+                  >
+                    <Text style={buttonStyles.accentText}>Use typed date</Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.quickTitle}>Quick set</Text>
+                  <View style={styles.quickRow}>
+                    {[1, 2, 3, 5, 7, 14].map((d) => (
+                      <TouchableOpacity
+                        key={String(d)}
+                        style={[buttonStyles.accent, buttonStyles.pill, styles.quickBtn]}
+                        onPress={() =>
+                          changeBucketExpiryTo(formatDateYYYYMMDD(addDays(new Date(), d)))
+                        }
+                        disabled={changing}
+                      >
+                        <Text style={buttonStyles.accentText}>{d}d</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={[buttonStyles.secondary, buttonStyles.pill, styles.quickBtn]}
+                      onPress={() => changeBucketExpiryTo(null)}
+                      disabled={changing}
+                    >
+                      <Text style={styles.noExpiryText}>No expiry</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.modalSpacer} />
+                </>
+              }
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={modalStyles.row}
@@ -927,25 +972,34 @@ export default function ExpiryBuckets() {
                   <Text style={modalStyles.rowText}>{item.label}</Text>
                 </TouchableOpacity>
               )}
+              ListFooterComponent={
+                <>
+                  <TouchableOpacity
+                    style={[
+                      buttonStyles.base,
+                      buttonStyles.primary,
+                      changing && styles.dimmed,
+                      { marginTop: spacing.lg },
+                    ]}
+                    onPress={() => {
+                      if (changing) return;
+                      setExpiryMenuOpen(false);
+                      setEditingFromExpiry(null);
+                      setManualExpiryInput("");
+                    }}
+                    disabled={changing}
+                  >
+                    <Text style={buttonStyles.primaryText}>Close</Text>
+                  </TouchableOpacity>
+
+                  {changing && (
+                    <View style={styles.modalLoader}>
+                      <ActivityIndicator color={colors.primaryTextOn} />
+                    </View>
+                  )}
+                </>
+              }
             />
-
-            <TouchableOpacity
-              style={[buttonStyles.base, buttonStyles.primary, changing && styles.dimmed]}
-              onPress={() => {
-                if (changing) return;
-                setExpiryMenuOpen(false);
-                setEditingFromExpiry(null);
-              }}
-              disabled={changing}
-            >
-              <Text style={buttonStyles.primaryText}>Close</Text>
-            </TouchableOpacity>
-
-            {changing && (
-              <View style={styles.modalLoader}>
-                <ActivityIndicator color={colors.primaryTextOn} />
-              </View>
-            )}
           </View>
         </View>
       </Modal>
