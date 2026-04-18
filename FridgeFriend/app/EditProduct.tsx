@@ -1,4 +1,3 @@
-// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\EditProduct.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,

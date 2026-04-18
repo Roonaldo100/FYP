@@ -1,4 +1,3 @@
-// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\BarcodeScanner.tsx
 import {
   BarcodeScanningResult,
   CameraView,

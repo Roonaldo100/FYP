@@ -1,4 +1,3 @@
-// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\CreateAccount.tsx
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {

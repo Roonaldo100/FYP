@@ -52,8 +52,7 @@ export default function ExpiryDateScanner() {
 
     if (!extractTextFromImage) {
       Alert.alert(
-        "OCR unavailable",
-        "The OCR native module is not available in this build. Rebuild the app with expo run:android or expo run:ios and open the development build, not Expo Go."
+        "OCR unavailable"
       );
       return;
     }

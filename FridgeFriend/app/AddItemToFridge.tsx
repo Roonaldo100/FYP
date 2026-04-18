@@ -1,4 +1,3 @@
-// C:\Users\ruben\Desktop\FYP\FridgeFriend\app\AddItemToFridge.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
