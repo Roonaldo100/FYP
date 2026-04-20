@@ -1,5 +1,30 @@
 // styles/tokens.ts
-export const colors = {
+export type AppColors = {
+  primary: string;
+  primaryTextOn: string;
+
+  accent: string;
+  accentText: string;
+
+  surface: string;
+  surfaceAlt: string;
+  surfaceMuted: string;
+
+  text: string;
+  textMuted: string;
+  textLight: string;
+
+  border: string;
+  borderSoft: string;
+
+  danger: string;
+  dangerTextOn: string;
+
+  overlay: string;
+  loadingOverlay: string;
+};
+
+export const lightColors: AppColors = {
   primary: "#663399",
   primaryTextOn: "#ffffff",
 
@@ -23,6 +48,33 @@ export const colors = {
   overlay: "rgba(0,0,0,0.5)",
   loadingOverlay: "#0008",
 };
+
+export const darkColors: AppColors = {
+  primary: "#121212",
+  primaryTextOn: "#ffffff",
+
+  accent: "#ffcc00",
+  accentText: "#222222",
+
+  surface: "#1e1e1e",
+  surfaceAlt: "#2b2b2b",
+  surfaceMuted: "#111111",
+
+  text: "#f4f4f4",
+  textMuted: "#b5b5b5",
+  textLight: "#8f8f8f",
+
+  border: "#3a3a3a",
+  borderSoft: "#333333",
+
+  danger: "#cf6679",
+  dangerTextOn: "#111111",
+
+  overlay: "rgba(0,0,0,0.65)",
+  loadingOverlay: "rgba(0,0,0,0.45)",
+};
+
+export const colors = lightColors;
 
 export const spacing = {
   xs: 4,
